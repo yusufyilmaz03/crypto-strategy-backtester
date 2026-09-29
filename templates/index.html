@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Crypto Bot Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="container mt-4">
+  <h1>📊 Crypto Bot Dashboard</h1>
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card text-bg-success mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Total PnL</h5>
+                    <p class="card-text">{{ total_pnl }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-bg-info mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Open Trades</h5>
+                    <p class="card-text">{{ open_trades }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-bg-secondary mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Closed Trades</h5>
+                    <p class="card-text">{{ closed_trades }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<!-- Başlıklar altında pie yerine tek chart + dropdown -->
+<div class="row mt-4">
+  <div class="col-md-6">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h4 id="distTitle">🥧 Distribution: Win/Loss</h4>
+      <select id="distMetric" class="form-select form-select-sm" style="max-width:220px">
+        <option value="winloss" selected>Win/Loss (adet)</option>
+        <option value="pnl_by_symbol">Toplam PnL (coin bazında)</option>
+        <option value="count_by_symbol">İşlem adedi (coin bazında)</option>
+      </select>
+    </div>
+    <canvas id="distChart"></canvas>
+  </div>
+
+  <div class="col-md-6">
+    <!-- mevcut PnL line/bar grafiğin burada kalabilir (pnlChart) -->
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h3 id="chartTitle">📈 Cumulative PnL</h3>
+      <div>
+        <button class="btn btn-sm btn-outline-primary" onclick="switchChart('cumulative')">Cumulative</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="switchChart('trades')">By Trade</button>
+      </div>
+    </div>
+    <canvas id="pnlChart"></canvas>
+  </div>
+</div>
+
+
+  <div class="mt-4">
+    <a href="/signals" class="btn btn-primary">📑 Signals Log</a>
+    <a href="/trades" class="btn btn-success">💹 Trades Log</a>
+    <a href="/backtest" class="btn btn-secondary">Backtest</a>
+  </div>
+
+
+
+  <!-- Toast -->
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="tradeToast" class="toast align-items-center text-bg-info border-0" role="alert">
+      <div class="d-flex">
+        <div class="toast-body" id="toastBody">
+          Yeni trade gerçekleşti!
+        </div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  let chart;         // PnL çizimi (line/bar)
+  let distChart;     // Pie chart
+  let pnlData;
+
+  async function loadCharts() {
+    const res = await fetch("/pnl_data");
+    pnlData = await res.json();
+    renderChart("cumulative");
+    await loadDistribution(); // varsayılan winloss
+  }
+
+  async function loadDistribution() {
+    const metric = document.getElementById("distMetric").value;
+    const r = await fetch(`/dist_data?metric=${metric}`);
+    const data = await r.json();
+
+    const ctx = document.getElementById("distChart").getContext("2d");
+    if (distChart) distChart.destroy();
+
+    // Başlık
+    const titles = {
+      winloss: "🥧 Distribution: Win/Loss",
+      pnl_by_symbol: "🥧 Distribution: Total PnL by Symbol",
+      count_by_symbol: "🥧 Distribution: Trades by Symbol",
+    };
+    document.getElementById("distTitle").innerText = titles[metric] || "🥧 Distribution";
+
+    // Renkler
+    let colors;
+    if (metric === "winloss") {
+      colors = ["#2ecc71", "#e74c3c"]; // yeşil/kırmızı
+    } else if (metric === "pnl_by_symbol") {
+      // PnL pozitif/negatif için farklı tonlar
+      colors = data.values.map(v => v >= 0 ? "rgba(33, 150, 243, 0.8)" : "rgba(244, 67, 54, 0.8)");
+    } else {
+      // count_by_symbol: sabit palet
+      const palette = ["#4e79a7","#f28e2b","#e15759","#76b7b2","#59a14f","#edc949",
+                       "#af7aa1","#ff9da7","#9c755f","#bab0ab","#2a9d8f","#264653","#e9c46a"];
+      colors = data.labels.map((_, i) => palette[i % palette.length]);
+    }
+
+    distChart = new Chart(ctx, {
+      type: "pie",
+      data: {
+        labels: data.labels,
+        datasets: [{ data: data.values, backgroundColor: colors }]
+      },
+      options: {
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const label = ctx.label || "";
+                const val = ctx.parsed;
+                if (document.getElementById("distMetric").value === "pnl_by_symbol") {
+                  return `${label}: ${val.toFixed(4)}`;
+                }
+                return `${label}: ${val}`;
+              }
+            }
+          },
+          legend: { position: "bottom" }
+        }
+      }
+    });
+  }
+
+    // dropdown değişince pie’ı güncelle
+  document.addEventListener("DOMContentLoaded", () => {
+    const sel = document.getElementById("distMetric");
+    sel.addEventListener("change", loadDistribution);
+  });
+  
+    let lastTradeId = null;
+  async function checkNewTrade() {
+    const res = await fetch("/last_trade");
+    const data = await res.json();
+    if (data.trade && data.trade["Timestamp Entry"] !== lastTradeId) {
+      lastTradeId = data.trade["Timestamp Entry"];
+      document.getElementById("toastBody").innerText =
+        `Yeni trade: ${data.trade.Symbol} (${data.trade.Position})`;
+      new bootstrap.Toast(document.getElementById("tradeToast")).show();
+      loadCharts();
+      loadDistribution();
+    }
+  }
+
+  function renderChart(mode) {
+    const ctx = document.getElementById("pnlChart").getContext("2d");
+    if (chart) chart.destroy();
+
+    if (mode === "cumulative") {
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: pnlData.labels,
+          datasets: [{
+            label: "Cumulative PnL",
+            data: pnlData.cum_pnl,
+            borderColor: "blue",
+            fill: false
+          }]
+        }
+      });
+      document.getElementById("chartTitle").innerText = "📈 Cumulative PnL";
+    } else {
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: pnlData.labels,
+          datasets: [{
+            label: "Trade PnL",
+            data: pnlData.trade_pnl,
+            backgroundColor: pnlData.trade_pnl.map(v => v >= 0 ? "green" : "red")
+          }]
+        }
+      });
+      document.getElementById("chartTitle").innerText = "📊 Trade-by-Trade PnL";
+    }
+  }
+
+  function renderWinLossChart() {
+    new Chart(document.getElementById("winLossChart"), {
+      type: "pie",
+      data: {
+        labels: ["Win", "Loss"],
+        datasets: [{ data: [pnlData.win, pnlData.loss], backgroundColor: ["green", "red"] }]
+      }
+    });
+  }
+
+  function switchChart(mode) {
+    renderChart(mode);
+  }
+
+  // Toast notifier (aynı kalıyor)
+  /* let lastTradeId = null;
+  async function checkNewTrade() {
+    const res = await fetch("/last_trade");
+    const data = await res.json();
+    if (data.trade && data.trade["Timestamp Entry"] !== lastTradeId) {
+      lastTradeId = data.trade["Timestamp Entry"];
+      document.getElementById("toastBody").innerText =
+        `Yeni trade: ${data.trade.Symbol} (${data.trade.Position})`;
+      new bootstrap.Toast(document.getElementById("tradeToast")).show();
+      loadCharts(); // 🔹 yeni trade gelince grafikleri güncelle
+    }
+  } */
+
+  loadCharts();
+  setInterval(checkNewTrade, 5000);
+</script>
+
+</body>
+</html>
