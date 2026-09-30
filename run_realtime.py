@@ -9,6 +9,7 @@ resumes from its saved state and first processes the candles it missed.
 Times are UTC.
 """
 import time
+from functools import partial
 
 import pandas as pd
 
@@ -38,11 +39,11 @@ def describe_action(engine, signal):
 
 
 class SymbolRunner:
-    def __init__(self, symbol, timeframe, strategy_key, engine_cfg, store):
+    def __init__(self, symbol, timeframe, strategy_key, engine_cfg, store, params=None, label=None):
         self.symbol = symbol
         self.timeframe = timeframe
-        self.key = strategy_key
-        self.signal_fn = strategy.get_strategy(strategy_key)
+        self.key = label or strategy_key   # run name used in paper.db
+        self.signal_fn = partial(strategy.get_strategy(strategy_key), **(params or {}))
         self.store = store
         self.engine = Engine(engine_cfg, symbol, on_open=self._opened, on_close=self._closed)
         state, self.last_time = store.load_state(symbol, strategy_key, timeframe)
@@ -119,11 +120,13 @@ def sleep_until_next_close(timeframe):
 
 
 def main():
-    cfg = config.engine_config()
+    cfg = config.paper_engine_config()
     store = PaperStore()
-    runners = [SymbolRunner(s, config.TIMEFRAME, config.STRATEGY, cfg, store) for s in config.SYMBOLS]
+    label = config.strategy_label()
+    runners = [SymbolRunner(s, config.TIMEFRAME, config.STRATEGY, cfg, store,
+                            params=config.STRATEGY_PARAMS, label=label) for s in config.SYMBOLS]
     resumed = sum(r.last_time is not None for r in runners)
-    print(f"📡 Paper trading started: strategy {config.STRATEGY}, timeframe {config.TIMEFRAME}, "
+    print(f"📡 Paper trading started: {label}, timeframe {config.TIMEFRAME}, "
           f"{len(runners)} symbols ({resumed} resumed from paper.db), long-only={not cfg.allow_short}\n")
     while True:
         for r in runners:

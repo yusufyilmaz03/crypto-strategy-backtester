@@ -29,7 +29,7 @@ SIGNAL_COLUMNS = {
 
 def current_run():
     """Strategy and timeframe shown by default: the ones paper trading is configured for."""
-    return (request.args.get("strategy", config.STRATEGY),
+    return (request.args.get("strategy", config.strategy_label()),
             request.args.get("timeframe", config.TIMEFRAME))
 
 

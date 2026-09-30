@@ -41,6 +41,9 @@ A Python research tool for testing technical trading strategies on historical cr
 ├── multi_backtest.py    # grid backtest → multi_backtest_strategies.csv
 ├── run_realtime.py      # paper trading on live closed candles
 ├── store.py             # SQLite persistence for paper trading (paper.db)
+├── rotation.py          # cross-sectional momentum rotation (R1)
+├── forward_report.py    # forward-test report: paper results vs buy-and-hold
+├── docs/                # research pre-registrations and results
 ├── dashboard.py         # Flask dashboard (templates/)
 ├── plot_summary.py      # return bar chart for one strategy
 ├── plot_multi_chart.py  # profitable out-of-sample combinations chart
@@ -67,7 +70,8 @@ Run the pieces:
 python multi_backtest.py   # grid backtest, writes multi_backtest_strategies.csv
 python multi_backtest.py --symbols BTC/USDT ETH/USDT --timeframes 5m --strategies v1 v6 --days 30
 python research.py         # walk-forward research, writes research_*.csv
-python run_realtime.py     # paper trading on live data
+python run_realtime.py     # paper trading on live data (forward test, see docs/forward-test.md)
+python forward_report.py   # forward-test metrics vs buy-and-hold
 python dashboard.py        # http://127.0.0.1:5002
 ```
 
@@ -104,7 +108,7 @@ A candidate passes when its portfolio return and cost-stressed return are positi
 
 ## Notes and limitations
 
-- Paper trading keeps separate state per symbol, strategy and timeframe; changing `STRATEGY` or `TIMEFRAME` starts a fresh run (the dashboard shows the configured one).
+- Paper trading keeps separate state per run (strategy, parameters, stop mode) and timeframe; changing `STRATEGY`, `STRATEGY_PARAMS`, `PAPER_STOPLOSS_MODE` or `TIMEFRAME` starts a fresh run (the dashboard shows the configured one).
 - In paper trading, stops are evaluated when a candle closes (as if a stop order had been resting at the stop price), not tick by tick.
 - Times in logs are UTC candle times.
 - In `multi_backtest.py` strategies run with their default parameters, so its walk-forward folds are plain out-of-sample windows. Parameter optimization happens in `research.py`.

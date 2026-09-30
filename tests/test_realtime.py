@@ -92,3 +92,20 @@ def test_changing_strategy_starts_fresh(tmp_path, feed):
     r1.update()
     r2 = run_realtime.SymbolRunner("X/USDT", "5m", "v1", EngineConfig(), PaperStore(db))
     assert r2.last_time is None and r2.engine.equity == EngineConfig().initial_equity
+
+
+def test_params_and_label(tmp_path, feed):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    r = run_realtime.SymbolRunner("X/USDT", "5m", "v9", EngineConfig(), store,
+                                  params={"fast": 1, "slow": 50}, label="v9 fast=1 slow=50 stop=none")
+    r.update()
+    df = add_indicators(FULL.iloc[:feed.n].copy())
+    assert r.signal_fn(df).equals(strategy.get_strategy("v9")(df, fast=1, slow=50))
+    assert store.load_state("X/USDT", "v9 fast=1 slow=50 stop=none", "5m")[0] is not None
+
+
+def test_strategy_label():
+    import config
+    assert config.strategy_label().startswith(config.STRATEGY)
+    assert f"stop={config.PAPER_STOPLOSS_MODE}" in config.strategy_label()
+    assert config.engine_config().atr_multiplier == config.ATR_MULTIPLIER  # backtests keep their stop

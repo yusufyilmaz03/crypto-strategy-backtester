@@ -15,7 +15,7 @@ FULL = make_ohlcv(700, seed=3)
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(config, "STRATEGY", "v5")
+    monkeypatch.setattr(config, "strategy_label", lambda: "v5")
     monkeypatch.setattr(config, "TIMEFRAME", "5m")
     monkeypatch.setattr(config, "SYMBOLS", ["X/USDT", "Y/USDT"])
     state = {"n": 300}

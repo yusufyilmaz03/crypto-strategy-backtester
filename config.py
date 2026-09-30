@@ -25,7 +25,7 @@ SYMBOLS = [
 ]
 
 TIMEFRAMES = ["1m", "3m", "5m"]
-TIMEFRAME = "3m"
+TIMEFRAME = "3m"  # overridden below for the paper forward test
 
 STRATEGY_LIST = [
     "v1",
@@ -36,15 +36,36 @@ STRATEGY_LIST = [
     "v6",
     "v7"
 ]
-STRATEGY = "v2"
+STRATEGY = "v2"  # overridden below for the paper forward test
 
 STOPLOSS_CONFIG = {
     "tight": 1.0,
     "normal": 1.5,
-    "loose": 2.0
+    "loose": 2.0,
+    "none": None,   # no ATR stop; exits come from signals only
 }
 STOPLOSS_MODE = "loose"
 ATR_MULTIPLIER = STOPLOSS_CONFIG[STOPLOSS_MODE]
+
+# ===== Paper trading (run_realtime.py) =====
+# Forward test of the closest Phase 2b candidate (docs/forward-test.md):
+# v9 moving-average regime on daily candles, long while close > SMA(50), no stop.
+TIMEFRAME = "1d"
+STRATEGY = "v9"
+STRATEGY_PARAMS = {"fast": 1, "slow": 50}
+PAPER_STOPLOSS_MODE = "none"   # backtests keep STOPLOSS_MODE above
+
+
+def strategy_label():
+    """Name of the paper trading run: strategy, parameters and stop mode.
+    Paper state is kept per label, so changing any of them starts a fresh run."""
+    params = " ".join(f"{k}={v}" for k, v in STRATEGY_PARAMS.items())
+    return " ".join(x for x in [STRATEGY, params, f"stop={PAPER_STOPLOSS_MODE}"] if x)
+
+
+def paper_engine_config():
+    from dataclasses import replace
+    return replace(engine_config(), atr_multiplier=STOPLOSS_CONFIG[PAPER_STOPLOSS_MODE])
 
 # ===== Fee & slippage settings =====
 # Spot taker fee rate (e.g. 0.1% = 0.001). Adjust to your actual exchange rate.
