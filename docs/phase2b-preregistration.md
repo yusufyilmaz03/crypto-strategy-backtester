@@ -43,3 +43,11 @@ Development (walk-forward out-of-sample, holdout excluded), all of:
   tested so far (21 from Phase 2 + 7 here = 28)
 
 Holdout (finalists only, evaluated once): return > 0 and Sharpe > buy-and-hold Sharpe.
+
+## Deviation log
+
+- While smoke-testing the holdout code path on 4 symbols (BTC, ETH, SOL, DOGE),
+  v9 and R1 were artificially marked as finalists, so their holdout results on
+  those 4 symbols were seen before the full development run. Nothing in the design,
+  grids, criteria or holdout boundary was changed afterwards. If v9 or R1 become
+  finalists, their holdout result is reported with this caveat.

@@ -77,11 +77,17 @@ def engine_config():
 
 
 # ===== Strategy research (research.py) =====
-# Timeframe -> days of history. Higher timeframes get longer histories so that each
-# walk-forward window still holds enough trades.
-RESEARCH_TIMEFRAMES = {"15m": 180, "1h": 365, "4h": 730}
+# Phase 2b set (docs/phase2b-preregistration.md). Phase 2 used 15m/1h/4h
+# (180/365/730 days) with v1-v7 and stops {1.5, 2, 3}; none passed.
+# Timeframe -> days of history.
+RESEARCH_TIMEFRAMES = {"4h": 730, "1d": 1460}
+RESEARCH_STRATEGIES = ["v8", "v9", "v10"]
+RESEARCH_STOPS = [None, 2.0, 3.0]   # ATR multipliers; None = exit on signals only
+ROTATION_TIMEFRAMES = ["1d"]        # cross-sectional rotation (R1)
+HOLDOUT_FRACTION = 0.2              # last 20% of each timeframe is kept for the final test
+PRIOR_TRIALS = 21                   # candidates tested in Phase 2, counted in the deflated Sharpe
 WFO_FOLDS = 5
-WFO_MIN_TRAIN_FRACTION = 0.4   # first 40% is only used for training
-WFO_MIN_TRADES = 10            # min trades in a training window to trust its Sharpe
-COST_STRESS = 1.5              # fees and slippage multiplier for the stress test
-RESEARCH_MIN_CANDLES = 1500    # skip symbols with a shorter history
+WFO_MIN_TRAIN_FRACTION = 0.4        # first 40% of the development data is only used for training
+WFO_MIN_TRADES = 10                 # min trades in a training window to trust its Sharpe
+COST_STRESS = 1.5                   # fees and slippage multiplier for the stress test
+RESEARCH_MIN_CANDLES = 500          # skip symbols with a shorter development history

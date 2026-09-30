@@ -147,3 +147,24 @@ def walk_forward_rotation(opens, closes, rows, timeframe, config, n_folds=5, min
         "n_trials": n_trials,
         "bh_closes": closes.iloc[first_test:rows.stop],
     }
+
+
+def holdout_rotation(opens, closes, train, test, timeframe, config, min_trades=10):
+    """Choose rotation parameters on `train` rows and run them once on `test` rows."""
+    from metrics import sharpe_ratio
+
+    kw = dict(fee_rate=config.fee_rate, slippage_bps=config.slippage_bps,
+              initial_equity=config.initial_equity)
+    best = None
+    for p in rotation_combinations():
+        res = simulate(opens, closes, train, **p, **kw)
+        if res.trades < min_trades:
+            continue
+        score = sharpe_ratio(res.equity, timeframe, config.initial_equity)
+        if score == score and (best is None or score > best[0]):
+            best = (score, p)
+    if best is None:
+        eq = pd.Series(config.initial_equity, index=closes.index[test.start:test.stop], dtype=float)
+        return {"equity": eq, "trades": 0, "params": None}
+    res = simulate(opens, closes, test, **best[1], **kw)
+    return {"equity": res.equity, "trades": res.trades, "params": best[1]}

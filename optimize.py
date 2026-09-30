@@ -36,6 +36,26 @@ def _chain(parts, initial_equity):
     return pd.concat(chained) if chained else pd.Series(dtype=float)
 
 
+def _run(df, sig, rows, cfg):
+    part = df.iloc[rows.start:rows.stop]
+    return run_backtest(part, sig.iloc[rows.start:rows.stop], cfg)
+
+
+def _select(df, signals, combos, cfgs, rows, timeframe, init, min_trades):
+    """Best (score, combo index, stop) on `rows` by Sharpe, plus trial and positive counts."""
+    best, n, positive = None, 0, 0
+    for i in range(len(combos)):
+        for stop, cfg in cfgs.items():
+            trades, equity = _run(df, signals[i], rows, cfg)
+            score = _score(trades, equity, timeframe, init, min_trades)
+            n += 1
+            if score is not None and score > 0:
+                positive += 1
+            if score is not None and (best is None or score > best[0]):
+                best = (score, i, stop)
+    return best, n, positive
+
+
 def walk_forward_optimize(df, key, timeframe, config, n_folds=5, min_train_fraction=0.4,
                           anchored=False, min_trades=10, stops=STOP_MULTIPLIERS, cost_multiplier=1.5):
     """Run WFO and return a dict with OOS metrics, per-fold choices and comparisons.
@@ -51,23 +71,15 @@ def walk_forward_optimize(df, key, timeframe, config, n_folds=5, min_train_fract
     init = config.initial_equity
 
     def run(sig, rows, cfg):
-        part = df.iloc[rows.start:rows.stop]
-        return run_backtest(part, sig.iloc[rows.start:rows.stop], cfg)
+        return _run(df, sig, rows, cfg)
 
     folds, oos_trades, oos_equity, default_equity, high_cost_equity = [], [], [], [], []
     train_positive = 0
     n_trials = 0
     for train, test in walk_forward_splits(len(df), n_folds, min_train_fraction, anchored):
-        best = None
-        for i, params in enumerate(combos):
-            for stop, cfg in cfgs.items():
-                trades, equity = run(signals[i], train, cfg)
-                score = _score(trades, equity, timeframe, init, min_trades)
-                n_trials += 1
-                if score is not None and score > 0:
-                    train_positive += 1
-                if score is not None and (best is None or score > best[0]):
-                    best = (score, i, stop)
+        best, n, positive = _select(df, signals, combos, cfgs, train, timeframe, init, min_trades)
+        n_trials += n
+        train_positive += positive
 
         if best is None:
             # Nothing traded enough in training: stay flat in this test window.
@@ -114,3 +126,18 @@ def walk_forward_optimize(df, key, timeframe, config, n_folds=5, min_train_fract
         "n_trials": n_trials,
         "train_positive_share": train_positive / n_trials if n_trials else float("nan"),
     }
+
+
+def holdout_test(df, key, timeframe, config, train, test, min_trades=10, stops=STOP_MULTIPLIERS):
+    """Choose parameters on `train` rows and run them once on the `test` (holdout) rows."""
+    fn = strategy.get_strategy(key)
+    combos = strategy.param_combinations(key)
+    signals = [fn(df, **p) for p in combos]
+    cfgs = {s: replace(config, atr_multiplier=s) for s in stops}
+    best, _, _ = _select(df, signals, combos, cfgs, train, timeframe, config.initial_equity, min_trades)
+    if best is None:
+        eq = pd.Series(config.initial_equity, index=df["timestamp"].iloc[test.start:test.stop].values, dtype=float)
+        return {"equity": eq, "trades": 0, "params": None}
+    _, i, stop = best
+    trades, equity = _run(df, signals[i], test, cfgs[stop])
+    return {"equity": equity, "trades": len(trades), "params": {**combos[i], "stop": stop}}

@@ -21,6 +21,8 @@ multi_backtest_strategies.csv
 research_results.csv
 research_folds.csv
 research_summary.csv
+research_meta.json
+research_holdout.csv
 
 # OS
 .DS_Store
