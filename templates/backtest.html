@@ -23,6 +23,10 @@
 
     <!-- Filters -->
     <div class="row g-2 mb-3">
+      <div class="col-12 col-md-2">
+        <label class="form-label">Segment</label>
+        <select id="segmentFilter" class="form-select"></select>
+      </div>
       <div class="col-12 col-md-3">
         <label class="form-label">Strategy</label>
         <select id="strategyFilter" class="form-select" multiple></select>
@@ -31,11 +35,11 @@
         <label class="form-label">Symbol</label>
         <select id="symbolFilter" class="form-select" multiple></select>
       </div>
-      <div class="col-12 col-md-3">
+      <div class="col-12 col-md-2">
         <label class="form-label">Timeframe</label>
         <select id="tfFilter" class="form-select" multiple></select>
       </div>
-      <div class="col-12 col-md-3 d-flex align-items-end gap-2">
+      <div class="col-12 col-md-2 d-flex align-items-end gap-2">
         <button id="applyBtn" class="btn btn-primary w-100">Apply</button>
         <button id="clearBtn" class="btn btn-secondary">Clear</button>
       </div>
@@ -46,7 +50,7 @@
       <div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" id="aggSwitch" />
         <label class="form-check-label" for="aggSwitch">
-          Aggregate (total PnL per strategy)
+          Aggregate (median return per strategy)
         </label>
       </div>
     </div>
@@ -68,11 +72,15 @@
                 <th>Symbol</th>
                 <th>Timeframe</th>
                 <th>Strategy</th>
-                <th>TotalPnL</th>
-                <th>TradeCount</th>
-                <th>WinRate(%)</th>
-                <th>AvgPnL</th>
-                <th>MaxDD</th>
+                <th>Segment</th>
+                <th>Return%</th>
+                <th>BuyHold%</th>
+                <th>Trades</th>
+                <th>WinRate%</th>
+                <th>ProfitFactor</th>
+                <th>MaxDD%</th>
+                <th>Sharpe</th>
+                <th>Exposure%</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -108,6 +116,9 @@
       const symbols = uniq(rawData.map(r => r.Symbol));
       const tfs = uniq(rawData.map(r => r.Timeframe));
 
+      const segments = uniq(rawData.map(r => r.Segment));
+      fillSelect($("#segmentFilter"), segments);
+      $("#segmentFilter").value = segments.includes("OOS") ? "OOS" : segments[0];
       fillSelect($("#strategyFilter"), strategies);
       fillSelect($("#symbolFilter"), symbols);
       fillSelect($("#tfFilter"), tfs);
@@ -131,7 +142,9 @@
       const sSel = getSelectedValues($("#strategyFilter"));
       const symSel = getSelectedValues($("#symbolFilter"));
       const tfSel = getSelectedValues($("#tfFilter"));
+      const seg = $("#segmentFilter").value;
       return data.filter(r => {
+        if (r.Segment !== seg) return false;
         const a = (sSel.length === 0 || sSel.includes(r.Strategy));
         const b = (symSel.length === 0 || symSel.includes(r.Symbol));
         const c = (tfSel.length === 0 || tfSel.includes(r.Timeframe));
@@ -154,17 +167,21 @@
           <td>${r.Symbol ?? ""}</td>
           <td>${r.Timeframe ?? ""}</td>
           <td>${r.Strategy ?? ""}</td>
-          <td>${fmtNum(r.TotalPnL)}</td>
-          <td>${fmtNum(r.TradeCount, 0)}</td>
-          <td>${fmtNum(r["WinRate(%)"])}</td>
-          <td>${fmtNum(r.AvgPnL)}</td>
-          <td>${fmtNum(r.MaxDD)}</td>
+          <td>${r.Segment ?? ""}</td>
+          <td>${fmtNum(r["Return%"])}</td>
+          <td>${fmtNum(r["BuyHold%"])}</td>
+          <td>${fmtNum(r.Trades, 0)}</td>
+          <td>${fmtNum(r["WinRate%"])}</td>
+          <td>${r.ProfitFactor === null && r.Trades > 0 ? "∞" : fmtNum(r.ProfitFactor)}</td>
+          <td>${fmtNum(r["MaxDD%"])}</td>
+          <td>${fmtNum(r.Sharpe)}</td>
+          <td>${fmtNum(r["Exposure%"])}</td>
         `;
         tb.appendChild(tr);
       });
     }
 
-    function fmtNum(v, digits = 6) {
+    function fmtNum(v, digits = 2) {
       if (v === null || v === undefined || Number.isNaN(+v)) return "";
       return (+v).toFixed(digits);
     }
@@ -174,19 +191,21 @@
       if (chart) chart.destroy();
 
       if (aggregateMode) {
-        // Aggregate: sum of TotalPnL per strategy
+        // Aggregate: median Return% per strategy
         const byStrat = {};
         rows.forEach(r => {
           const k = r.Strategy || "N/A";
-          byStrat[k] = (byStrat[k] || 0) + (+r.TotalPnL || 0);
+          (byStrat[k] = byStrat[k] || []).push(+r["Return%"] || 0);
         });
+        const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+                              return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
         const labels = Object.keys(byStrat);
-        const data = labels.map(k => byStrat[k]);
+        const data = labels.map(k => median(byStrat[k]));
         chart = new Chart(ctx, {
           type: "bar",
           data: {
             labels,
-            datasets: [{ label: "Total PnL", data }]
+            datasets: [{ label: "Median Return%", data }]
           },
           options: {
             responsive: true,
@@ -197,12 +216,12 @@
       } else {
         // Detail: one bar per row
         const labels = rows.map(r => `${r.Symbol} • ${r.Timeframe} • ${r.Strategy}`);
-        const data = rows.map(r => +r.TotalPnL || 0);
+        const data = rows.map(r => +r["Return%"] || 0);
         chart = new Chart(ctx, {
           type: "bar",
           data: {
             labels,
-            datasets: [{ label: "TotalPnL", data }]
+            datasets: [{ label: "Return%", data }]
           },
           options: {
             responsive: true,
@@ -219,6 +238,7 @@
       render();
     });
     $("#aggSwitch").addEventListener("change", render);
+    $("#segmentFilter").addEventListener("change", render);
 
     loadData();
   </script>

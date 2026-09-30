@@ -146,35 +146,15 @@ def backtest():
 @app.route("/api/backtest")
 def api_backtest():
     """
-    Return backtest results as JSON.
-    Expected columns (flexible):
-      Symbol, Timeframe, Strategy, TotalPnL, TradeCount, WinRate(%), MaxDD, AvgPnL
+    Return backtest results (multi_backtest_strategies.csv) as JSON.
+    One row per symbol / timeframe / strategy / segment (ALL, IS, OOS, WF1..).
     """
     df = load_csv(BACKTEST_FILE)
-    if df.empty:
+    if df.empty or "Segment" not in df.columns:
         return jsonify({"results": []})
 
-    # Normalize column names where possible
-    rename_map = {
-        "WinRate": "WinRate(%)",
-        "WinRate(%)": "WinRate(%)",
-        "MaxDrawdown": "MaxDD",
-        "MaxDD(Abs)": "MaxDD",
-        "Total PnL": "TotalPnL",
-        "Trade Count": "TradeCount",
-        "Avg PnL": "AvgPnL",
-        "StrategyName": "Strategy"
-    }
-    for src, dst in rename_map.items():
-        if src in df.columns and dst not in df.columns:
-            df.rename(columns={src: dst}, inplace=True)
-
-    # Clean numeric columns
-    for col in ["TotalPnL", "TradeCount", "AvgPnL", "MaxDD", "WinRate(%)"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # Keep NaN out of the JSON
+    # inf (e.g. profit factor without losing trades) and NaN are not valid JSON
+    df = df.replace([float("inf"), float("-inf")], None)
     data = json.loads(df.to_json(orient="records"))
     return jsonify({"results": data})
 
