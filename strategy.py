@@ -1,4 +1,12 @@
 # strategy.py
+"""Signal generators.
+
+Every strategy takes an OHLCV DataFrame with indicators (see indicators.add_indicators)
+and returns a Series aligned with it holding "BUY", "SELL" or "-" for each candle.
+The value at row i only depends on rows 0..i, so it can be acted on once candle i
+has closed (tests/test_strategy.py checks this for every strategy).
+"""
+import numpy as np
 import pandas as pd
 
 # ==========================
@@ -57,71 +65,49 @@ def _ensure_cols(df: pd.DataFrame, need_cols):
 
     return out
 
+def _to_signals(df, buy, sell, warmup):
+    """Combine boolean BUY/SELL conditions into a signal Series.
+
+    BUY takes precedence over SELL; the first `warmup` rows are always "-".
+    """
+    sig = pd.Series(np.select([buy, sell], ["BUY", "SELL"], default="-"), index=df.index)
+    sig.iloc[:warmup] = "-"
+    return sig
+
 
 # ==========================
 # v1: Simple RSI + EMA crossover
 # ==========================
 def generate_signals_v1(df):
-    if df is None or len(df) < 21:
-        return "-", None, None
-
-    df = _ensure_cols(df, ["EMA_9", "EMA_21", "ATR"])
-    rsi = df["RSI"].iloc[-1]
-    ema9 = df["EMA_9"].iloc[-1]
-    ema21 = df["EMA_21"].iloc[-1]
-    atr = df["ATR"].iloc[-1]
-
-    if rsi < 40 and ema9 > ema21:
-        return "BUY", rsi, atr
-    elif rsi > 60 and ema9 < ema21:
-        return "SELL", rsi, atr
-    else:
-        return "-", rsi, atr
+    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
+    rsi, ema9, ema21 = df["RSI"], df["EMA_9"], df["EMA_21"]
+    buy = (rsi < 40) & (ema9 > ema21)
+    sell = (rsi > 60) & (ema9 < ema21)
+    return _to_signals(df, buy, sell, warmup=20)
 
 
 # ==========================================
 # v2: RSI + EMA, confirmed on the last 3 candles
 # ==========================================
 def generate_signals_v2(df):
-    if df is None or len(df) < 25:
-        return "-", None, None
-
-    df = _ensure_cols(df, ["EMA_9", "EMA_21", "ATR"])
-    recent = df.iloc[-3:]  # last 3 candles
-
-    buy_cond = (recent["RSI"] < 45) & (recent["EMA_9"] > recent["EMA_21"])
-    sell_cond = (recent["RSI"] > 55) & (recent["EMA_9"] < recent["EMA_21"])
-
-    rsi = df["RSI"].iloc[-1]
-    atr = df["ATR"].iloc[-1]
-
-    if buy_cond.all():
-        return "BUY", rsi, atr
-    elif sell_cond.all():
-        return "SELL", rsi, atr
-    else:
-        return "-", rsi, atr
+    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
+    rsi, ema9, ema21 = df["RSI"], df["EMA_9"], df["EMA_21"]
+    buy_now = ((rsi < 45) & (ema9 > ema21)).astype(float)
+    sell_now = ((rsi > 55) & (ema9 < ema21)).astype(float)
+    buy = buy_now.rolling(3).min() == 1
+    sell = sell_now.rolling(3).min() == 1
+    return _to_signals(df, buy, sell, warmup=24)
 
 
 # =====================================
 # v3: RSI + EMA with ATR for stop-loss sizing
 # =====================================
-def generate_signals_v3(df, atr_multiplier=1.5):
-    if df is None or len(df) < 15:
-        return "-", None, None
-
-    df = _ensure_cols(df, ["EMA_9", "EMA_21", "ATR"])
-    rsi = df["RSI"].iloc[-1]
-    ema9 = df["EMA_9"].iloc[-1]
-    ema21 = df["EMA_21"].iloc[-1]
-    atr = df["ATR"].iloc[-1]
-
-    if rsi < 45 and ema9 > ema21:
-        return "BUY", rsi, atr
-    elif rsi > 55 and ema9 < ema21:
-        return "SELL", rsi, atr
-    else:
-        return "-", rsi, atr
+def generate_signals_v3(df):
+    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
+    rsi, ema9, ema21 = df["RSI"], df["EMA_9"], df["EMA_21"]
+    buy = (rsi < 45) & (ema9 > ema21)
+    sell = (rsi > 55) & (ema9 < ema21)
+    return _to_signals(df, buy, sell, warmup=14)
 
 
 # ====================================================
@@ -131,22 +117,11 @@ def generate_signals_v3(df, atr_multiplier=1.5):
 # - SELL: close > upper band and RSI > 65
 # ====================================================
 def generate_signals_v4_bbands_meanrev(df):
-    if df is None or len(df) < 25:
-        return "-", None, None
-
-    df = _ensure_cols(df, ["BB_MA_20", "BB_UPPER_20", "BB_LOWER_20", "ATR"])
-    rsi = df["RSI"].iloc[-1]
-    close = df["close"].iloc[-1]
-    lower = df["BB_LOWER_20"].iloc[-1]
-    upper = df["BB_UPPER_20"].iloc[-1]
-    atr = df["ATR"].iloc[-1]
-
-    if close < lower and rsi < 35:
-        return "BUY", rsi, atr
-    elif close > upper and rsi > 65:
-        return "SELL", rsi, atr
-    else:
-        return "-", rsi, atr
+    df = _ensure_cols(df, ["BB_MA_20", "BB_UPPER_20", "BB_LOWER_20"])
+    rsi, close = df["RSI"], df["close"]
+    buy = (close < df["BB_LOWER_20"]) & (rsi < 35)
+    sell = (close > df["BB_UPPER_20"]) & (rsi > 65)
+    return _to_signals(df, buy, sell, warmup=24)
 
 
 # ====================================================
@@ -156,23 +131,11 @@ def generate_signals_v4_bbands_meanrev(df):
 # (Filtering out counter-trend crosses reduces whipsaws)
 # ====================================================
 def generate_signals_v5_ema_cross_filter(df):
-    if df is None or len(df) < 25:
-        return "-", None, None
-
-    df = _ensure_cols(df, ["EMA_9", "EMA_21", "ATR"])
-    rsi = df["RSI"].iloc[-1]
-    ema9 = df["EMA_9"].iloc[-1]
-    ema21 = df["EMA_21"].iloc[-1]
-    close = df["close"].iloc[-1]
-    atr = df["ATR"].iloc[-1]
-
-    # Uptrend only longs, downtrend only shorts
-    if (ema9 > ema21) and (close > ema21) and (rsi > 45):
-        return "BUY", rsi, atr
-    elif (ema9 < ema21) and (close < ema21) and (rsi < 55):
-        return "SELL", rsi, atr
-    else:
-        return "-", rsi, atr
+    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
+    rsi, ema9, ema21, close = df["RSI"], df["EMA_9"], df["EMA_21"], df["close"]
+    buy = (ema9 > ema21) & (close > ema21) & (rsi > 45)
+    sell = (ema9 < ema21) & (close < ema21) & (rsi < 55)
+    return _to_signals(df, buy, sell, warmup=24)
 
 
 # ====================================================
@@ -181,26 +144,16 @@ def generate_signals_v5_ema_cross_filter(df):
 # - SELL: close < 20-bar low  and (low_prev - close) > 0.2*ATR
 # (ATR threshold filters out false breakouts)
 # ====================================================
-def generate_signals_v6_donchian_breakout(df, length=20, atr_thresh=0.2):
-    if df is None or len(df) < length + 1:
-        return "-", None, None
-
+def generate_signals_v6_donchian_breakout(df, atr_thresh=0.2):
     df = _ensure_cols(df, ["DONCHIAN_UP_20", "DONCHIAN_LO_20", "ATR"])
-    close = df["close"].iloc[-1]
-    atr = df["ATR"].iloc[-1]
-    rsi = df["RSI"].iloc[-1]
-
+    close, atr = df["close"], df["ATR"]
     # Channel bounds of the previous bar (a breakout is measured against the prior bar's channel)
-    up_prev = df["DONCHIAN_UP_20"].iloc[-2]
-    lo_prev = df["DONCHIAN_LO_20"].iloc[-2]
-
+    up_prev = df["DONCHIAN_UP_20"].shift(1)
+    lo_prev = df["DONCHIAN_LO_20"].shift(1)
     # Is the move beyond the channel significant?
-    if pd.notna(up_prev) and close > up_prev and (close - up_prev) > atr_thresh * atr:
-        return "BUY", rsi, atr
-    elif pd.notna(lo_prev) and close < lo_prev and (lo_prev - close) > atr_thresh * atr:
-        return "SELL", rsi, atr
-    else:
-        return "-", rsi, atr
+    buy = (close > up_prev) & ((close - up_prev) > atr_thresh * atr)
+    sell = (close < lo_prev) & ((lo_prev - close) > atr_thresh * atr)
+    return _to_signals(df, buy, sell, warmup=20)
 
 
 # ====================================================
@@ -210,40 +163,22 @@ def generate_signals_v6_donchian_breakout(df, length=20, atr_thresh=0.2):
 # - SHORT: RSI rose above 60, then crosses back below 55
 # ====================================================
 def generate_signals_v7_trend_pullback_rsi(df):
-    if df is None or len(df) < 55:
-        return "-", None, None
-
-    df = _ensure_cols(df, ["EMA_21", "EMA_50", "ATR"])
-    rsi = df["RSI"].iloc[-1]
-    rsi_prev = df["RSI"].iloc[-2]
-    ema21 = df["EMA_21"].iloc[-1]
-    ema50 = df["EMA_50"].iloc[-1]
-    atr = df["ATR"].iloc[-1]
-
-    # Uptrend: look for longs only
-    if ema21 > ema50:
-        # Pullback: RSI was below 40, then crossed above 45
-        was_oversold = (df["RSI"].rolling(5).min().iloc[-2] < 40)  # below 40 within the last few candles
-        cross_up = (rsi_prev < 45) and (rsi >= 45)
-        if was_oversold and cross_up:
-            return "BUY", rsi, atr
-
-    # Downtrend: look for shorts only
-    if ema21 < ema50:
-        # Pullback: RSI was above 60, then crossed below 55
-        was_overbought = (df["RSI"].rolling(5).max().iloc[-2] > 60)
-        cross_down = (rsi_prev > 55) and (rsi <= 55)
-        if was_overbought and cross_down:
-            return "SELL", rsi, atr
-
-    return "-", rsi, atr
+    df = _ensure_cols(df, ["EMA_21", "EMA_50"])
+    rsi = df["RSI"]
+    rsi_prev = rsi.shift(1)
+    uptrend = df["EMA_21"] > df["EMA_50"]
+    downtrend = df["EMA_21"] < df["EMA_50"]
+    # RSI was below 40 / above 60 within the 5 candles before the current one
+    was_oversold = rsi.rolling(5).min().shift(1) < 40
+    was_overbought = rsi.rolling(5).max().shift(1) > 60
+    buy = uptrend & was_oversold & (rsi_prev < 45) & (rsi >= 45)
+    sell = downtrend & was_overbought & (rsi_prev > 55) & (rsi <= 55)
+    return _to_signals(df, buy, sell, warmup=54)
 
 
 # ==========================
 # Strategy registry
 # ==========================
-# Every strategy takes an OHLCV DataFrame with indicators (see indicators.add_indicators)
-# and returns (signal, rsi, atr), where signal is "BUY", "SELL" or "-".
 STRATEGY_DISPATCH = {
     "v1": generate_signals_v1,
     "v2": generate_signals_v2,

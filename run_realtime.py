@@ -70,7 +70,8 @@ def process_symbol(symbol):
 
     df = add_indicators(df)
 
-    signal, rsi, atr = strategy.get_strategy(STRATEGY)(df)
+    signal = strategy.get_strategy(STRATEGY)(df).iloc[-1]
+    rsi, atr = df["RSI"].iloc[-1], df["ATR"].iloc[-1]
 
     price = float(df['close'].iloc[-1])
     trader = traders[symbol]

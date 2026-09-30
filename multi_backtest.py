@@ -72,13 +72,12 @@ def backtest_one(df: pd.DataFrame, strat_key: str):
     # Current stop-loss level
     stop_loss = None
 
+    signals = fn(df)  # signals[i] only depends on candles 0..i
+
     # bar-by-bar simulation
     for i in range(max(30, 25), len(df)):
         row = df.iloc[i]
-        sub = df.iloc[:i+1]  # signals only see data up to this bar
-
-        # Signal
-        sig, rsi, atr = fn(sub)
+        sig, atr = signals.iloc[i], row["ATR"]
 
         close = float(row["close"])
         high  = float(row["high"])
