@@ -1,6 +1,7 @@
 # metrics.py
 """Performance metrics for a backtest run (trades + marked-to-market equity curve)."""
 import math
+from statistics import NormalDist
 
 import numpy as np
 import pandas as pd
@@ -40,6 +41,41 @@ def exposure_pct(trades, equity):
     for entry, exit_ in zip(trades["entry_time"], trades["exit_time"]):
         in_pos |= (times >= np.datetime64(entry)) & (times <= np.datetime64(exit_))
     return float(in_pos.mean() * 100)
+
+
+_N = NormalDist()
+EULER_GAMMA = 0.5772156649
+
+
+def probabilistic_sharpe(returns, sr_benchmark=0.0):
+    """Probability that the true per-period Sharpe exceeds `sr_benchmark`
+    (Bailey & Lopez de Prado), accounting for skewness and kurtosis of returns."""
+    r = pd.Series(returns).dropna()
+    t = len(r)
+    if t < 3 or not r.std(ddof=1) > 0:
+        return float("nan")
+    sr = r.mean() / r.std(ddof=1)
+    skew = r.skew()
+    kurt = r.kurt() + 3  # pandas gives excess kurtosis
+    denom = 1 - skew * sr + (kurt - 1) / 4 * sr ** 2
+    if denom <= 0:
+        return float("nan")
+    return _N.cdf((sr - sr_benchmark) * math.sqrt(t - 1) / math.sqrt(denom))
+
+
+def expected_max_sharpe(n_trials, sr_std):
+    """Expected maximum per-period Sharpe among n_trials skill-less strategies."""
+    if n_trials < 2:
+        return 0.0
+    return sr_std * ((1 - EULER_GAMMA) * _N.inv_cdf(1 - 1 / n_trials)
+                     + EULER_GAMMA * _N.inv_cdf(1 - 1 / (n_trials * math.e)))
+
+
+def deflated_sharpe(returns, n_trials, sr_std):
+    """Deflated Sharpe ratio: probabilistic Sharpe against the Sharpe that the best of
+    `n_trials` random strategies would reach by luck. sr_std is the standard deviation
+    of the per-period Sharpe ratios across the trials."""
+    return probabilistic_sharpe(returns, expected_max_sharpe(n_trials, sr_std))
 
 
 def compute_metrics(trades, equity, timeframe, initial_equity, closes=None):

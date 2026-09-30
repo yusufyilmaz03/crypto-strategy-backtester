@@ -66,3 +66,27 @@ def test_profit_factor_without_losses_is_inf():
     eq = _equity([1000, 1100])
     trades = _trades([(eq.index[0], eq.index[1], 100.0, 10.0, 0.0)])
     assert compute_metrics(trades, eq, "1h", 1000.0)["profit_factor"] == math.inf
+
+
+def test_probabilistic_sharpe():
+    import numpy as np
+    from metrics import probabilistic_sharpe
+
+    rng = np.random.default_rng(0)
+    good = pd.Series(rng.normal(0.002, 0.01, 2000))
+    noise = pd.Series(rng.normal(0.0, 0.01, 2000))
+    assert probabilistic_sharpe(good) > 0.99
+    assert 0.02 < probabilistic_sharpe(noise) < 0.98
+    # A higher benchmark can only lower the probability.
+    assert probabilistic_sharpe(good, 0.1) < probabilistic_sharpe(good, 0.0)
+    assert math.isnan(probabilistic_sharpe(pd.Series([0.01, 0.01, 0.01])))
+
+
+def test_deflated_sharpe_penalizes_many_trials():
+    import numpy as np
+    from metrics import deflated_sharpe, expected_max_sharpe
+
+    assert expected_max_sharpe(1, 0.05) == 0.0
+    assert expected_max_sharpe(100, 0.05) > expected_max_sharpe(10, 0.05) > 0
+    r = pd.Series(np.random.default_rng(1).normal(0.001, 0.01, 1000))
+    assert deflated_sharpe(r, 100, 0.03) < deflated_sharpe(r, 5, 0.03)
