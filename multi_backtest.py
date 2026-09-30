@@ -37,17 +37,6 @@ except Exception:
 
 binance = ccxt.binance({'enableRateLimit': True})
 
-# --- Strateji dispatch (run_realtime ile uyumlu) ---
-STRATEGY_DISPATCH = {
-    "v1": {"fn": strategy.generate_signals_v1, "returns_atr": False},
-    "v2": {"fn": strategy.generate_signals_v2, "returns_atr": False},
-    "v3": {"fn": strategy.generate_signals_v3, "returns_atr": True},
-    "v4": {"fn": strategy.generate_signals_v4_bbands_meanrev, "returns_atr": True},
-    "v5": {"fn": strategy.generate_signals_v5_ema_cross_filter, "returns_atr": True},
-    "v6": {"fn": strategy.generate_signals_v6_donchian_breakout, "returns_atr": True},
-    "v7": {"fn": strategy.generate_signals_v7_trend_pullback_rsi, "returns_atr": True},
-}
-
 def fetch_df(symbol, timeframe=TIMEFRAMES, limit=500):
     data = binance.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
     df = pd.DataFrame(data, columns=["timestamp","open","high","low","close","volume"])
@@ -76,11 +65,7 @@ def apply_commission_slippage(entry_price, exit_price, side):
     return net
 
 def backtest_one(df: pd.DataFrame, strat_key: str):
-    if strat_key not in STRATEGY_DISPATCH:
-        raise ValueError(f"Bilinmeyen strateji: {strat_key}")
-
-    fn = STRATEGY_DISPATCH[strat_key]["fn"]
-    returns_atr = STRATEGY_DISPATCH[strat_key]["returns_atr"]
+    fn = strategy.get_strategy(strat_key)
 
     position = None
     entry_price = None
@@ -97,17 +82,7 @@ def backtest_one(df: pd.DataFrame, strat_key: str):
         sub = df.iloc[:i+1]  # sinyal hesaplamaları geçmişe bakar
 
         # Sinyal
-        if returns_atr:
-            sig, rsi, atr = fn(sub)
-        else:
-            out = fn(sub)
-            if isinstance(out, tuple) and len(out) >= 2:
-                sig, rsi = out[0], out[1]
-            elif isinstance(out, tuple) and len(out) == 1:
-                sig, rsi = out[0], None
-            else:
-                sig, rsi = out, None
-            atr = sub["ATR"].iloc[-1] if "ATR" in sub.columns else None
+        sig, rsi, atr = fn(sub)
 
         close = float(row["close"])
         high  = float(row["high"])

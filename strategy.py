@@ -64,19 +64,20 @@ def _ensure_cols(df: pd.DataFrame, need_cols):
 # ==========================
 def generate_signals_v1(df):
     if df is None or len(df) < 21:
-        return "-", None
+        return "-", None, None
 
-    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
+    df = _ensure_cols(df, ["EMA_9", "EMA_21", "ATR"])
     rsi = df["RSI"].iloc[-1]
     ema9 = df["EMA_9"].iloc[-1]
     ema21 = df["EMA_21"].iloc[-1]
+    atr = df["ATR"].iloc[-1]
 
     if rsi < 40 and ema9 > ema21:
-        return "BUY", rsi
+        return "BUY", rsi, atr
     elif rsi > 60 and ema9 < ema21:
-        return "SELL", rsi
+        return "SELL", rsi, atr
     else:
-        return "-", rsi
+        return "-", rsi, atr
 
 
 # ==========================================
@@ -84,22 +85,23 @@ def generate_signals_v1(df):
 # ==========================================
 def generate_signals_v2(df):
     if df is None or len(df) < 25:
-        return "-", None
+        return "-", None, None
 
-    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
+    df = _ensure_cols(df, ["EMA_9", "EMA_21", "ATR"])
     recent = df.iloc[-3:]  # son 3 mum
 
     buy_cond = (recent["RSI"] < 45) & (recent["EMA_9"] > recent["EMA_21"])
     sell_cond = (recent["RSI"] > 55) & (recent["EMA_9"] < recent["EMA_21"])
 
     rsi = df["RSI"].iloc[-1]
+    atr = df["ATR"].iloc[-1]
 
     if buy_cond.all():
-        return "BUY", rsi
+        return "BUY", rsi, atr
     elif sell_cond.all():
-        return "SELL", rsi
+        return "SELL", rsi, atr
     else:
-        return "-", rsi
+        return "-", rsi, atr
 
 
 # =====================================
@@ -236,3 +238,26 @@ def generate_signals_v7_trend_pullback_rsi(df):
             return "SELL", rsi, atr
 
     return "-", rsi, atr
+
+
+# ==========================
+# Strategy registry
+# ==========================
+# Every strategy takes an OHLCV DataFrame with indicators (see indicators.add_indicators)
+# and returns (signal, rsi, atr), where signal is "BUY", "SELL" or "-".
+STRATEGY_DISPATCH = {
+    "v1": generate_signals_v1,
+    "v2": generate_signals_v2,
+    "v3": generate_signals_v3,
+    "v4": generate_signals_v4_bbands_meanrev,
+    "v5": generate_signals_v5_ema_cross_filter,
+    "v6": generate_signals_v6_donchian_breakout,
+    "v7": generate_signals_v7_trend_pullback_rsi,
+}
+
+
+def get_strategy(key):
+    """Return the signal function registered under `key`."""
+    if key not in STRATEGY_DISPATCH:
+        raise ValueError(f"Unknown strategy: {key}")
+    return STRATEGY_DISPATCH[key]

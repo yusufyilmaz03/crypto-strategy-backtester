@@ -31,17 +31,6 @@ limit = 100
 binance = ccxt.binance({'enableRateLimit': True})
 traders = {symbol: PaperTrader() for symbol in symbols}
 
-# Strateji dispatch (v1/v2: (sig,rsi); v3+: (sig,rsi,atr))
-STRATEGY_DISPATCH = {
-    "v1": {"fn": strategy.generate_signals_v1, "returns_atr": False},
-    "v2": {"fn": strategy.generate_signals_v2, "returns_atr": False},
-    "v3": {"fn": strategy.generate_signals_v3, "returns_atr": True},
-    "v4": {"fn": strategy.generate_signals_v4_bbands_meanrev, "returns_atr": True},
-    "v5": {"fn": strategy.generate_signals_v5_ema_cross_filter, "returns_atr": True},
-    "v6": {"fn": strategy.generate_signals_v6_donchian_breakout, "returns_atr": True},
-    "v7": {"fn": strategy.generate_signals_v7_trend_pullback_rsi, "returns_atr": True},
-}
-
 def get_ohlcv(symbol):
     try:
         data = binance.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
@@ -81,24 +70,7 @@ def process_symbol(symbol):
 
     df = add_indicators(df)
 
-    # strateji seçimi
-    if STRATEGY not in STRATEGY_DISPATCH:
-        raise ValueError(f"Bilinmeyen strateji: {STRATEGY}")
-    strat = STRATEGY_DISPATCH[STRATEGY]
-    fn = strat["fn"]; returns_atr = strat["returns_atr"]
-
-    if returns_atr:
-        out = fn(df)  # (sig, rsi, atr)
-        signal, rsi, atr = ("-", None, None) if not isinstance(out, tuple) else (out + (None,))[:3]
-    else:
-        out = fn(df)  # (sig, rsi) | "sig"
-        if isinstance(out, tuple) and len(out) >= 2:
-            signal, rsi = out[0], out[1]
-        elif isinstance(out, tuple) and len(out) == 1:
-            signal, rsi = out[0], None
-        else:
-            signal, rsi = out, None
-        atr = df["ATR"].iloc[-1] if "ATR" in df.columns else None
+    signal, rsi, atr = strategy.get_strategy(STRATEGY)(df)
 
     price = float(df['close'].iloc[-1])
     trader = traders[symbol]
