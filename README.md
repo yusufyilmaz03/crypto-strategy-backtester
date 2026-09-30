@@ -98,6 +98,8 @@ pytest
 3. Test windows are chained into one out-of-sample equity curve per symbol. The same windows are re-run with fees and slippage × `COST_STRESS`.
 4. Per strategy/timeframe, the symbols' out-of-sample curves form an equal-weight portfolio that is compared with an equal-weight buy-and-hold portfolio. A deflated Sharpe ratio accounts for having picked the best of all candidates.
 
+Phase 2b (trend following and rotation on 4h/1d) was pre-registered in [docs/phase2b-preregistration.md](docs/phase2b-preregistration.md), which also lists the results. `research.py` holds out the last `HOLDOUT_FRACTION` of each timeframe; `research.py --holdout` tests only the finalists, once.
+
 A candidate passes when its portfolio return and cost-stressed return are positive, its Sharpe beats buy-and-hold, it has at least 30 trades and its deflated Sharpe ratio is at least 0.95.
 
 ## Notes and limitations

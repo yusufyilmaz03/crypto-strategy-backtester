@@ -51,3 +51,28 @@ Holdout (finalists only, evaluated once): return > 0 and Sharpe > buy-and-hold S
   those 4 symbols were seen before the full development run. Nothing in the design,
   grids, criteria or holdout boundary was changed afterwards. If v9 or R1 become
   finalists, their holdout result is reported with this caveat.
+
+## Results (development run, 2026-09-30)
+
+Holdout boundaries: 4h from 2026-05-07, 1d from 2025-12-12. Symbols with fewer than
+500 development candles were skipped (6 on 1d).
+
+| Candidate | Symbols | Return | Buy & hold | Costs × 1.5 | Sharpe (B&H) | Max DD (B&H) | Trades | DSR |
+|---|---|---|---|---|---|---|---|---|
+| v9 1d | 36 | +36.7% | −26.6% | +32.5% | 0.62 (0.19) | 41% (72%) | 684 | 0.01 |
+| v8 1d | 36 | +19.0% | −26.6% | +14.0% | 0.43 (0.19) | 42% (72%) | 949 | 0.01 |
+| R1 1d | 42 | −11.0% | −25.5% | −16.3% | 0.41 (0.21) | 79% (74%) | 131 | 0.00 |
+| v10 1d | 36 | +1.2% | −26.6% | +1.2% | 0.39 (0.19) | 1% (72%) | 13 | 0.00 |
+| v10 4h | 42 | −26.1% | −61.0% | −28.6% | −1.31 (−0.95) | 30% (73%) | 923 | 0.00 |
+| v9 4h | 42 | −40.9% | −61.0% | −45.0% | −1.57 (−0.95) | 52% (73%) | 1965 | 0.00 |
+| v8 4h | 42 | −48.5% | −61.0% | −53.4% | −1.91 (−0.95) | 61% (73%) | 2706 | 0.00 |
+
+**No candidate passed; there are no finalists, so the holdout stays unused.**
+
+v9 1d and v8 1d meet every criterion except the deflated Sharpe ratio. v9 1d
+beat buy-and-hold over roughly 700 days mainly by being out of the market during
+declines, and it survives the cost stress. But its Sharpe of 0.62 over about 1.9
+years corresponds to a t-statistic of roughly 0.86, and even before deflation the
+probabilistic Sharpe is well below 0.95. Across walk-forward folds the result is
+uneven (one strongly positive fold, the others flat or negative). The most chosen
+parameter set was close > SMA(50) without a stop (110 of 180 symbol-folds).
