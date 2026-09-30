@@ -97,7 +97,7 @@ class SymbolRunner:
                     self.store.log_signal(self.key, self.timeframe, self.symbol, row["timestamp"], sig,
                                           row["RSI"], row["close"], side, describe_action(self.engine, sig))
                 t, eq = self.engine.equity_curve[-1]
-                self.store.log_equity(self.key, self.timeframe, self.symbol, t, eq)
+                self.store.log_equity(self.key, self.timeframe, self.symbol, t, eq, row["close"])
                 self.store.save_state(self.symbol, self.key, self.timeframe,
                                       self.engine.to_state(), row["timestamp"])
             self.engine.equity_curve.clear()  # already stored; keep memory flat

@@ -33,7 +33,7 @@
   </div>
 
   <div class="mt-2">
-    <h4>📈 Portfolio return (%)</h4>
+    <h4>📈 Portfolio return vs buy &amp; hold (%)</h4>
     <canvas id="equityChart" height="90"></canvas>
   </div>
 
@@ -107,8 +107,10 @@
     equityChart = new Chart(document.getElementById("equityChart").getContext("2d"), {
       type: "line",
       data: { labels: data.labels,
-              datasets: [{ label: "Return %", data: data.return_pct, borderColor: "teal",
-                           pointRadius: 0, fill: false }] },
+              datasets: [{ label: "Strategy return %", data: data.return_pct, borderColor: "teal",
+                           pointRadius: 0, fill: false },
+                         { label: "Buy & hold (equal weight) %", data: data.buy_hold_pct,
+                           borderColor: "gray", borderDash: [5, 5], pointRadius: 0, fill: false }] },
       options: { scales: { x: { ticks: { maxTicksLimit: 10 } } } }
     });
   }

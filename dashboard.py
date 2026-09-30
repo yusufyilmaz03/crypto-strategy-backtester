@@ -118,12 +118,23 @@ def pnl_data():
     })
 
 
+def buy_and_hold():
+    """Equal-weight buy-and-hold of the traded symbols over the same candles, as return %."""
+    eq = load_table("equity", "time")
+    if eq.empty or eq["close"].isna().all():
+        return pd.Series(dtype=float)
+    closes = eq.pivot_table(index="time", columns="symbol", values="close").sort_index()
+    return ((1 + closes.pct_change().mean(axis=1, skipna=True).fillna(0)).cumprod() - 1) * 100
+
+
 @app.route("/equity_data")
 def equity_data():
     eq = portfolio_equity()
     start_equity = config.INITIAL_EQUITY * len(config.SYMBOLS)
+    bh = buy_and_hold().reindex(eq.index)
     return jsonify({"labels": eq.index.tolist(),
-                    "return_pct": ((eq / start_equity - 1) * 100).round(4).tolist()})
+                    "return_pct": ((eq / start_equity - 1) * 100).round(4).tolist(),
+                    "buy_hold_pct": [None if pd.isna(v) else round(float(v), 4) for v in bh]})
 
 
 @app.route("/last_trade")

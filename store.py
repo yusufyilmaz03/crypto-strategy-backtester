@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS signals (
     timeframe TEXT, signal TEXT, rsi REAL, close REAL, position TEXT, action TEXT
 );
 CREATE TABLE IF NOT EXISTS equity (
-    symbol TEXT, strategy TEXT, timeframe TEXT, time TEXT, equity REAL,
+    symbol TEXT, strategy TEXT, timeframe TEXT, time TEXT, equity REAL, close REAL,
     PRIMARY KEY (symbol, strategy, timeframe, time)
 );
 """
@@ -46,6 +46,10 @@ class PaperStore:
     def __init__(self, path=DB_FILE):
         self.conn = sqlite3.connect(path)
         self.conn.executescript(SCHEMA)
+        # databases created before the close column existed
+        cols = [r[1] for r in self.conn.execute("PRAGMA table_info(equity)")]
+        if "close" not in cols:
+            self.conn.execute("ALTER TABLE equity ADD COLUMN close REAL")
         self.conn.commit()
 
     def close(self):
@@ -97,9 +101,12 @@ class PaperStore:
             (_t(candle_time), symbol, strategy, timeframe, signal, _f(rsi), _f(close),
              position or "NONE", action))
 
-    def log_equity(self, strategy, timeframe, symbol, time, equity):
-        self.conn.execute("INSERT OR REPLACE INTO equity VALUES (?, ?, ?, ?, ?)",
-                          (symbol, strategy, timeframe, _t(time), float(equity)))
+    def log_equity(self, strategy, timeframe, symbol, time, equity, close=None):
+        """Marked-to-market equity and the candle's close (for buy-and-hold comparisons)."""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO equity (symbol, strategy, timeframe, time, equity, close)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (symbol, strategy, timeframe, _t(time), float(equity), _f(close)))
 
     # ---------- reads (dashboard) ----------
     def read(self, table, where="", params=()):

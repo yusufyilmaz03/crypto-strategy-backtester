@@ -56,3 +56,24 @@ def test_empty_database(tmp_path, monkeypatch):
     c = dashboard.app.test_client()
     for url in ["/", "/signals", "/trades", "/pnl_data", "/equity_data", "/last_trade"]:
         assert c.get(url).status_code == 200, url
+
+
+def test_buy_and_hold_line(client):
+    c, _ = client
+    data = json.loads(c.get("/equity_data").data)
+    closes = FULL.close.iloc[299:]   # candles fed to the engine (first one only sets the start)
+    expected = (closes.iloc[-1] / closes.iloc[1] - 1) * 100
+    assert data["buy_hold_pct"][-1] == pytest.approx(expected, abs=1e-3)  # endpoint rounds to 4 decimals
+    assert len(data["buy_hold_pct"]) == len(data["return_pct"])
+
+
+def test_store_adds_close_column_to_old_databases(tmp_path):
+    import sqlite3
+    db = tmp_path / "old.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE equity (symbol TEXT, strategy TEXT, timeframe TEXT, time TEXT, "
+                     "equity REAL, PRIMARY KEY (symbol, strategy, timeframe, time))")
+    s = PaperStore(str(db))
+    with s.candle():
+        s.log_equity("r", "1d", "A", "2026-01-01", 1000.0, 10.0)
+    assert s.read("equity")["close"].tolist() == [10.0]
