@@ -29,7 +29,6 @@ A Python research tool for testing technical trading strategies on historical cr
 ├── config.py            # symbols, timeframes, strategy, stop-loss, fee and slippage settings
 ├── indicators.py        # RSI, EMA, ATR
 ├── strategy.py          # signal generators v1–v7
-├── backtest.py          # single-symbol backtest
 ├── multi_backtest.py    # grid backtest → multi_backtest_strategies.csv
 ├── paper_trader.py      # simulated position management
 ├── run_realtime.py      # live signal loop with paper trading
