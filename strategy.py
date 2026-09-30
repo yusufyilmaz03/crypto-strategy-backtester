@@ -9,25 +9,14 @@ has closed (tests/test_strategy.py checks this for every strategy).
 import numpy as np
 import pandas as pd
 
+from indicators import atr as _atr
+
 # ==========================
 # Helper calculations
 # ==========================
 
 def _ema(series: pd.Series, length: int):
     return series.ewm(span=length, adjust=False).mean()
-
-def _atr(df: pd.DataFrame, length: int = 14):
-    # True Range
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
-    prev_close = close.shift(1)
-    tr = pd.concat([
-        (high - low),
-        (high - prev_close).abs(),
-        (low - prev_close).abs()
-    ], axis=1).max(axis=1)
-    return tr.rolling(length).mean()
 
 def _bbands(close: pd.Series, length: int = 20, mult: float = 2.0):
     ma = close.rolling(length).mean()

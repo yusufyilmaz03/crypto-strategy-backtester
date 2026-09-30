@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from conftest import make_ohlcv
-from indicators import add_indicators, rma, rsi
+from indicators import add_indicators, atr, rma, rsi
 
 
 def test_rma_matches_wilder_definition():
@@ -44,3 +45,13 @@ def test_add_indicators_columns():
     for col in ["RSI", "EMA_9", "EMA_21", "ATR"]:
         assert col in df.columns
     assert not any(c in df.columns for c in ["H-L", "H-C", "L-C", "TR"])
+
+
+def test_atr_uses_wilder_smoothing_of_true_range():
+    df = make_ohlcv(100, seed=8)
+    prev = df["close"].shift()
+    tr = pd.concat([df.high - df.low, (df.high - prev).abs(), (df.low - prev).abs()], axis=1).max(axis=1)
+    got = atr(df, 14)
+    assert got.iloc[:13].isna().all()
+    assert got.iloc[13] == pytest.approx(tr.iloc[:14].mean())
+    assert got.iloc[14] == pytest.approx(got.iloc[13] + (tr.iloc[14] - got.iloc[13]) / 14)

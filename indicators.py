@@ -27,6 +27,17 @@ def rsi(close, length=14):
     return out.where(avg_loss != 0, 100.0).where(avg_gain.notna())
 
 
+def atr(df, length=14):
+    """Average True Range with Wilder smoothing (TradingView ta.atr)."""
+    prev_close = df["close"].shift()
+    tr = pd.concat([
+        df["high"] - df["low"],
+        (df["high"] - prev_close).abs(),
+        (df["low"] - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    return rma(tr, length)
+
+
 def add_indicators(df):
     df["RSI"] = rsi(df["close"], 14)
 
@@ -34,13 +45,6 @@ def add_indicators(df):
     df["EMA_9"] = df["close"].ewm(span=9, adjust=False).mean()
     df["EMA_21"] = df["close"].ewm(span=21, adjust=False).mean()
 
-    # ATR (Average True Range, simple moving average of the true range)
-    prev_close = df["close"].shift()
-    tr = pd.concat([
-        df["high"] - df["low"],
-        (df["high"] - prev_close).abs(),
-        (df["low"] - prev_close).abs(),
-    ], axis=1).max(axis=1)
-    df["ATR"] = tr.rolling(window=14).mean()
+    df["ATR"] = atr(df, 14)
 
     return df
