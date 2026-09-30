@@ -38,7 +38,7 @@ def get_ohlcv(symbol):
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         return df
     except Exception as e:
-        print(f"Veri hatası ({symbol}): {e}")
+        print(f"Data error ({symbol}): {e}")
         return None
 
 def log_signal_to_csv(symbol, signal, rsi, price, position_status, position_opened, position_closed, stop_loss=None):
@@ -79,20 +79,20 @@ def process_symbol(symbol):
     position_opened = False
     position_closed = False
 
-    # ATR tabanlı SL mesafesi
+    # ATR-based stop distance
     candidate_sl_dist = (atr * ATR_MULTIPLIER) if (atr is not None and pd.notna(atr)) else None
 
-    # Aktif pozisyon varsa SL kontrolü
+    # Stop-loss check for the open position
     if trader.check_stop_loss(price):
         position_closed = True
 
-    # Sinyal varsa logla + uygula
+    # On a signal: log it and act on it
     if signal in ("BUY", "SELL"):
         sl_for_log = None
         if candidate_sl_dist is not None:
             sl_for_log = price - candidate_sl_dist if signal == "BUY" else price + candidate_sl_dist
 
-        # Sinyali logla
+        # Log the signal
         log_signal_to_csv(
             symbol, signal, rsi, price,
             position_status=position_status,
@@ -101,7 +101,7 @@ def process_symbol(symbol):
             stop_loss=sl_for_log
         )
 
-        # Trade yönetimi
+        # Trade management
         if signal == "BUY":
             if not trader.status():
                 trader.position_symbol = symbol
@@ -126,15 +126,15 @@ def process_symbol(symbol):
 
     sl_show = f"{trader.stop_loss:.6f}" if trader.stop_loss is not None else "-"
     rsi_show = f"{rsi:.2f}" if rsi is not None else "-"
-    print(f"[{symbol}] Sinyal: {signal or '-'} | RSI: {rsi_show} | Fiyat: {price:.4f} | SL: {sl_show}")
+    print(f"[{symbol}] Signal: {signal or '-'} | RSI: {rsi_show} | Price: {price:.4f} | SL: {sl_show}")
 
 def main():
-    print("📡 Realtime takip başlatıldı...\n")
+    print("📡 Realtime monitoring started...\n")
     while True:
         for symbol in symbols:
             process_symbol(symbol)
             time.sleep(1.2)
-        print("\n⏳ 1 dakika bekleniyor...\n")
+        print("\n⏳ Waiting 1 minute...\n")
         time.sleep(60)
 
 if __name__ == "__main__":

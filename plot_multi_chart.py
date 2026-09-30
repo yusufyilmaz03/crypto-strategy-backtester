@@ -1,13 +1,13 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# CSV dosyasını oku
+# Load the CSV
 df = pd.read_csv("multi_backtest_strategies.csv")  # output of multi_backtest.py
 
-# Sadece kârlı işlemler
+# Profitable combinations only
 df_positive = df[df["Total PnL"] > 0].sort_values(by="Total PnL", ascending=True)
 
-# Grafik: Yatay çubuk grafik
+# Horizontal bar chart
 plt.figure(figsize=(12, 6))
 plt.barh(df_positive["Symbol"] + " " + df_positive["Timeframe"] + " " + df_positive["Strategy"], df_positive["Total PnL"], color='green')
 plt.xlabel("Total PnL (quote currency, per 1 unit position)")

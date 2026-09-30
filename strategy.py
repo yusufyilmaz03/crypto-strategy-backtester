@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # ==========================
-# Yardımcı hesaplamalar
+# Helper calculations
 # ==========================
 
 def _ema(series: pd.Series, length: int):
@@ -35,7 +35,7 @@ def _donchian(df: pd.DataFrame, length: int = 20):
     return upper, lower
 
 def _ensure_cols(df: pd.DataFrame, need_cols):
-    """Gereken kolonlar yoksa yerinde üretmeye çalışır."""
+    """Compute any of the required indicator columns that are missing (on a copy)."""
     out = df.copy()
 
     if "EMA_9" in need_cols and "EMA_9" not in out.columns:
@@ -60,7 +60,7 @@ def _ensure_cols(df: pd.DataFrame, need_cols):
 
 
 # ==========================
-# v1: Basit RSI + EMA kesişim
+# v1: Simple RSI + EMA crossover
 # ==========================
 def generate_signals_v1(df):
     if df is None or len(df) < 21:
@@ -81,14 +81,14 @@ def generate_signals_v1(df):
 
 
 # ==========================================
-# v2: Son 3 mum ile filtrelenmiş RSI + EMA
+# v2: RSI + EMA, confirmed on the last 3 candles
 # ==========================================
 def generate_signals_v2(df):
     if df is None or len(df) < 25:
         return "-", None, None
 
     df = _ensure_cols(df, ["EMA_9", "EMA_21", "ATR"])
-    recent = df.iloc[-3:]  # son 3 mum
+    recent = df.iloc[-3:]  # last 3 candles
 
     buy_cond = (recent["RSI"] < 45) & (recent["EMA_9"] > recent["EMA_21"])
     sell_cond = (recent["RSI"] > 55) & (recent["EMA_9"] < recent["EMA_21"])
@@ -105,7 +105,7 @@ def generate_signals_v2(df):
 
 
 # =====================================
-# v3: ATR stop-loss destekli strateji
+# v3: RSI + EMA with ATR for stop-loss sizing
 # =====================================
 def generate_signals_v3(df, atr_multiplier=1.5):
     if df is None or len(df) < 15:
@@ -126,10 +126,10 @@ def generate_signals_v3(df, atr_multiplier=1.5):
 
 
 # ====================================================
-# v4: Bollinger Mean-Reversion (BBANDS + RSI filtre)
-# - Aşırı hareket → ortalamaya dönüş beklentisi
-# - BUY: close < lower band ve RSI < 35
-# - SELL: close > upper band ve RSI > 65
+# v4: Bollinger mean reversion (BBANDS + RSI filter)
+# - Overextended move -> expect reversion to the mean
+# - BUY: close < lower band and RSI < 35
+# - SELL: close > upper band and RSI > 65
 # ====================================================
 def generate_signals_v4_bbands_meanrev(df):
     if df is None or len(df) < 25:
@@ -151,10 +151,10 @@ def generate_signals_v4_bbands_meanrev(df):
 
 
 # ====================================================
-# v5: EMA Cross + Trend Filtresi (yalnız trend yönü)
-# - BUY: EMA9>EMA21 ve close>EMA21 ve RSI>45
-# - SELL: EMA9<EMA21 ve close<EMA21 ve RSI<55
-# (Trend yönü dışında gelen çaprazları eleyerek whipsaw azaltma)
+# v5: EMA cross + trend filter (trade with the trend only)
+# - BUY: EMA9>EMA21 and close>EMA21 and RSI>45
+# - SELL: EMA9<EMA21 and close<EMA21 and RSI<55
+# (Filtering out counter-trend crosses reduces whipsaws)
 # ====================================================
 def generate_signals_v5_ema_cross_filter(df):
     if df is None or len(df) < 25:
@@ -177,10 +177,10 @@ def generate_signals_v5_ema_cross_filter(df):
 
 
 # ====================================================
-# v6: Donchian Breakout (20) + ATR eşiği
-# - BUY: close > 20-bar high ve (close - high_prev) > 0.2*ATR
-# - SELL: close < 20-bar low  ve (low_prev - close) > 0.2*ATR
-# (Sahte kırılımları ATR ile filtreler)
+# v6: Donchian breakout (20) + ATR threshold
+# - BUY: close > 20-bar high and (close - high_prev) > 0.2*ATR
+# - SELL: close < 20-bar low  and (low_prev - close) > 0.2*ATR
+# (ATR threshold filters out false breakouts)
 # ====================================================
 def generate_signals_v6_donchian_breakout(df, length=20, atr_thresh=0.2):
     if df is None or len(df) < length + 1:
@@ -191,11 +191,11 @@ def generate_signals_v6_donchian_breakout(df, length=20, atr_thresh=0.2):
     atr = df["ATR"].iloc[-1]
     rsi = df["RSI"].iloc[-1]
 
-    # Önceki barın kanal sınırları (teknik olarak kırılım "geçen bar" referansı ile ölçülür)
+    # Channel bounds of the previous bar (a breakout is measured against the prior bar's channel)
     up_prev = df["DONCHIAN_UP_20"].iloc[-2]
     lo_prev = df["DONCHIAN_LO_20"].iloc[-2]
 
-    # Kırılım sonrası hareket anlamlı mı?
+    # Is the move beyond the channel significant?
     if pd.notna(up_prev) and close > up_prev and (close - up_prev) > atr_thresh * atr:
         return "BUY", rsi, atr
     elif pd.notna(lo_prev) and close < lo_prev and (lo_prev - close) > atr_thresh * atr:
@@ -205,10 +205,10 @@ def generate_signals_v6_donchian_breakout(df, length=20, atr_thresh=0.2):
 
 
 # ====================================================
-# v7: Trend + RSI Pullback/Cross
-# - Trend filtresi: EMA21 > EMA50 ise yalnız LONG; EMA21 < EMA50 ise yalnız SHORT
-# - LONG: RSI, 40 altına indikten sonra 45 üstüne geri CROSS yaparsa (pullback bitti sinyali)
-# - SHORT: RSI, 60 üstüne çıktıktan sonra 55 altına geri CROSS yaparsa
+# v7: Trend + RSI pullback/cross
+# - Trend filter: EMA21 > EMA50 -> LONG only; EMA21 < EMA50 -> SHORT only
+# - LONG: RSI dipped below 40, then crosses back above 45 (pullback is over)
+# - SHORT: RSI rose above 60, then crosses back below 55
 # ====================================================
 def generate_signals_v7_trend_pullback_rsi(df):
     if df is None or len(df) < 55:
@@ -221,17 +221,17 @@ def generate_signals_v7_trend_pullback_rsi(df):
     ema50 = df["EMA_50"].iloc[-1]
     atr = df["ATR"].iloc[-1]
 
-    # Uptrend: sadece long arıyoruz
+    # Uptrend: look for longs only
     if ema21 > ema50:
-        # Pullback: önce RSI<40 olmuş olsun, sonra 45'i yukarı kesmiş olsun
-        was_oversold = (df["RSI"].rolling(5).min().iloc[-2] < 40)  # son birkaç mumda 40 altı
+        # Pullback: RSI was below 40, then crossed above 45
+        was_oversold = (df["RSI"].rolling(5).min().iloc[-2] < 40)  # below 40 within the last few candles
         cross_up = (rsi_prev < 45) and (rsi >= 45)
         if was_oversold and cross_up:
             return "BUY", rsi, atr
 
-    # Downtrend: sadece short arıyoruz
+    # Downtrend: look for shorts only
     if ema21 < ema50:
-        # Pullback: önce RSI>60 olmuş olsun, sonra 55'i aşağı kesmiş olsun
+        # Pullback: RSI was above 60, then crossed below 55
         was_overbought = (df["RSI"].rolling(5).max().iloc[-2] > 60)
         cross_down = (rsi_prev > 55) and (rsi <= 55)
         if was_overbought and cross_down:

@@ -46,12 +46,12 @@ STOPLOSS_CONFIG = {
 STOPLOSS_MODE = "loose"
 ATR_MULTIPLIER = STOPLOSS_CONFIG[STOPLOSS_MODE]
 
-# ===== Ücret & Slippage Ayarları =====
-# Spot taker fee oranı (örn. %0.1 = 0.001). İstersen borsadaki gerçek orana göre değiştir.
+# ===== Fee & slippage settings =====
+# Spot taker fee rate (e.g. 0.1% = 0.001). Adjust to your actual exchange rate.
 FEE_RATE_TAKER = 0.0010
 
-# Slippage (basis points). 1 bps = %0.01. Örn. 5 bps = %0.05 = 0.0005
+# Slippage in basis points. 1 bps = 0.01%, e.g. 5 bps = 0.05% = 0.0005
 SLIPPAGE_BPS = 5
 
-# (Opsiyonel) pozisyon büyüklüğü (şimdilik 1 birimle çalışıyoruz)
+# (Optional) position size; currently everything uses 1 unit
 POSITION_SIZE = 1.0

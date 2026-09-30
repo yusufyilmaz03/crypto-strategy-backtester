@@ -1,9 +1,9 @@
 <!-- templates/backtest.html -->
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Backtest Karşılaştırma</title>
+  <title>Backtest Comparison</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link
     href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
@@ -17,11 +17,11 @@
 </head>
 <body>
   <div class="container-fluid">
-    <h3 class="mb-3">Backtest Karşılaştırma</h3>
+    <h3 class="mb-3">Backtest Comparison</h3>
 
     <a href="/" class="btn btn-secondary mb-3">⬅ Back</a>
 
-    <!-- Filtreler -->
+    <!-- Filters -->
     <div class="row g-2 mb-3">
       <div class="col-12 col-md-3">
         <label class="form-label">Strategy</label>
@@ -36,17 +36,17 @@
         <select id="tfFilter" class="form-select" multiple></select>
       </div>
       <div class="col-12 col-md-3 d-flex align-items-end gap-2">
-        <button id="applyBtn" class="btn btn-primary w-100">Uygula</button>
-        <button id="clearBtn" class="btn btn-secondary">Temizle</button>
+        <button id="applyBtn" class="btn btn-primary w-100">Apply</button>
+        <button id="clearBtn" class="btn btn-secondary">Clear</button>
       </div>
     </div>
 
-    <!-- Grafik modu -->
+    <!-- Chart mode -->
     <div class="d-flex align-items-center gap-2 mb-2">
       <div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" id="aggSwitch" />
         <label class="form-check-label" for="aggSwitch">
-          Kümülatif (Strategy toplam PnL)
+          Aggregate (total PnL per strategy)
         </label>
       </div>
     </div>
@@ -58,7 +58,7 @@
       </div>
     </div>
 
-    <!-- Tablo -->
+    <!-- Table -->
     <div class="card">
       <div class="card-body">
         <div class="table-wrap">
@@ -174,7 +174,7 @@
       if (chart) chart.destroy();
 
       if (aggregateMode) {
-        // Kümülatif: Strategy başına TotalPnL toplamı
+        // Aggregate: sum of TotalPnL per strategy
         const byStrat = {};
         rows.forEach(r => {
           const k = r.Strategy || "N/A";
@@ -186,7 +186,7 @@
           type: "bar",
           data: {
             labels,
-            datasets: [{ label: "Toplam PnL", data }]
+            datasets: [{ label: "Total PnL", data }]
           },
           options: {
             responsive: true,
@@ -195,7 +195,7 @@
           }
         });
       } else {
-        // Detay: her satırı ayrı bar
+        // Detail: one bar per row
         const labels = rows.map(r => `${r.Symbol} • ${r.Timeframe} • ${r.Strategy}`);
         const data = rows.map(r => +r.TotalPnL || 0);
         chart = new Chart(ctx, {

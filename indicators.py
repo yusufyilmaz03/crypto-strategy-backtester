@@ -9,7 +9,7 @@ def add_indicators(df):
     rs = gain / loss
     df["RSI"] = 100 - (100 / (1 + rs))
 
-    # EMA'lar
+    # EMAs
     df["EMA_9"] = df["close"].ewm(span=9, adjust=False).mean()
     df["EMA_21"] = df["close"].ewm(span=21, adjust=False).mean()
 
@@ -20,7 +20,7 @@ def add_indicators(df):
     df["TR"] = df[["H-L", "H-C", "L-C"]].max(axis=1)
     df["ATR"] = df["TR"].rolling(window=14).mean()
 
-    # Gereksiz sütunları sil
+    # Drop helper columns
     df.drop(columns=["H-L", "H-C", "L-C", "TR"], inplace=True)
 
     return df

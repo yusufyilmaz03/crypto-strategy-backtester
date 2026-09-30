@@ -7,7 +7,7 @@ import strategy
 import os
 import csv
 
-# --- config opsiyonelleri ---
+# --- optional config values ---
 try:
     from config import SYMBOLS
 except Exception:
@@ -21,7 +21,6 @@ except Exception:
 try:
     from config import STRATEGY_LIST
 except Exception:
-    # varsayılan; v1–v7 hepsini test etmek istersen burada listeyi genişlet
     STRATEGY_LIST = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"]
 
 try:
@@ -37,7 +36,7 @@ except Exception:
 
 binance = ccxt.binance({'enableRateLimit': True})
 
-def fetch_df(symbol, timeframe=TIMEFRAMES, limit=500):
+def fetch_df(symbol, timeframe, limit=500):
     data = binance.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
     df = pd.DataFrame(data, columns=["timestamp","open","high","low","close","volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -45,10 +44,10 @@ def fetch_df(symbol, timeframe=TIMEFRAMES, limit=500):
 
 def apply_commission_slippage(entry_price, exit_price, side):
     """
-    side: 'LONG' veya 'SHORT'
-    Komisyonu her iki işlemde de uygula; slippage'ı giriş/çıkışta basit ekle.
+    side: 'LONG' or 'SHORT'
+    Apply the fee on both legs and a simple slippage on entry and exit.
     """
-    # slippage (bps) -> oransal
+    # slippage (bps) -> fraction
     slip = SLIPPAGE_BPS / 10000.0
     if side == "LONG":
         adj_entry = entry_price * (1 + slip)
@@ -59,7 +58,7 @@ def apply_commission_slippage(entry_price, exit_price, side):
         adj_exit  = exit_price * (1 + slip)
         gross = adj_entry - adj_exit
 
-    # komisyon: her işlemde fiyata oransal kabul ediyoruz (al/sat ayrı ayrı)
+    # fee: proportional to price on each leg (buy and sell)
     commission = (entry_price + exit_price) * FEE_RATE_TAKER
     net = gross - commission
     return net
@@ -73,22 +72,22 @@ def backtest_one(df: pd.DataFrame, strat_key: str):
     total_pnl = 0.0
     trade_count = 0
 
-    # Stop-loss seviyesini sakla
+    # Current stop-loss level
     stop_loss = None
 
-    # bar-bar simülasyon
+    # bar-by-bar simulation
     for i in range(max(30, 25), len(df)):
         row = df.iloc[i]
-        sub = df.iloc[:i+1]  # sinyal hesaplamaları geçmişe bakar
+        sub = df.iloc[:i+1]  # signals only see data up to this bar
 
-        # Sinyal
+        # Signal
         sig, rsi, atr = fn(sub)
 
         close = float(row["close"])
         high  = float(row["high"])
         low   = float(row["low"])
 
-        # Açık pozisyon için SL kontrolü
+        # Stop-loss check for the open position
         if position is not None and stop_loss is not None:
             if position == "LONG" and low <= stop_loss:
                 pnl = apply_commission_slippage(entry_price, stop_loss, "LONG")
@@ -97,7 +96,7 @@ def backtest_one(df: pd.DataFrame, strat_key: str):
                 position = None
                 entry_price = None
                 stop_loss = None
-                # SL tetiklendiyse bu bar içinde yeni sinyal kullanmayalım
+                # If the stop was hit, ignore new signals on this bar
                 continue
             elif position == "SHORT" and high >= stop_loss:
                 pnl = apply_commission_slippage(entry_price, stop_loss, "SHORT")
@@ -108,7 +107,7 @@ def backtest_one(df: pd.DataFrame, strat_key: str):
                 stop_loss = None
                 continue
 
-        # Sinyal uygulaması
+        # Apply the signal
         if sig == "BUY":
             if position is None:
                 position = "LONG"
@@ -116,11 +115,11 @@ def backtest_one(df: pd.DataFrame, strat_key: str):
                 entry_idx = i
                 stop_loss = (close - atr * ATR_MULTIPLIER) if (atr is not None and pd.notna(atr)) else None
             elif position == "SHORT":
-                # Kapat ve LONG'a dönme basitliği: önce kapat (market close)
+                # Reverse: close the short at market, then go long
                 pnl = apply_commission_slippage(entry_price, close, "SHORT")
                 total_pnl += pnl
                 trade_count += 1
-                # yeni long aç
+                # open the new long
                 position = "LONG"
                 entry_price = close
                 entry_idx = i
@@ -141,9 +140,9 @@ def backtest_one(df: pd.DataFrame, strat_key: str):
                 entry_idx = i
                 stop_loss = (close + atr * ATR_MULTIPLIER) if (atr is not None and pd.notna(atr)) else None
 
-        # aksi halde sinyal yok: bekle
+        # otherwise no signal: wait
 
-    # isteğe bağlı: son pozisyonu kapat (close fiyatıyla)
+    # close any remaining position at the last close
     if position is not None and entry_price is not None:
         last_close = float(df["close"].iloc[-1])
         side = "LONG" if position == "LONG" else "SHORT"
@@ -157,7 +156,7 @@ def run():
     results = []
     for symbol in SYMBOLS:
         for tf in TIMEFRAMES:
-            print(f"⏳ Test başlıyor: {symbol} - {tf}")
+            print(f"⏳ Testing: {symbol} - {tf}")
             try:
                 df = fetch_df(symbol, timeframe=tf, limit=800)
                 for strat in STRATEGY_LIST:
@@ -170,17 +169,17 @@ def run():
                         "Trade Count": int(trade_count)
                     })
             except Exception as e:
-                print(f"[HATA] {symbol} {tf}: {e}")
+                print(f"[ERROR] {symbol} {tf}: {e}")
 
-    # CSV kaydet
+    # Save CSV
     out_file = "multi_backtest_strategies.csv"
     df_out = pd.DataFrame(results)
     cols = ["Symbol", "Timeframe", "Strategy", "Total PnL", "Trade Count"]
     df_out = df_out[cols]
     df_out.to_csv(out_file, index=False)
-    print("\n📊 Çoklu strateji backtest tamamlandı. En iyi sonuçlar:")
+    print("\n📊 Multi-strategy backtest finished. Top results:")
     print(df_out.sort_values(["Total PnL","Trade Count"], ascending=[False, False]).head(20))
-    print(f"\n📁 Sonuçlar '{out_file}' olarak kaydedildi.")
+    print(f"\n📁 Results saved to '{out_file}'.")
 
 if __name__ == "__main__":
     run()
