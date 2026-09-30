@@ -109,3 +109,19 @@ def test_strategy_label():
     assert config.strategy_label().startswith(config.STRATEGY)
     assert f"stop={config.PAPER_STOPLOSS_MODE}" in config.strategy_label()
     assert config.engine_config().atr_multiplier == config.ATR_MULTIPLIER  # backtests keep their stop
+
+
+def test_sleep_uses_wall_clock(monkeypatch):
+    """After a jump in wall-clock time (computer asleep) the wait ends at the next check."""
+    clock = {"now": 1_000_000_000_000}
+    sleeps = []
+    monkeypatch.setattr(run_realtime, "now_ms", lambda: clock["now"])
+
+    def fake_sleep(s):
+        sleeps.append(s)
+        clock["now"] += 3_600_000 if len(sleeps) == 1 else int(s * 1000)  # first "sleep" spans a system sleep
+
+    monkeypatch.setattr(run_realtime.time, "sleep", fake_sleep)
+    run_realtime.sleep_until_next_close("1d")
+    assert len(sleeps) <= 2 or clock["now"] >= (1_000_000_000_000 // 86_400_000 + 1) * 86_400_000
+    assert sleeps[0] <= 30

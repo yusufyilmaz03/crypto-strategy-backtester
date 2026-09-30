@@ -111,12 +111,15 @@ class SymbolRunner:
               f"Equity: {self.engine.equity:.2f}")
 
 
-def sleep_until_next_close(timeframe):
+def sleep_until_next_close(timeframe, check_every_s=30):
+    """Wait until the next candle close (+ CLOSE_DELAY_S), checking the wall clock in short
+    steps: on macOS a single long sleep doesn't count time the computer spends asleep."""
     step = timeframe_ms(timeframe)
-    now = now_ms()
-    wait_ms = step - now % step + CLOSE_DELAY_S * 1000
-    print(f"\n⏳ Next {timeframe} candle closes in {wait_ms / 1000:.0f}s...\n")
-    time.sleep(wait_ms / 1000)
+    target = (now_ms() // step + 1) * step + CLOSE_DELAY_S * 1000
+    print(f"\n⏳ Next {timeframe} candle closes in {(target - now_ms()) / 1000:.0f}s "
+          f"({pd.Timestamp(target, unit='ms'):%Y-%m-%d %H:%M:%S} UTC)...\n")
+    while (remaining := target - now_ms()) > 0:
+        time.sleep(min(check_every_s, remaining / 1000))
 
 
 def main():
