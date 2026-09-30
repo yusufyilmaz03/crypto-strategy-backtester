@@ -158,3 +158,10 @@ def test_state_roundtrip_continues_identically():
 
     assert b.equity == pytest.approx(ref.equity)
     assert [t.pnl for t in a.trades + b.trades] == pytest.approx([t.pnl for t in ref.trades])
+
+
+def test_no_stop_when_multiplier_is_none():
+    cfg = EngineConfig(fee_rate=0.0, slippage_bps=0.0, atr_multiplier=None)
+    df, sig = frame([(100, 100, 100, 100), (100, 100, 50, 60)], ["BUY", "-"])
+    trades, _ = run_backtest(df, sig, cfg)
+    assert trades.iloc[0].reason == "END"

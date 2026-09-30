@@ -143,6 +143,40 @@ def generate_signals_v7_trend_pullback_rsi(df, trend_fast=21, trend_slow=50, ove
     return _to_signals(df, buy, sell, warmup=max(54, trend_slow + 4))
 
 
+# ====================================================
+# v8: Time-series momentum
+# - BUY while the return over the last `lookback` candles is positive
+# - SELL (exit) when it turns zero or negative
+# ====================================================
+def generate_signals_v8_tsmom(df, lookback=60):
+    ret = df["close"] / df["close"].shift(lookback) - 1
+    return _to_signals(df, ret > 0, ret <= 0, warmup=lookback)
+
+
+# ====================================================
+# v9: Moving-average regime
+# - BUY while SMA(fast) > SMA(slow); fast=1 means the close itself
+# - SELL (exit) when it drops below
+# ====================================================
+def generate_signals_v9_sma_regime(df, fast=1, slow=200):
+    close = df["close"]
+    sma_f = close if fast == 1 else close.rolling(fast).mean()
+    sma_s = close.rolling(slow).mean()
+    return _to_signals(df, sma_f > sma_s, sma_f < sma_s, warmup=slow - 1)
+
+
+# ====================================================
+# v10: Turtle-style Donchian trend following
+# - BUY when the close breaks above the previous `entry`-bar high
+# - SELL (exit) when it breaks below the previous `exit_len`-bar low
+# ====================================================
+def generate_signals_v10_turtle(df, entry=55, exit_len=20):
+    close = df["close"]
+    up = df["high"].rolling(entry).max().shift(1)
+    lo = df["low"].rolling(exit_len).min().shift(1)
+    return _to_signals(df, close > up, close < lo, warmup=entry)
+
+
 # ==========================
 # Strategy registry
 # ==========================
@@ -154,6 +188,9 @@ STRATEGY_DISPATCH = {
     "v5": generate_signals_v5_ema_cross_filter,
     "v6": generate_signals_v6_donchian_breakout,
     "v7": generate_signals_v7_trend_pullback_rsi,
+    "v8": generate_signals_v8_tsmom,
+    "v9": generate_signals_v9_sma_regime,
+    "v10": generate_signals_v10_turtle,
 }
 
 # Parameter grids for walk-forward optimization. Kept small on purpose: every extra
@@ -168,6 +205,10 @@ PARAM_GRIDS = {
     "v6": {"length": [10, 20, 40, 55], "atr_thresh": [0.0, 0.2, 0.5]},
     "v7": {("trend_fast", "trend_slow"): [(21, 50), (50, 200)], "oversold": [30, 35, 40],
            "buy_cross": [45, 50]},
+    # Phase 2b (pre-registered in docs/phase2b-preregistration.md)
+    "v8": {"lookback": [20, 60, 120]},
+    "v9": {("fast", "slow"): [(1, 50), (1, 100), (1, 200), (10, 50), (20, 100), (50, 200)]},
+    "v10": {("entry", "exit_len"): [(20, 10), (55, 20), (55, 10), (100, 50), (100, 20)]},
 }
 
 

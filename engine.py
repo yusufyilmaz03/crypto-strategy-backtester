@@ -23,7 +23,7 @@ import pandas as pd
 class EngineConfig:
     fee_rate: float = 0.001        # taker fee per leg (0.1%)
     slippage_bps: float = 5.0      # adverse slippage per fill
-    atr_multiplier: float = 2.0    # stop distance = ATR * multiplier; NaN ATR -> no stop
+    atr_multiplier: float | None = 2.0  # stop distance = ATR * multiplier; None or NaN ATR -> no stop
     allow_short: bool = False      # spot trading: long-only
     initial_equity: float = 1000.0
 
@@ -90,7 +90,7 @@ class Engine:
         fee_rate = self.config.fee_rate
         qty = self.equity / (fill * (1 + fee_rate))
         stop = None
-        if atr is not None:
+        if atr is not None and self.config.atr_multiplier:
             dist = atr * self.config.atr_multiplier
             stop = fill - dist if side == "LONG" else fill + dist
         self.position = Position(

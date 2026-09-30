@@ -57,3 +57,21 @@ def test_param_combinations():
     assert len(combos) == 24
     assert {(c["fast"], c["slow"]) for c in combos} == {(9, 21), (12, 26), (20, 50)}
     assert strategy.param_combinations("unknown") == [{}]
+
+
+def test_trend_strategies_follow_their_rules():
+    import pandas as pd
+    close = pd.Series([10.0] * 5 + [11, 12, 13, 14, 15] + [14, 12, 10, 8, 6])
+    df = pd.DataFrame({"open": close, "high": close + 0.1, "low": close - 0.1, "close": close})
+    df["RSI"] = 50.0
+
+    s = strategy.get_strategy("v8")(df, lookback=3)
+    assert s.iloc[7] == "BUY"          # 13 vs 10 three bars earlier
+    assert s.iloc[13] == "SELL"        # 8 vs 12
+
+    s = strategy.get_strategy("v9")(df, fast=1, slow=4)
+    assert s.iloc[8] == "BUY" and s.iloc[12] == "SELL"
+
+    s = strategy.get_strategy("v10")(df, entry=3, exit_len=2)
+    assert s.iloc[5] == "BUY"          # 11 breaks the prior 3-bar high of 10.1
+    assert s.iloc[11] == "SELL"        # 12 breaks below the prior 2-bar low of 13.9
