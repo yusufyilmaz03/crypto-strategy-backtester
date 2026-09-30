@@ -25,3 +25,6 @@ multi_backtest_strategies.csv
 # Local Claude notes
 CLAUDE.md
 claude/
+
+# Local OHLCV cache
+data/
