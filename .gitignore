@@ -36,3 +36,8 @@ data/
 
 # Paper trading database
 paper.db
+
+# Order-sending trading state and kill switch
+testnet.db
+live.db
+KILL_SWITCH

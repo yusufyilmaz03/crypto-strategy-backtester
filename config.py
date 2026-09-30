@@ -11,6 +11,9 @@ except ImportError:
 # Never commit real keys. Put them in .env (see .env.example).
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+# Binance Spot Testnet keys (https://testnet.binance.vision), used by run_testnet.py
+BINANCE_TESTNET_API_KEY = os.getenv("BINANCE_TESTNET_API_KEY", "")
+BINANCE_TESTNET_API_SECRET = os.getenv("BINANCE_TESTNET_API_SECRET", "")
 
 # ===== Universe =====
 SYMBOLS = [
@@ -53,6 +56,15 @@ TIMEFRAME = "1d"
 STRATEGY = "v9"
 STRATEGY_PARAMS = {"fast": 1, "slow": 50}
 PAPER_STOPLOSS_MODE = "none"
+
+# ===== Order execution (run_testnet.py) =====
+# Uses the same strategy settings as paper trading (STRATEGY, STRATEGY_PARAMS, TIMEFRAME).
+TRADING_MODE = "testnet"         # "testnet" or "live"
+LIVE_TRADING_ENABLED = False     # must be set to True on purpose before any live order
+TRADING_CAPITAL_USDT = 1000.0    # total budget, split equally across the traded symbols
+MAX_ORDER_USDT = 100.0           # hard cap per order
+DAILY_LOSS_LIMIT_PCT = 5.0       # no new entries for the rest of the UTC day below this loss
+KILL_SWITCH_FILE = "KILL_SWITCH"  # if this file exists: no new entries; "flatten" in it closes all
 
 # ===== Grid backtest (multi_backtest.py) =====
 TIMEFRAMES = ["1m", "3m", "5m"]
