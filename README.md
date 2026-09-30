@@ -43,6 +43,9 @@ A Python research tool for testing technical trading strategies on historical cr
 ├── store.py             # SQLite persistence for paper trading (paper.db)
 ├── rotation.py          # cross-sectional momentum rotation (R1)
 ├── forward_report.py    # forward-test report: paper results vs buy-and-hold
+├── broker.py            # order execution (ccxt; testnet by default) and a fake broker for tests
+├── run_testnet.py       # order-sending loop on Binance Spot Testnet
+├── testnet_check.py     # end-to-end check of the testnet order flow
 ├── docs/                # research pre-registrations and results
 ├── dashboard.py         # Flask dashboard (templates/)
 ├── plot_summary.py      # return bar chart for one strategy
@@ -105,6 +108,22 @@ pytest
 Phase 2b (trend following and rotation on 4h/1d) was pre-registered in [docs/phase2b-preregistration.md](docs/phase2b-preregistration.md), which also lists the results. `research.py` holds out the last `HOLDOUT_FRACTION` of each timeframe; `research.py --holdout` tests only the finalists, once.
 
 A candidate passes when its portfolio return and cost-stressed return are positive, its Sharpe beats buy-and-hold, it has at least 30 trades and its deflated Sharpe ratio is at least 0.95.
+
+## Testnet trading
+
+`run_testnet.py` trades the paper strategy (`STRATEGY`, `STRATEGY_PARAMS`, `TIMEFRAME`) with real orders on the [Binance Spot Testnet](https://testnet.binance.vision) (no real money):
+
+1. Create testnet API keys and put them in `.env` as `BINANCE_TESTNET_API_KEY` / `BINANCE_TESTNET_API_SECRET`.
+2. `python testnet_check.py` checks the connection; `python testnet_check.py --yes` places a small buy and sell.
+3. `python run_testnet.py` starts the loop. State is kept in `testnet.db`.
+
+Safety:
+
+- Signals come from closed mainnet candles; each decision is sent as a market order right after the close, with a deterministic client order id so that a crash can't cause a duplicate order.
+- The bot only trades positions it opened itself and checks them against the exchange balance on start. Candles missed while it was down are not traded.
+- `TRADING_CAPITAL_USDT` is split equally across symbols; `MAX_ORDER_USDT` caps each order; after a `DAILY_LOSS_LIMIT_PCT` loss no new entries are made until the next UTC day.
+- Kill switch: create a file named `KILL_SWITCH` to stop new entries; put the word `flatten` in it to close every position.
+- Live trading is refused unless `TRADING_MODE = "live"` **and** `LIVE_TRADING_ENABLED = True`.
 
 ## Notes and limitations
 
