@@ -22,8 +22,8 @@ A Python research tool for testing technical trading strategies on historical cr
 - **One engine for backtest and paper trading:** the same bar-by-bar engine drives both, so paper results follow the backtest rules exactly (see *Simulation rules*).
 - **Multi-backtest:** runs every strategy on every symbol and timeframe and reports in-sample, out-of-sample and walk-forward results with return, buy-and-hold return, win rate, profit factor, max drawdown, Sharpe and exposure.
 - **Strategy research:** walk-forward optimization of each strategy's parameters on 15m/1h/4h data, with out-of-sample portfolio results, a cost stress test and a deflated Sharpe ratio to guard against overfitting.
-- **Paper trading:** `run_realtime.py` processes each newly closed candle and logs signals and trades to CSV.
-- **Dashboard:** a Flask app showing cumulative PnL, win/loss and per-symbol trade distributions, the latest trade, and a backtest comparison table and chart filterable by segment, strategy, symbol and timeframe.
+- **Paper trading:** `run_realtime.py` processes each newly closed candle. State, trades, signals and the equity curve live in SQLite (`paper.db`), so a restart resumes where it stopped and first processes the candles it missed.
+- **Dashboard:** a Flask app showing paper trading return, win rate, max drawdown and the portfolio equity curve, cumulative PnL, win/loss and per-symbol trade distributions, the latest trade, and a backtest comparison table and chart filterable by segment, strategy, symbol and timeframe.
 - **Tests:** pytest suite covering data loading, indicators, look-ahead checks for every strategy, the engine, metrics and the paper loop.
 
 ## Project structure
@@ -40,13 +40,14 @@ A Python research tool for testing technical trading strategies on historical cr
 ├── research.py          # strategy research across symbols/timeframes → research_*.csv
 ├── multi_backtest.py    # grid backtest → multi_backtest_strategies.csv
 ├── run_realtime.py      # paper trading on live closed candles
+├── store.py             # SQLite persistence for paper trading (paper.db)
 ├── dashboard.py         # Flask dashboard (templates/)
 ├── plot_summary.py      # return bar chart for one strategy
 ├── plot_multi_chart.py  # profitable out-of-sample combinations chart
 └── tests/               # pytest suite
 ```
 
-Run outputs (`multi_backtest_strategies.csv`, `signals_log.csv`, `trades_log.csv`) are written to the working directory and are not tracked by git. Run the backtest or the realtime loop first so the dashboard has data to show.
+Run outputs (`multi_backtest_strategies.csv`, `research_*.csv`, `paper.db`) are written to the working directory and are not tracked by git. Run the backtest or the paper trading loop first so the dashboard has data to show.
 
 ## Getting started
 
@@ -101,7 +102,7 @@ A candidate passes when its portfolio return and cost-stressed return are positi
 
 ## Notes and limitations
 
-- Paper positions live in memory only and are lost when `run_realtime.py` restarts.
+- Paper trading keeps separate state per symbol, strategy and timeframe; changing `STRATEGY` or `TIMEFRAME` starts a fresh run (the dashboard shows the configured one).
 - In paper trading, stops are evaluated when a candle closes (as if a stop order had been resting at the stop price), not tick by tick.
 - Times in logs are UTC candle times.
 - In `multi_backtest.py` strategies run with their default parameters, so its walk-forward folds are plain out-of-sample windows. Parameter optimization happens in `research.py`.

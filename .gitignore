@@ -31,3 +31,6 @@ claude/
 
 # Local OHLCV cache
 data/
+
+# Paper trading database
+paper.db

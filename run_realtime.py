@@ -3,12 +3,11 @@
 
 Each newly closed candle is fed to the same Engine the backtest uses, so paper
 results follow exactly the backtest rules (next-open fills, intrabar stops,
-fees and slippage). Positions only exist in memory; they are lost on restart.
-Logs: signals_log.csv (every BUY/SELL signal and what was done with it) and
-trades_log.csv (one row per trade, filled in when it closes). Times are UTC.
+fees and slippage). State, trades, signals and the equity curve are stored in
+SQLite (paper.db), one transaction per candle. After a restart each symbol
+resumes from its saved state and first processes the candles it missed.
+Times are UTC.
 """
-import csv
-import os
 import time
 
 import pandas as pd
@@ -18,72 +17,15 @@ import strategy
 from data import fetch_recent, now_ms, timeframe_ms
 from engine import Engine
 from indicators import add_indicators
+from store import PaperStore
 
-SIGNALS_FILE = "signals_log.csv"
-TRADES_FILE = "trades_log.csv"
-HISTORY = 300          # closed candles fetched per update (indicator warm-up)
+HISTORY = 300          # closed candles needed for indicator warm-up
+MAX_FETCH = 1000       # Binance kline limit per request
 CLOSE_DELAY_S = 3      # wait a few seconds after a candle closes before fetching
-
-SIGNAL_COLUMNS = ["Candle Time", "Symbol", "Signal", "RSI", "Close", "Position", "Action"]
-TRADE_COLUMNS = ["TradeID", "Timestamp Entry", "Timestamp Exit", "Symbol", "Position",
-                 "Entry Price", "Exit Price", "Entry RSI", "PnL", "Return%", "Close Reason"]
 
 
 def _fmt_time(t):
     return pd.Timestamp(t).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _append_row(path, columns, row):
-    new_file = not os.path.isfile(path)
-    if not new_file:
-        with open(path, newline="") as f:
-            header = next(csv.reader(f), None)
-        if header != columns:
-            # Log written by an older version with different columns: keep it aside.
-            backup = f"{path}.{time.strftime('%Y%m%d-%H%M%S')}.bak"
-            os.rename(path, backup)
-            print(f"ℹ️ {path} had an old format; moved to {backup}")
-            new_file = True
-    with open(path, "a", newline="") as f:
-        w = csv.writer(f)
-        if new_file:
-            w.writerow(columns)
-        w.writerow(row)
-
-
-def log_signal(symbol, candle_time, signal, rsi, close, position, action):
-    _append_row(SIGNALS_FILE, SIGNAL_COLUMNS, [
-        _fmt_time(candle_time), symbol, signal,
-        f"{rsi:.2f}" if pd.notna(rsi) else "", f"{close:.8g}", position or "NONE", action,
-    ])
-
-
-def log_trade_open(symbol, p):
-    _append_row(TRADES_FILE, TRADE_COLUMNS, [
-        p.trade_id, _fmt_time(p.entry_time), "", symbol, p.side, f"{p.entry_price:.8g}", "",
-        f"{p.signal_rsi:.2f}" if p.signal_rsi is not None else "", "", "", "",
-    ])
-    print(f"🟢 [{symbol}] OPEN {p.side} @ {p.entry_price:.8g} | stop: {p.stop if p.stop is None else f'{p.stop:.8g}'}")
-
-
-def log_trade_close(t):
-    """Fill in the exit fields of the trade's row (the file is rewritten)."""
-    if not os.path.exists(TRADES_FILE):
-        return
-    with open(TRADES_FILE, newline="") as f:
-        rows = list(csv.reader(f))
-    for row in reversed(rows[1:]):
-        if row and row[0] == t.trade_id:
-            row[2] = _fmt_time(t.exit_time)
-            row[6] = f"{t.exit_price:.8g}"
-            row[8] = f"{t.pnl:.6f}"
-            row[9] = f"{t.return_pct:.4f}"
-            row[10] = t.reason
-            break
-    with open(TRADES_FILE, "w", newline="") as f:
-        csv.writer(f).writerows(rows)
-    print(f"🔴 [{t.symbol}] CLOSE {t.side} @ {t.exit_price:.8g} ({t.reason}) | "
-          f"PnL: {t.pnl:.4f} ({t.return_pct:+.2f}%)")
 
 
 def describe_action(engine, signal):
@@ -96,39 +38,76 @@ def describe_action(engine, signal):
 
 
 class SymbolRunner:
-    def __init__(self, symbol, timeframe, strategy_key, engine_cfg):
+    def __init__(self, symbol, timeframe, strategy_key, engine_cfg, store):
         self.symbol = symbol
         self.timeframe = timeframe
+        self.key = strategy_key
         self.signal_fn = strategy.get_strategy(strategy_key)
-        self.engine = Engine(engine_cfg, symbol, on_open=log_trade_open, on_close=log_trade_close)
-        self.last_time = None  # last candle fed to the engine
+        self.store = store
+        self.engine = Engine(engine_cfg, symbol, on_open=self._opened, on_close=self._closed)
+        state, self.last_time = store.load_state(symbol, strategy_key, timeframe)
+        if state is not None:
+            self.engine.load_state(state)
+
+    # engine callbacks: written inside the current candle's transaction
+    def _opened(self, symbol, p):
+        self.store.trade_opened(self.key, self.timeframe, symbol, p)
+        stop = "-" if p.stop is None else f"{p.stop:.8g}"
+        print(f"🟢 [{symbol}] OPEN {p.side} @ {p.entry_price:.8g} | stop: {stop}")
+
+    def _closed(self, t):
+        self.store.trade_closed(t)
+        print(f"🔴 [{t.symbol}] CLOSE {t.side} @ {t.exit_price:.8g} ({t.reason}) | "
+              f"PnL: {t.pnl:.4f} ({t.return_pct:+.2f}%)")
+
+    def _fetch_limit(self):
+        if self.last_time is None:
+            return HISTORY
+        missed = (now_ms() - pd.Timestamp(self.last_time).value // 10**6) // timeframe_ms(self.timeframe)
+        return int(min(MAX_FETCH, max(HISTORY, missed + HISTORY)))
 
     def update(self):
-        df = fetch_recent(self.symbol, self.timeframe, HISTORY)
+        df = fetch_recent(self.symbol, self.timeframe, self._fetch_limit())
         if df.empty:
             return
         df = add_indicators(df)
         if self.last_time is None:
-            # Start from the next closed candle; don't simulate trades on past data.
+            # First run: start from the next closed candle; don't simulate trades on past data.
             self.last_time = df["timestamp"].iloc[-1]
+            with self.store.candle():
+                self.store.save_state(self.symbol, self.key, self.timeframe,
+                                      self.engine.to_state(), self.last_time)
             return
 
         signals = self.signal_fn(df)
         new = df["timestamp"] > self.last_time
+        if new.any():
+            first_new = df.loc[new, "timestamp"].iloc[0]
+            gap = (first_new - pd.Timestamp(self.last_time)) // pd.Timedelta(milliseconds=timeframe_ms(self.timeframe)) - 1
+            if gap > 0:
+                print(f"⚠️ [{self.symbol}] {gap} candles missed beyond the fetch window; continuing")
+
         for (_, row), sig in zip(df[new].iterrows(), signals[new]):
-            self.engine.on_bar(row["timestamp"], row["open"], row["high"], row["low"], row["close"],
-                               sig, row["ATR"], row["RSI"])
-            if sig in ("BUY", "SELL"):
-                side = self.engine.position.side if self.engine.position else None
-                log_signal(self.symbol, row["timestamp"], sig, row["RSI"], row["close"], side,
-                           describe_action(self.engine, sig))
+            with self.store.candle():
+                self.engine.on_bar(row["timestamp"], row["open"], row["high"], row["low"],
+                                   row["close"], sig, row["ATR"], row["RSI"])
+                if sig in ("BUY", "SELL"):
+                    side = self.engine.position.side if self.engine.position else None
+                    self.store.log_signal(self.key, self.timeframe, self.symbol, row["timestamp"], sig,
+                                          row["RSI"], row["close"], side, describe_action(self.engine, sig))
+                t, eq = self.engine.equity_curve[-1]
+                self.store.log_equity(self.key, self.timeframe, self.symbol, t, eq)
+                self.store.save_state(self.symbol, self.key, self.timeframe,
+                                      self.engine.to_state(), row["timestamp"])
+            self.engine.equity_curve.clear()  # already stored; keep memory flat
             self.last_time = row["timestamp"]
 
         last = df.iloc[-1]
         pos = self.engine.position
         pos_show = f"{pos.side} stop {pos.stop:.8g}" if pos and pos.stop else (pos.side if pos else "-")
         print(f"[{self.symbol}] {_fmt_time(last['timestamp'])} | Signal: {signals.iloc[-1]} | "
-              f"RSI: {last['RSI']:.2f} | Close: {last['close']:.8g} | Position: {pos_show}")
+              f"RSI: {last['RSI']:.2f} | Close: {last['close']:.8g} | Position: {pos_show} | "
+              f"Equity: {self.engine.equity:.2f}")
 
 
 def sleep_until_next_close(timeframe):
@@ -141,9 +120,11 @@ def sleep_until_next_close(timeframe):
 
 def main():
     cfg = config.engine_config()
-    runners = [SymbolRunner(s, config.TIMEFRAME, config.STRATEGY, cfg) for s in config.SYMBOLS]
+    store = PaperStore()
+    runners = [SymbolRunner(s, config.TIMEFRAME, config.STRATEGY, cfg, store) for s in config.SYMBOLS]
+    resumed = sum(r.last_time is not None for r in runners)
     print(f"📡 Paper trading started: strategy {config.STRATEGY}, timeframe {config.TIMEFRAME}, "
-          f"{len(runners)} symbols, long-only={not cfg.allow_short}\n")
+          f"{len(runners)} symbols ({resumed} resumed from paper.db), long-only={not cfg.allow_short}\n")
     while True:
         for r in runners:
             try:

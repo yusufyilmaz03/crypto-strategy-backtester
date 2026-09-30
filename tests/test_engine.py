@@ -129,3 +129,32 @@ def test_incremental_feed_matches_batch():
 
     assert len(trades) > 0
     assert [t.pnl for t in eng.trades] == pytest.approx(trades.pnl.tolist())
+
+
+def test_state_roundtrip_continues_identically():
+    """Saving and restoring the engine mid-run must not change the results."""
+    import json
+
+    from conftest import make_ohlcv
+    from indicators import add_indicators
+    import strategy
+
+    df = add_indicators(make_ohlcv(600, seed=13))
+    sig = strategy.get_strategy("v5")(df)
+    rows = list(zip(df.timestamp, df.open, df.high, df.low, df.close, sig, df.ATR, df.RSI))
+
+    ref = Engine(EngineConfig())
+    for r in rows:
+        ref.on_bar(*r)
+
+    a = Engine(EngineConfig())
+    for r in rows[:300]:
+        a.on_bar(*r)
+    assert a.position is not None or a.pending is not None or a.trades  # something to restore
+    b = Engine(EngineConfig())
+    b.load_state(json.loads(json.dumps(a.to_state())))
+    for r in rows[300:]:
+        b.on_bar(*r)
+
+    assert b.equity == pytest.approx(ref.equity)
+    assert [t.pnl for t in a.trades + b.trades] == pytest.approx([t.pnl for t in ref.trades])

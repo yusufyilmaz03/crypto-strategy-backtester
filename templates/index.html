@@ -9,32 +9,33 @@
 <body class="container mt-4">
   <h1>📊 Crypto Bot Dashboard</h1>
 
-    <div class="row">
-        <div class="col-md-4">
-            <div class="card text-bg-success mb-3">
-                <div class="card-body">
-                    <h5 class="card-title">Total PnL</h5>
-                    <p class="card-text">{{ total_pnl }}</p>
-                </div>
-            </div>
+  <p class="text-muted">Paper trading · strategy <b>{{ strategy }}</b> · timeframe <b>{{ timeframe }}</b> · all times UTC</p>
+
+  <div class="row">
+    {% set cards = [
+      ("Return", "%.2f%%"|format(return_pct), "text-bg-success" if return_pct >= 0 else "text-bg-danger"),
+      ("Closed PnL", "%.2f"|format(total_pnl), "text-bg-light"),
+      ("Win rate", ("%.1f%%"|format(win_rate)) if win_rate is not none else "-", "text-bg-light"),
+      ("Max drawdown", "%.2f%%"|format(max_dd), "text-bg-light"),
+      ("Open trades", open_trades, "text-bg-info"),
+      ("Closed trades", closed_trades, "text-bg-secondary"),
+    ] %}
+    {% for title, value, cls in cards %}
+    <div class="col-6 col-md-2">
+      <div class="card {{ cls }} mb-3">
+        <div class="card-body">
+          <h6 class="card-title">{{ title }}</h6>
+          <p class="card-text fs-5">{{ value }}</p>
         </div>
-        <div class="col-md-4">
-            <div class="card text-bg-info mb-3">
-                <div class="card-body">
-                    <h5 class="card-title">Open Trades</h5>
-                    <p class="card-text">{{ open_trades }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card text-bg-secondary mb-3">
-                <div class="card-body">
-                    <h5 class="card-title">Closed Trades</h5>
-                    <p class="card-text">{{ closed_trades }}</p>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-2">
+    <h4>📈 Portfolio return (%)</h4>
+    <canvas id="equityChart" height="90"></canvas>
+  </div>
 
 <!-- Distribution chart with metric dropdown -->
 <div class="row mt-4">
@@ -53,7 +54,7 @@
   <div class="col-md-6">
     <!-- PnL line/bar chart -->
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <h3 id="chartTitle">📈 Cumulative PnL</h3>
+      <h3 id="chartTitle">📈 Cumulative PnL (closed trades)</h3>
       <div>
         <button class="btn btn-sm btn-outline-primary" onclick="switchChart('cumulative')">Cumulative</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="switchChart('trades')">By Trade</button>
@@ -95,6 +96,21 @@
     pnlData = await res.json();
     renderChart("cumulative");
     await loadDistribution(); // default: winloss
+    await loadEquity();
+  }
+
+  let equityChart;
+  async function loadEquity() {
+    const r = await fetch("/equity_data");
+    const data = await r.json();
+    if (equityChart) equityChart.destroy();
+    equityChart = new Chart(document.getElementById("equityChart").getContext("2d"), {
+      type: "line",
+      data: { labels: data.labels,
+              datasets: [{ label: "Return %", data: data.return_pct, borderColor: "teal",
+                           pointRadius: 0, fill: false }] },
+      options: { scales: { x: { ticks: { maxTicksLimit: 10 } } } }
+    });
   }
 
   async function loadDistribution() {
@@ -163,8 +179,8 @@
   async function checkNewTrade() {
     const res = await fetch("/last_trade");
     const data = await res.json();
-    if (data.trade && data.trade["Timestamp Entry"] !== lastTradeId) {
-      lastTradeId = data.trade["Timestamp Entry"];
+    if (data.trade && data.trade["TradeID"] !== lastTradeId) {
+      lastTradeId = data.trade["TradeID"];
       document.getElementById("toastBody").innerText =
         `New trade: ${data.trade.Symbol} (${data.trade.Position})`;
       new bootstrap.Toast(document.getElementById("tradeToast")).show();
@@ -190,7 +206,7 @@
           }]
         }
       });
-      document.getElementById("chartTitle").innerText = "📈 Cumulative PnL";
+      document.getElementById("chartTitle").innerText = "📈 Cumulative PnL (closed trades)";
     } else {
       chart = new Chart(ctx, {
         type: "bar",
@@ -205,16 +221,6 @@
       });
       document.getElementById("chartTitle").innerText = "📊 Trade-by-Trade PnL";
     }
-  }
-
-  function renderWinLossChart() {
-    new Chart(document.getElementById("winLossChart"), {
-      type: "pie",
-      data: {
-        labels: ["Win", "Loss"],
-        datasets: [{ data: [pnlData.win, pnlData.loss], backgroundColor: ["green", "red"] }]
-      }
-    });
   }
 
   function switchChart(mode) {

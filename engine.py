@@ -14,7 +14,7 @@ An opposite signal closes the open position, it does not reverse it.
 """
 import math
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass
 
 import pandas as pd
 
@@ -161,6 +161,26 @@ class Engine:
                 self.pending = ("ENTER", "SHORT", atr, rsi)
         elif (p.side == "LONG" and signal == "SELL") or (p.side == "SHORT" and signal == "BUY"):
             self.pending = ("EXIT",)
+
+    # ---------- persistence ----------
+    def to_state(self):
+        """JSON-serializable snapshot of the engine (for restarts)."""
+        pos = None
+        if self.position is not None:
+            pos = asdict(self.position)
+            pos["entry_time"] = pd.Timestamp(pos["entry_time"]).isoformat()
+        return {"equity": self.equity, "position": pos,
+                "pending": list(self.pending) if self.pending else None}
+
+    def load_state(self, state):
+        self.equity = state["equity"]
+        pos = state.get("position")
+        if pos:
+            self.position = Position(**{**pos, "entry_time": pd.Timestamp(pos["entry_time"])})
+        else:
+            self.position = None
+        pending = state.get("pending")
+        self.pending = tuple(pending) if pending else None
 
     def finish(self, time, close):
         """Close any open position at the final close (end of backtest data)."""
