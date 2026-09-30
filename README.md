@@ -37,7 +37,7 @@ A Python research tool for testing technical trading strategies on historical cr
 └── plot_multi_chart.py  # profitable combinations chart
 ```
 
-The repository includes sample outputs (`multi_backtest_strategies.csv`, `signals_log.csv`, `trades_log.csv`) so the dashboard has data to show right away.
+Run outputs (`multi_backtest_strategies.csv`, `signals_log.csv`, `trades_log.csv`) are written to the working directory and are not tracked by git. Run the backtest or the realtime loop first so the dashboard has data to show.
 
 ## Getting started
 
@@ -65,4 +65,3 @@ Adjust symbols, timeframes, strategy, stop-loss mode, fees and slippage in `conf
 
 - PnL is reported in the quote currency for a position size of 1 unit, so results are not directly comparable across assets with very different prices. Percentage returns per trade would be the next step for a fair comparison.
 - Backtests use a limited window of recent candles (up to 800 per symbol/timeframe), so results reflect a short market period.
-- Code comments and console output are partly in Turkish.

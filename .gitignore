@@ -15,6 +15,9 @@ csv_old/
 logs/
 *.log
 summary.png
+signals_log.csv
+trades_log.csv
+multi_backtest_strategies.csv
 
 # OS
 .DS_Store
