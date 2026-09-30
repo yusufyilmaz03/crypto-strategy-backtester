@@ -2,10 +2,15 @@
 """Signal generators.
 
 Every strategy takes an OHLCV DataFrame with indicators (see indicators.add_indicators)
-and returns a Series aligned with it holding "BUY", "SELL" or "-" for each candle.
-The value at row i only depends on rows 0..i, so it can be acted on once candle i
-has closed (tests/test_strategy.py checks this for every strategy).
+plus optional keyword parameters, and returns a Series aligned with it holding "BUY",
+"SELL" or "-" for each candle. The value at row i only depends on rows 0..i, so it
+can be acted on once candle i has closed (tests/test_strategy.py checks this for
+every strategy). Default parameters reproduce the original strategies.
+
+With the long-only engine, SELL signals only close an open long position.
 """
+import itertools
+
 import numpy as np
 import pandas as pd
 
@@ -15,44 +20,23 @@ from indicators import atr as _atr
 # Helper calculations
 # ==========================
 
-def _ema(series: pd.Series, length: int):
-    return series.ewm(span=length, adjust=False).mean()
+def _ema(df: pd.DataFrame, length: int):
+    """EMA of the close; reuses the EMA_<length> column when present."""
+    col = f"EMA_{length}"
+    if col in df.columns:
+        return df[col]
+    return df["close"].ewm(span=length, adjust=False).mean()
 
 def _bbands(close: pd.Series, length: int = 20, mult: float = 2.0):
     ma = close.rolling(length).mean()
     std = close.rolling(length).std(ddof=0)
-    upper = ma + mult * std
-    lower = ma - mult * std
-    return ma, upper, lower
+    return ma, ma + mult * std, ma - mult * std
 
 def _donchian(df: pd.DataFrame, length: int = 20):
-    upper = df["high"].rolling(length).max()
-    lower = df["low"].rolling(length).min()
-    return upper, lower
+    return df["high"].rolling(length).max(), df["low"].rolling(length).min()
 
-def _ensure_cols(df: pd.DataFrame, need_cols):
-    """Compute any of the required indicator columns that are missing (on a copy)."""
-    out = df.copy()
-
-    if "EMA_9" in need_cols and "EMA_9" not in out.columns:
-        out["EMA_9"] = _ema(out["close"], 9)
-    if "EMA_21" in need_cols and "EMA_21" not in out.columns:
-        out["EMA_21"] = _ema(out["close"], 21)
-    if "EMA_50" in need_cols and "EMA_50" not in out.columns:
-        out["EMA_50"] = _ema(out["close"], 50)
-    if "ATR" in need_cols and "ATR" not in out.columns:
-        out["ATR"] = _atr(out, 14)
-    if any(c in need_cols for c in ["BB_MA_20", "BB_UPPER_20", "BB_LOWER_20"]):
-        ma, up, low = _bbands(out["close"], 20, 2.0)
-        out["BB_MA_20"] = ma
-        out["BB_UPPER_20"] = up
-        out["BB_LOWER_20"] = low
-    if any(c in need_cols for c in ["DONCHIAN_UP_20", "DONCHIAN_LO_20"]):
-        up, lo = _donchian(out, 20)
-        out["DONCHIAN_UP_20"] = up
-        out["DONCHIAN_LO_20"] = lo
-
-    return out
+def _atr_col(df):
+    return df["ATR"] if "ATR" in df.columns else _atr(df, 14)
 
 def _to_signals(df, buy, sell, warmup):
     """Combine boolean BUY/SELL conditions into a signal Series.
@@ -67,102 +51,96 @@ def _to_signals(df, buy, sell, warmup):
 # ==========================
 # v1: Simple RSI + EMA crossover
 # ==========================
-def generate_signals_v1(df):
-    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
-    rsi, ema9, ema21 = df["RSI"], df["EMA_9"], df["EMA_21"]
-    buy = (rsi < 40) & (ema9 > ema21)
-    sell = (rsi > 60) & (ema9 < ema21)
-    return _to_signals(df, buy, sell, warmup=20)
+def generate_signals_v1(df, rsi_buy=40, rsi_sell=60, fast=9, slow=21):
+    rsi, ema_f, ema_s = df["RSI"], _ema(df, fast), _ema(df, slow)
+    buy = (rsi < rsi_buy) & (ema_f > ema_s)
+    sell = (rsi > rsi_sell) & (ema_f < ema_s)
+    return _to_signals(df, buy, sell, warmup=max(20, slow - 1))
 
 
 # ==========================================
-# v2: RSI + EMA, confirmed on the last 3 candles
+# v2: RSI + EMA, confirmed on the last `confirm` candles
 # ==========================================
-def generate_signals_v2(df):
-    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
-    rsi, ema9, ema21 = df["RSI"], df["EMA_9"], df["EMA_21"]
-    buy_now = ((rsi < 45) & (ema9 > ema21)).astype(float)
-    sell_now = ((rsi > 55) & (ema9 < ema21)).astype(float)
-    buy = buy_now.rolling(3).min() == 1
-    sell = sell_now.rolling(3).min() == 1
-    return _to_signals(df, buy, sell, warmup=24)
+def generate_signals_v2(df, rsi_buy=45, rsi_sell=55, confirm=3, fast=9, slow=21):
+    rsi, ema_f, ema_s = df["RSI"], _ema(df, fast), _ema(df, slow)
+    buy_now = ((rsi < rsi_buy) & (ema_f > ema_s)).astype(float)
+    sell_now = ((rsi > rsi_sell) & (ema_f < ema_s)).astype(float)
+    buy = buy_now.rolling(confirm).min() == 1
+    sell = sell_now.rolling(confirm).min() == 1
+    return _to_signals(df, buy, sell, warmup=max(24, slow - 1))
 
 
 # =====================================
-# v3: RSI + EMA with ATR for stop-loss sizing
+# v3: RSI + EMA with looser thresholds
 # =====================================
-def generate_signals_v3(df):
-    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
-    rsi, ema9, ema21 = df["RSI"], df["EMA_9"], df["EMA_21"]
-    buy = (rsi < 45) & (ema9 > ema21)
-    sell = (rsi > 55) & (ema9 < ema21)
-    return _to_signals(df, buy, sell, warmup=14)
+def generate_signals_v3(df, rsi_buy=45, rsi_sell=55, fast=9, slow=21):
+    rsi, ema_f, ema_s = df["RSI"], _ema(df, fast), _ema(df, slow)
+    buy = (rsi < rsi_buy) & (ema_f > ema_s)
+    sell = (rsi > rsi_sell) & (ema_f < ema_s)
+    return _to_signals(df, buy, sell, warmup=max(14, slow - 1))
 
 
 # ====================================================
 # v4: Bollinger mean reversion (BBANDS + RSI filter)
 # - Overextended move -> expect reversion to the mean
-# - BUY: close < lower band and RSI < 35
-# - SELL: close > upper band and RSI > 65
+# - BUY: close < lower band and RSI < rsi_buy
+# - SELL: close > upper band and RSI > rsi_sell
 # ====================================================
-def generate_signals_v4_bbands_meanrev(df):
-    df = _ensure_cols(df, ["BB_MA_20", "BB_UPPER_20", "BB_LOWER_20"])
+def generate_signals_v4_bbands_meanrev(df, bb_len=20, bb_mult=2.0, rsi_buy=35, rsi_sell=65):
     rsi, close = df["RSI"], df["close"]
-    buy = (close < df["BB_LOWER_20"]) & (rsi < 35)
-    sell = (close > df["BB_UPPER_20"]) & (rsi > 65)
-    return _to_signals(df, buy, sell, warmup=24)
+    _, upper, lower = _bbands(close, bb_len, bb_mult)
+    buy = (close < lower) & (rsi < rsi_buy)
+    sell = (close > upper) & (rsi > rsi_sell)
+    return _to_signals(df, buy, sell, warmup=max(24, bb_len - 1))
 
 
 # ====================================================
 # v5: EMA cross + trend filter (trade with the trend only)
-# - BUY: EMA9>EMA21 and close>EMA21 and RSI>45
-# - SELL: EMA9<EMA21 and close<EMA21 and RSI<55
+# - BUY: EMAfast>EMAslow and close>EMAslow and RSI>rsi_buy
+# - SELL: EMAfast<EMAslow and close<EMAslow and RSI<rsi_sell
 # (Filtering out counter-trend crosses reduces whipsaws)
 # ====================================================
-def generate_signals_v5_ema_cross_filter(df):
-    df = _ensure_cols(df, ["EMA_9", "EMA_21"])
-    rsi, ema9, ema21, close = df["RSI"], df["EMA_9"], df["EMA_21"], df["close"]
-    buy = (ema9 > ema21) & (close > ema21) & (rsi > 45)
-    sell = (ema9 < ema21) & (close < ema21) & (rsi < 55)
-    return _to_signals(df, buy, sell, warmup=24)
+def generate_signals_v5_ema_cross_filter(df, fast=9, slow=21, rsi_buy=45, rsi_sell=55):
+    rsi, close, ema_f, ema_s = df["RSI"], df["close"], _ema(df, fast), _ema(df, slow)
+    buy = (ema_f > ema_s) & (close > ema_s) & (rsi > rsi_buy)
+    sell = (ema_f < ema_s) & (close < ema_s) & (rsi < rsi_sell)
+    return _to_signals(df, buy, sell, warmup=max(24, slow - 1))
 
 
 # ====================================================
-# v6: Donchian breakout (20) + ATR threshold
-# - BUY: close > 20-bar high and (close - high_prev) > 0.2*ATR
-# - SELL: close < 20-bar low  and (low_prev - close) > 0.2*ATR
+# v6: Donchian breakout + ATR threshold
+# - BUY: close > previous N-bar high by more than atr_thresh*ATR
+# - SELL: close < previous N-bar low by more than atr_thresh*ATR
 # (ATR threshold filters out false breakouts)
 # ====================================================
-def generate_signals_v6_donchian_breakout(df, atr_thresh=0.2):
-    df = _ensure_cols(df, ["DONCHIAN_UP_20", "DONCHIAN_LO_20", "ATR"])
-    close, atr = df["close"], df["ATR"]
+def generate_signals_v6_donchian_breakout(df, length=20, atr_thresh=0.2):
+    close, atr = df["close"], _atr_col(df)
+    up, lo = _donchian(df, length)
     # Channel bounds of the previous bar (a breakout is measured against the prior bar's channel)
-    up_prev = df["DONCHIAN_UP_20"].shift(1)
-    lo_prev = df["DONCHIAN_LO_20"].shift(1)
-    # Is the move beyond the channel significant?
+    up_prev, lo_prev = up.shift(1), lo.shift(1)
     buy = (close > up_prev) & ((close - up_prev) > atr_thresh * atr)
     sell = (close < lo_prev) & ((lo_prev - close) > atr_thresh * atr)
-    return _to_signals(df, buy, sell, warmup=20)
+    return _to_signals(df, buy, sell, warmup=max(20, length))
 
 
 # ====================================================
 # v7: Trend + RSI pullback/cross
-# - Trend filter: EMA21 > EMA50 -> LONG only; EMA21 < EMA50 -> SHORT only
-# - LONG: RSI dipped below 40, then crosses back above 45 (pullback is over)
-# - SHORT: RSI rose above 60, then crosses back below 55
+# - Trend filter: EMA trend_fast > EMA trend_slow -> LONG only; below -> SHORT only
+# - LONG: RSI dipped below `oversold`, then crosses back above `buy_cross`
+# - SHORT: RSI rose above `overbought`, then crosses back below `sell_cross`
 # ====================================================
-def generate_signals_v7_trend_pullback_rsi(df):
-    df = _ensure_cols(df, ["EMA_21", "EMA_50"])
+def generate_signals_v7_trend_pullback_rsi(df, trend_fast=21, trend_slow=50, oversold=40,
+                                           buy_cross=45, overbought=60, sell_cross=55, lookback=5):
     rsi = df["RSI"]
     rsi_prev = rsi.shift(1)
-    uptrend = df["EMA_21"] > df["EMA_50"]
-    downtrend = df["EMA_21"] < df["EMA_50"]
-    # RSI was below 40 / above 60 within the 5 candles before the current one
-    was_oversold = rsi.rolling(5).min().shift(1) < 40
-    was_overbought = rsi.rolling(5).max().shift(1) > 60
-    buy = uptrend & was_oversold & (rsi_prev < 45) & (rsi >= 45)
-    sell = downtrend & was_overbought & (rsi_prev > 55) & (rsi <= 55)
-    return _to_signals(df, buy, sell, warmup=54)
+    ema_f, ema_s = _ema(df, trend_fast), _ema(df, trend_slow)
+    uptrend, downtrend = ema_f > ema_s, ema_f < ema_s
+    # RSI was below oversold / above overbought within the `lookback` candles before this one
+    was_oversold = rsi.rolling(lookback).min().shift(1) < oversold
+    was_overbought = rsi.rolling(lookback).max().shift(1) > overbought
+    buy = uptrend & was_oversold & (rsi_prev < buy_cross) & (rsi >= buy_cross)
+    sell = downtrend & was_overbought & (rsi_prev > sell_cross) & (rsi <= sell_cross)
+    return _to_signals(df, buy, sell, warmup=max(54, trend_slow + 4))
 
 
 # ==========================
@@ -178,9 +156,39 @@ STRATEGY_DISPATCH = {
     "v7": generate_signals_v7_trend_pullback_rsi,
 }
 
+# Parameter grids for walk-forward optimization. Kept small on purpose: every extra
+# combination is another chance to fit noise. Tuples of names vary together.
+PARAM_GRIDS = {
+    "v1": {"rsi_buy": [30, 35, 40, 45], "rsi_sell": [55, 60, 65, 70]},
+    "v2": {"rsi_buy": [40, 45, 50], "rsi_sell": [50, 55, 60], "confirm": [2, 3]},
+    "v3": {"rsi_buy": [40, 45, 50], "rsi_sell": [50, 55, 60]},
+    "v4": {"bb_mult": [1.5, 2.0, 2.5], "rsi_buy": [25, 30, 35, 40], "rsi_sell": [60, 65, 70]},
+    "v5": {("fast", "slow"): [(9, 21), (12, 26), (20, 50)], "rsi_buy": [40, 45, 50, 55],
+           "rsi_sell": [45, 55]},
+    "v6": {"length": [10, 20, 40, 55], "atr_thresh": [0.0, 0.2, 0.5]},
+    "v7": {("trend_fast", "trend_slow"): [(21, 50), (50, 200)], "oversold": [30, 35, 40],
+           "buy_cross": [45, 50]},
+}
+
 
 def get_strategy(key):
     """Return the signal function registered under `key`."""
     if key not in STRATEGY_DISPATCH:
         raise ValueError(f"Unknown strategy: {key}")
     return STRATEGY_DISPATCH[key]
+
+
+def param_combinations(key):
+    """All parameter dicts in the strategy's grid ({} if it has none)."""
+    grid = PARAM_GRIDS.get(key, {})
+    names, values = list(grid), list(grid.values())
+    combos = []
+    for choice in itertools.product(*values):
+        params = {}
+        for name, value in zip(names, choice):
+            if isinstance(name, tuple):
+                params.update(zip(name, value))
+            else:
+                params[name] = value
+        combos.append(params)
+    return combos or [{}]
