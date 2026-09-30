@@ -1,5 +1,4 @@
 # indicators.py
-import pandas as pd
 
 def add_indicators(df):
     # RSI

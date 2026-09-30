@@ -1,11 +1,8 @@
 # multi_backtest.py
 import ccxt
 import pandas as pd
-import numpy as np
 from indicators import add_indicators
 import strategy
-import os
-import csv
 
 # --- optional config values ---
 try:
