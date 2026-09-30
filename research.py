@@ -7,6 +7,7 @@ Outputs: research_results.csv (per symbol), research_folds.csv (chosen parameter
 fold) and research_summary.csv (one row per strategy/timeframe candidate).
 """
 import argparse
+import sys
 import math
 import os
 from multiprocessing import Pool
@@ -165,6 +166,7 @@ def run(symbols=None, timeframes=None, strategies=None, workers=None, fetch=True
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)  # show progress live even when redirected
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--symbols", nargs="+")
     ap.add_argument("--timeframes", nargs="+", help="subset of config.RESEARCH_TIMEFRAMES")

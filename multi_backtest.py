@@ -2,6 +2,7 @@
 """Grid backtest: every symbol x timeframe x strategy, with in-sample, out-of-sample
 and walk-forward results written to multi_backtest_strategies.csv."""
 import argparse
+import sys
 
 import pandas as pd
 
@@ -92,6 +93,7 @@ def run(symbols=None, timeframes=None, strategies=None, days=None):
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)  # show progress live even when redirected
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--symbols", nargs="+", help="e.g. BTC/USDT ETH/USDT (default: config.SYMBOLS)")
     ap.add_argument("--timeframes", nargs="+", help="e.g. 5m 15m (default: config.TIMEFRAMES)")
