@@ -53,5 +53,24 @@ FEE_RATE_TAKER = 0.0010
 # Slippage in basis points. 1 bps = 0.01%, e.g. 5 bps = 0.05% = 0.0005
 SLIPPAGE_BPS = 5
 
-# (Optional) position size; currently everything uses 1 unit
-POSITION_SIZE = 1.0
+# ===== Engine / evaluation settings =====
+# Spot only allows long positions; shorts need margin or futures.
+ALLOW_SHORT = False
+# Each position uses the full equity (no leverage, compounding).
+INITIAL_EQUITY = 1000.0  # quote currency (USDT) per symbol
+
+# Backtest history and out-of-sample evaluation
+BACKTEST_DAYS = 90
+OOS_FRACTION = 0.3        # last 30% of the history is out-of-sample
+WALK_FORWARD_FOLDS = 4    # test windows over the second half of the history (0 = off)
+
+
+def engine_config():
+    from engine import EngineConfig
+    return EngineConfig(
+        fee_rate=FEE_RATE_TAKER,
+        slippage_bps=SLIPPAGE_BPS,
+        atr_multiplier=ATR_MULTIPLIER,
+        allow_short=ALLOW_SHORT,
+        initial_equity=INITIAL_EQUITY,
+    )

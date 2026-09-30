@@ -1,181 +1,101 @@
 # multi_backtest.py
-import ccxt
+"""Grid backtest: every symbol x timeframe x strategy, with in-sample, out-of-sample
+and walk-forward results written to multi_backtest_strategies.csv."""
+import argparse
+
 import pandas as pd
-from indicators import add_indicators
+
+import config
 import strategy
+from data import load_ohlcv
+from evaluation import evaluate_segment, is_oos_split, walk_forward_splits
+from indicators import add_indicators
 
-# --- optional config values ---
-try:
-    from config import SYMBOLS
-except Exception:
-    SYMBOLS = ["BTC/USDT", "ETH/USDT", "BNB/USDT"]
+OUT_FILE = "multi_backtest_strategies.csv"
 
-try:
-    from config import TIMEFRAMES
-except Exception:
-    TIMEFRAMES = ["1m", "3m", "5m"]
+COLUMN_NAMES = {
+    "return_pct": "Return%", "buy_hold_pct": "BuyHold%", "trades": "Trades",
+    "win_rate_pct": "WinRate%", "profit_factor": "ProfitFactor", "avg_trade_pct": "AvgTrade%",
+    "avg_win_pct": "AvgWin%", "avg_loss_pct": "AvgLoss%",
+    "max_drawdown_pct": "MaxDD%", "sharpe": "Sharpe", "exposure_pct": "Exposure%",
+    "fees": "Fees", "start": "Start", "end": "End",
+}
 
-try:
-    from config import STRATEGY_LIST
-except Exception:
-    STRATEGY_LIST = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"]
 
-try:
-    from config import ATR_MULTIPLIER
-except Exception:
-    ATR_MULTIPLIER = 1.5
+def segments(n):
+    """Named row ranges to evaluate: full history, IS, OOS and walk-forward test folds."""
+    is_rows, oos_rows = is_oos_split(n, config.OOS_FRACTION)
+    out = [("ALL", range(0, n)), ("IS", is_rows), ("OOS", oos_rows)]
+    if config.WALK_FORWARD_FOLDS:
+        for k, (_, test) in enumerate(walk_forward_splits(n, config.WALK_FORWARD_FOLDS), 1):
+            out.append((f"WF{k}", test))
+    return out
 
-try:
-    from config import FEE_RATE_TAKER, SLIPPAGE_BPS
-except Exception:
-    FEE_RATE_TAKER = 0.001
-    SLIPPAGE_BPS   = 2
 
-binance = ccxt.binance({'enableRateLimit': True})
+def backtest_symbol(symbol, timeframe, strategies, days, engine_cfg):
+    df = add_indicators(load_ohlcv(symbol, timeframe, days))
+    rows = []
+    for key in strategies:
+        signals = strategy.get_strategy(key)(df)
+        for name, rng in segments(len(df)):
+            m, _, _ = evaluate_segment(df, signals, rng, engine_cfg, timeframe, symbol)
+            rows.append({"Symbol": symbol, "Timeframe": timeframe, "Strategy": key,
+                         "Segment": name, **m})
+    return rows
 
-def fetch_df(symbol, timeframe, limit=500):
-    data = binance.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-    df = pd.DataFrame(data, columns=["timestamp","open","high","low","close","volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-    return add_indicators(df)
 
-def apply_commission_slippage(entry_price, exit_price, side):
-    """
-    side: 'LONG' or 'SHORT'
-    Apply the fee on both legs and a simple slippage on entry and exit.
-    """
-    # slippage (bps) -> fraction
-    slip = SLIPPAGE_BPS / 10000.0
-    if side == "LONG":
-        adj_entry = entry_price * (1 + slip)
-        adj_exit  = exit_price * (1 - slip)
-        gross = adj_exit - adj_entry
-    else:
-        adj_entry = entry_price * (1 - slip)
-        adj_exit  = exit_price * (1 + slip)
-        gross = adj_entry - adj_exit
+def summarize(results):
+    """Per strategy/timeframe: how the edge holds up in-sample vs out-of-sample."""
+    r = results[results["Segment"].isin(["IS", "OOS"])].copy()
+    r["Excess%"] = r["Return%"] - r["BuyHold%"]
+    g = r.groupby(["Strategy", "Timeframe", "Segment"])
+    summary = pd.DataFrame({
+        "MedianReturn%": g["Return%"].median(),
+        "MedianExcess%": g["Excess%"].median(),
+        "Profitable%": g["Return%"].apply(lambda x: (x > 0).mean() * 100),
+        "MedianPF": g["ProfitFactor"].median(),
+        "MedianMaxDD%": g["MaxDD%"].median(),
+        "Trades": g["Trades"].sum(),
+    }).unstack("Segment")
+    summary.columns = [f"{seg} {col}" for col, seg in summary.columns]
+    order = [f"{seg} {col}" for seg in ["IS", "OOS"] for col in
+             ["MedianReturn%", "MedianExcess%", "Profitable%", "MedianPF", "MedianMaxDD%", "Trades"]]
+    return summary[order]
 
-    # fee: proportional to price on each leg (buy and sell)
-    commission = (entry_price + exit_price) * FEE_RATE_TAKER
-    net = gross - commission
-    return net
 
-def backtest_one(df: pd.DataFrame, strat_key: str):
-    fn = strategy.get_strategy(strat_key)
+def run(symbols=None, timeframes=None, strategies=None, days=None):
+    symbols = symbols or config.SYMBOLS
+    timeframes = timeframes or config.TIMEFRAMES
+    strategies = strategies or config.STRATEGY_LIST
+    days = days or config.BACKTEST_DAYS
+    engine_cfg = config.engine_config()
 
-    position = None
-    entry_price = None
-    entry_idx = None
-    total_pnl = 0.0
-    trade_count = 0
-
-    # Current stop-loss level
-    stop_loss = None
-
-    signals = fn(df)  # signals[i] only depends on candles 0..i
-
-    # bar-by-bar simulation
-    for i in range(max(30, 25), len(df)):
-        row = df.iloc[i]
-        sig, atr = signals.iloc[i], row["ATR"]
-
-        close = float(row["close"])
-        high  = float(row["high"])
-        low   = float(row["low"])
-
-        # Stop-loss check for the open position
-        if position is not None and stop_loss is not None:
-            if position == "LONG" and low <= stop_loss:
-                pnl = apply_commission_slippage(entry_price, stop_loss, "LONG")
-                total_pnl += pnl
-                trade_count += 1
-                position = None
-                entry_price = None
-                stop_loss = None
-                # If the stop was hit, ignore new signals on this bar
-                continue
-            elif position == "SHORT" and high >= stop_loss:
-                pnl = apply_commission_slippage(entry_price, stop_loss, "SHORT")
-                total_pnl += pnl
-                trade_count += 1
-                position = None
-                entry_price = None
-                stop_loss = None
-                continue
-
-        # Apply the signal
-        if sig == "BUY":
-            if position is None:
-                position = "LONG"
-                entry_price = close
-                entry_idx = i
-                stop_loss = (close - atr * ATR_MULTIPLIER) if (atr is not None and pd.notna(atr)) else None
-            elif position == "SHORT":
-                # Reverse: close the short at market, then go long
-                pnl = apply_commission_slippage(entry_price, close, "SHORT")
-                total_pnl += pnl
-                trade_count += 1
-                # open the new long
-                position = "LONG"
-                entry_price = close
-                entry_idx = i
-                stop_loss = (close - atr * ATR_MULTIPLIER) if (atr is not None and pd.notna(atr)) else None
-
-        elif sig == "SELL":
-            if position is None:
-                position = "SHORT"
-                entry_price = close
-                entry_idx = i
-                stop_loss = (close + atr * ATR_MULTIPLIER) if (atr is not None and pd.notna(atr)) else None
-            elif position == "LONG":
-                pnl = apply_commission_slippage(entry_price, close, "LONG")
-                total_pnl += pnl
-                trade_count += 1
-                position = "SHORT"
-                entry_price = close
-                entry_idx = i
-                stop_loss = (close + atr * ATR_MULTIPLIER) if (atr is not None and pd.notna(atr)) else None
-
-        # otherwise no signal: wait
-
-    # close any remaining position at the last close
-    if position is not None and entry_price is not None:
-        last_close = float(df["close"].iloc[-1])
-        side = "LONG" if position == "LONG" else "SHORT"
-        pnl = apply_commission_slippage(entry_price, last_close, side)
-        total_pnl += pnl
-        trade_count += 1
-
-    return total_pnl, trade_count
-
-def run():
-    results = []
-    for symbol in SYMBOLS:
-        for tf in TIMEFRAMES:
-            print(f"⏳ Testing: {symbol} - {tf}")
+    rows = []
+    for symbol in symbols:
+        for tf in timeframes:
+            print(f"⏳ Testing: {symbol} - {tf} ({days} days)")
             try:
-                df = fetch_df(symbol, timeframe=tf, limit=800)
-                for strat in STRATEGY_LIST:
-                    total_pnl, trade_count = backtest_one(df, strat)
-                    results.append({
-                        "Symbol": symbol,
-                        "Timeframe": tf,
-                        "Strategy": strat,
-                        "Total PnL": round(float(total_pnl), 6),
-                        "Trade Count": int(trade_count)
-                    })
+                rows.extend(backtest_symbol(symbol, tf, strategies, days, engine_cfg))
             except Exception as e:
                 print(f"[ERROR] {symbol} {tf}: {e}")
 
-    # Save CSV
-    out_file = "multi_backtest_strategies.csv"
-    df_out = pd.DataFrame(results)
-    cols = ["Symbol", "Timeframe", "Strategy", "Total PnL", "Trade Count"]
-    df_out = df_out[cols]
-    df_out.to_csv(out_file, index=False)
-    print("\n📊 Multi-strategy backtest finished. Top results:")
-    print(df_out.sort_values(["Total PnL","Trade Count"], ascending=[False, False]).head(20))
-    print(f"\n📁 Results saved to '{out_file}'.")
+    results = pd.DataFrame(rows).rename(columns=COLUMN_NAMES)
+    results.to_csv(OUT_FILE, index=False, float_format="%.6g")
+    print(f"\n📁 Results saved to '{OUT_FILE}' ({len(results)} rows).")
+
+    if not results.empty:
+        with pd.option_context("display.width", 250, "display.max_columns", 20,
+                               "display.float_format", "{:.2f}".format):
+            print("\n📊 In-sample vs out-of-sample (medians across symbols):")
+            print(summarize(results))
+    return results
+
 
 if __name__ == "__main__":
-    run()
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--symbols", nargs="+", help="e.g. BTC/USDT ETH/USDT (default: config.SYMBOLS)")
+    ap.add_argument("--timeframes", nargs="+", help="e.g. 5m 15m (default: config.TIMEFRAMES)")
+    ap.add_argument("--strategies", nargs="+", help="e.g. v1 v6 (default: config.STRATEGY_LIST)")
+    ap.add_argument("--days", type=float, help=f"history length (default: {config.BACKTEST_DAYS})")
+    a = ap.parse_args()
+    run(a.symbols, a.timeframes, a.strategies, a.days)
