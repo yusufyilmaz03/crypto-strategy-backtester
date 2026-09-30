@@ -18,6 +18,9 @@ summary.png
 signals_log.csv
 trades_log.csv
 multi_backtest_strategies.csv
+research_results.csv
+research_folds.csv
+research_summary.csv
 
 # OS
 .DS_Store

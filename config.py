@@ -74,3 +74,14 @@ def engine_config():
         allow_short=ALLOW_SHORT,
         initial_equity=INITIAL_EQUITY,
     )
+
+
+# ===== Strategy research (research.py) =====
+# Timeframe -> days of history. Higher timeframes get longer histories so that each
+# walk-forward window still holds enough trades.
+RESEARCH_TIMEFRAMES = {"15m": 180, "1h": 365, "4h": 730}
+WFO_FOLDS = 5
+WFO_MIN_TRAIN_FRACTION = 0.4   # first 40% is only used for training
+WFO_MIN_TRADES = 10            # min trades in a training window to trust its Sharpe
+COST_STRESS = 1.5              # fees and slippage multiplier for the stress test
+RESEARCH_MIN_CANDLES = 1500    # skip symbols with a shorter history

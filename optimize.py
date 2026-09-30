@@ -107,6 +107,7 @@ def walk_forward_optimize(df, key, timeframe, config, n_folds=5, min_train_fract
         "oos_equity": equity,
         "oos_trades": trades,
         "default_return_pct": default["return_pct"],
+        "high_cost_equity": _chain(high_cost_equity, init),
         "high_cost_return_pct": (_chain(high_cost_equity, init).iloc[-1] / init - 1) * 100,
         "default_sharpe": default["sharpe"],
         "folds": folds,

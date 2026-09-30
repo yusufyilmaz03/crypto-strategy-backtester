@@ -92,9 +92,11 @@ def to_datetime_index(df):
     return out
 
 
-def load_ohlcv(symbol, timeframe, days, exchange=None, now=None, use_cache=True):
+def load_ohlcv(symbol, timeframe, days, exchange=None, now=None, use_cache=True, refresh=True):
     """Closed candles for the last `days` days, served from the cache and topped up from Binance.
 
+    With refresh=False the cache is returned as is (no network), e.g. for parallel
+    workers after the data has been prefetched.
     Returns a DataFrame with a datetime `timestamp` column plus OHLCV columns.
     """
     now = now_ms() if now is None else now
@@ -104,6 +106,9 @@ def load_ohlcv(symbol, timeframe, days, exchange=None, now=None, use_cache=True)
 
     path = cache_path(symbol, timeframe)
     cached = _read_cache(path) if use_cache else _to_frame([])
+
+    if not refresh:
+        return to_datetime_index(cached[cached["timestamp"] >= start].reset_index(drop=True))
 
     parts = [cached]
     if cached.empty:

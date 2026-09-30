@@ -55,3 +55,13 @@ def test_fetch_recent_drops_forming_candle():
     ex = FakeExchange(first=T0, last=T0 + 50 * MINUTE)
     df = data.fetch_recent("X/USDT", "1m", limit=10, exchange=ex, now=T0 + 50 * MINUTE + 1)
     assert len(df) == 9
+
+
+def test_load_ohlcv_without_refresh_reads_cache_only(tmp_cache):
+    now = T0 + 300 * MINUTE
+    ex = FakeExchange(first=T0 - 10_000 * MINUTE, last=T0 + 299 * MINUTE)
+    data.load_ohlcv("X/USDT", "1m", days=0.1, exchange=ex, now=now)
+    calls = len(ex.calls)
+    df = data.load_ohlcv("X/USDT", "1m", days=0.1, exchange=ex, now=now + 60 * MINUTE, refresh=False)
+    assert len(ex.calls) == calls           # no network
+    assert len(df) == 144 - 60              # window moved on, cache not topped up
