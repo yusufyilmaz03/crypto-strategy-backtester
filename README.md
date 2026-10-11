@@ -1,15 +1,17 @@
 # Crypto Strategy Backtester
 
-A Python research tool for testing technical trading strategies on historical crypto market data, with paper trading and a small web dashboard for analyzing the results.
+[![tests](https://github.com/yusufyilmaz03/crypto-strategy-backtester/actions/workflows/tests.yml/badge.svg)](https://github.com/yusufyilmaz03/crypto-strategy-backtester/actions/workflows/tests.yml)
 
-> **For research and education only.** This project does not place real orders and is not financial advice.
+A Python research tool for testing technical trading strategies on historical crypto market data, with paper trading, an order flow for the Binance Spot Testnet and a web control panel.
+
+> **For research and education only.** Real orders are sent only to the Binance Spot Testnet (no real money); live trading is switched off in code. This is not financial advice.
 
 ## What it does
 
 - **Market data:** pulls OHLCV candles from Binance through [ccxt](https://github.com/ccxt/ccxt) (public endpoints, no API key needed).
 - **Market data cache:** any lookback is downloaded in pages and cached under `data/`; later runs only fetch new candles. Candles that have not closed yet are always dropped.
 - **Indicators:** RSI (Wilder), EMA (9/21/50), ATR, Bollinger Bands and Donchian channels, computed with pandas.
-- **7 strategies:**
+- **10 strategies:**
   | Key | Idea |
   |-----|------|
   | v1 | RSI + EMA crossover |
@@ -19,6 +21,11 @@ A Python research tool for testing technical trading strategies on historical cr
   | v5 | EMA cross, trading only in the trend direction |
   | v6 | Donchian (20) breakout with an ATR threshold against false breakouts |
   | v7 | Trend filter (EMA21 vs EMA50) + RSI pullback |
+  | v8 | Time-series momentum: long while the return over the last L candles is positive |
+  | v9 | Moving-average regime: long while SMA(fast) is above SMA(slow) (fast=1 means the price itself) |
+  | v10 | Turtle/Donchian: enter on an N-candle high, exit on an M-candle low |
+
+  Plus R1, a cross-sectional rotation into the coins with the strongest momentum (`rotation.py`).
 - **One engine for backtest and paper trading:** the same bar-by-bar engine drives both, so paper results follow the backtest rules exactly (see *Simulation rules*).
 - **Multi-backtest:** runs every strategy on every symbol and timeframe and reports in-sample, out-of-sample and walk-forward results with return, buy-and-hold return, win rate, profit factor, max drawdown, Sharpe and exposure.
 - **Strategy research:** walk-forward optimization of each strategy's parameters on 15m/1h/4h data, with out-of-sample portfolio results, a cost stress test and a deflated Sharpe ratio to guard against overfitting.
@@ -32,7 +39,7 @@ A Python research tool for testing technical trading strategies on historical cr
 ├── config.py            # symbols, timeframes, strategy, stop-loss, costs, evaluation settings
 ├── data.py              # paginated OHLCV download + local cache, closed candles only
 ├── indicators.py        # RSI (Wilder), EMA, ATR
-├── strategy.py          # signal generators v1–v7 (vectorized)
+├── strategy.py          # signal generators v1–v10 (vectorized)
 ├── engine.py            # bar-by-bar trading engine shared by backtest and paper trading
 ├── metrics.py           # performance metrics
 ├── evaluation.py        # in-sample/out-of-sample and walk-forward splits
@@ -71,8 +78,6 @@ pip install -r requirements.txt
 # Optional: API keys are not needed for market data or paper trading
 cp .env.example .env
 ```
-
-Run the pieces:
 
 Everything day-to-day runs from the control panel:
 
@@ -131,6 +136,13 @@ pytest
 Phase 2b (trend following and rotation on 4h/1d) was pre-registered in [docs/phase2b-preregistration.md](docs/phase2b-preregistration.md), which also lists the results. `research.py` holds out the last `HOLDOUT_FRACTION` of each timeframe; `research.py --holdout` tests only the finalists, once.
 
 A candidate passes when its portfolio return and cost-stressed return are positive, its Sharpe beats buy-and-hold, it has at least 30 trades and its deflated Sharpe ratio is at least 0.95.
+
+## Findings so far
+
+- **v1–v7 on 1m–4h:** no edge after costs. Walk-forward out-of-sample portfolios trail buy-and-hold, and every candidate turns negative with costs × 1.5.
+- **Trend following on 1d (Phase 2b):** the best candidate, v9 (close above SMA50, no stop), returned +36.7% out-of-sample against −26.6% for buy-and-hold, with roughly half the drawdown, but its deflated Sharpe ratio (0.01) is far from the 0.95 bar, so it did not pass.
+- **v9 holdout** ([docs/v9-holdout-test.md](docs/v9-holdout-test.md), pre-registered, run once): +7.2% vs −11.4%, Sharpe 0.42 vs 0.07, max drawdown 24.7% vs 48.9%. The robust part of the result is the lower drawdown; the evidence for excess return is still weak.
+- A 180-day paper forward test of v9 is running ([docs/forward-test.md](docs/forward-test.md)).
 
 ## Testnet trading
 
