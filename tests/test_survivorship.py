@@ -119,3 +119,29 @@ def test_bootstrap_of_identical_series_is_zero():
     r = np.random.default_rng(1).normal(0.001, 0.02, 400)
     d = sv.bootstrap_sharpe_diff(r, r, n=50)
     assert np.allclose(d, 0)
+
+
+def test_portfolio_weights():
+    days = pd.date_range("2020-01-01", "2020-02-29", freq="D")
+    a = pd.Series(np.linspace(1, 2, len(days)), index=days)
+    b = pd.Series(1.0, index=days)
+    sleeves = {"A": (a, pd.Series(False, index=days), pd.DatetimeIndex([])),
+               "B": (b, pd.Series(False, index=days), pd.DatetimeIndex([]))}
+    m = pd.Timestamp("2020-02-01")
+    values, _, _ = sv.portfolio(sleeves, {m: ["A", "B"]}, "2020-03-01", 0.0, weights={m: {"A": 3, "B": 1}})
+    jan31 = pd.Timestamp("2020-01-31")
+    assert values.iloc[-1] == pytest.approx(0.75 * a.iloc[-1] / a[jan31] + 0.25)
+
+
+def test_inverse_vol_weights_use_only_past_data():
+    rng = np.random.default_rng(0)
+    t = pd.date_range("2020-01-01", "2020-04-30", freq="D")
+    calm = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, len(t))))
+    wild = 100 * np.exp(np.cumsum(rng.normal(0, 0.04, len(t))))
+    assets = {"CALM": pd.DataFrame({"timestamp": t, "close": calm}),
+              "WILD": pd.DataFrame({"timestamp": t, "close": wild})}
+    m = pd.Timestamp("2020-04-01")
+    w = sv.inverse_vol_weights(assets, {m: ["CALM", "WILD"]}, lookback=60)[m]
+    assert 3 < w["CALM"] / w["WILD"] < 5.5
+    later = dict(assets, WILD=assets["WILD"].assign(close=np.where(t >= m, wild * 50, wild)))
+    assert sv.inverse_vol_weights(later, {m: ["CALM", "WILD"]}, lookback=60)[m] == w

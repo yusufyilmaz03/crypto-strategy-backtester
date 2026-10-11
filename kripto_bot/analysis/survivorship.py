@@ -118,10 +118,11 @@ def hold_sleeve(df):
 
 
 # ---------------------------------------------------------------- portfolio
-def portfolio(sleeves, members, end, cost):
+def portfolio(sleeves, members, end, cost, weights=None):
     """Daily portfolio value (starting at 1 on the day before the first month) and
     daily exposure. sleeves: {asset: (value, in_position, entries)}; members:
-    {month start: [assets]}; cost: one fill (fee + slippage) as a fraction."""
+    {month start: [assets]}; cost: one fill (fee + slippage) as a fraction; weights:
+    {month start: {asset: weight}} (normalized per month), default equal weight."""
     months = sorted(members)
     end = pd.Timestamp(end)
     value = 1.0
@@ -151,14 +152,33 @@ def portfolio(sleeves, members, end, cost):
             held.append(pos_days)
             entries += int(((ent >= m) & (ent < stop)).sum())
         if paths:
-            month = pd.concat(paths, axis=1).mean(axis=1)
-            exposure.append(pd.concat(held, axis=1).mean(axis=1))
+            w = np.full(len(paths), 1.0) if weights is None else np.array([weights[m][a] for a in members[m]])
+            w = w / w.sum()
+            month = pd.concat(paths, axis=1).mul(w, axis=1).sum(axis=1)
+            exposure.append(pd.concat(held, axis=1).astype(float).mul(w, axis=1).sum(axis=1))
         else:
             month = pd.Series(1.0, index=days)
             exposure.append(pd.Series(0.0, index=days))
         values.append(month * value)
         value = float(month.iloc[-1] * value)
     return pd.concat(values), float(pd.concat(exposure).mean()), entries
+
+
+def inverse_vol_weights(assets, members, lookback=60):
+    """{month: {asset: 1/σ}} with σ the standard deviation of the asset's daily close-to-close
+    returns over the lookback days ending the day before the month (no later data)."""
+    closes = {a: df.set_index("timestamp")["close"] for a, df in assets.items()}
+    out = {}
+    for m, names in members.items():
+        prev = m - pd.Timedelta(days=1)
+        out[m] = {}
+        for a in names:
+            r = closes[a].loc[:prev].iloc[-(lookback + 1):].pct_change().dropna()
+            sigma = r.std(ddof=1)
+            out[m][a] = 1 / sigma if sigma > 0 else 0.0
+        if not any(out[m].values()):
+            out[m] = {a: 1.0 for a in names}
+    return out
 
 
 def stats(values):
