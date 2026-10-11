@@ -27,3 +27,23 @@ This is a deviation from the pre-registration. Known caveats:
 - Pass, all of (same as `forward-test.md`): annualized daily Sharpe above the
   benchmark's, max drawdown below the benchmark's, at least 30 closed trades.
 - The test is run once. Whatever the result, v9's parameters are not changed based on it.
+
+## Result (run once, 2026-10-11)
+
+2025-12-13 → 2026-10-10 (301 days), 42 symbols, none skipped.
+
+| | v9 | Equal-weight buy-and-hold |
+|---|---|---|
+| Return | +7.20% | −11.38% |
+| Annualized Sharpe (daily) | 0.42 | 0.07 |
+| Max drawdown | 24.65% | 48.92% |
+| Closed trades | 401 (win rate 11.5%) | |
+
+**PASS** on all three criteria.
+
+Interpretation: the result matches the development pattern. In a falling market v9
+stayed positive and roughly halved the drawdown by being out of coins trading below
+their 50-day average. The absolute evidence is still modest: a Sharpe of 0.42 over
+0.8 years is far from significant on its own, so the robust finding is the risk
+reduction (drawdown) rather than the return. The last 10 days overlap with the paper
+forward test, which keeps running.
