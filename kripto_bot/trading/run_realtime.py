@@ -14,7 +14,7 @@ from functools import partial
 import pandas as pd
 
 from kripto_bot import config
-from kripto_bot.core import strategy
+from kripto_bot.core import sizing, strategy
 from kripto_bot.core.data import fetch_recent, now_ms, timeframe_ms
 from kripto_bot.core.engine import Engine
 from kripto_bot.core.indicators import add_indicators
@@ -47,6 +47,7 @@ class SymbolRunner:
         self.signal_fn = partial(strategy.get_strategy(strategy_key), **(params or {}))
         self.store = store
         self.engine = Engine(engine_cfg, symbol, on_open=self._opened, on_close=self._closed)
+        self.history = None                # candles of the last prepare()
         state, self.last_time = store.load_state(symbol, self.key, timeframe)   # saved under self.key too
         if state is not None:
             self.engine.load_state(state)
@@ -68,49 +69,129 @@ class SymbolRunner:
         missed = (now_ms() - pd.Timestamp(self.last_time).value // 10**6) // timeframe_ms(self.timeframe)
         return int(min(MAX_FETCH, max(HISTORY, missed + HISTORY)))
 
-    def update(self):
+    def prepare(self):
+        """Fetch candles and return the closed ones not processed yet (with a 'signal'
+        column), or an empty frame. On the first run only the starting point is saved."""
         df = fetch_recent(self.symbol, self.timeframe, self._fetch_limit())
         if df.empty:
-            return
+            return df
         df = add_indicators(df)
         self.store.fill_missing_closes(self.key, self.timeframe, self.symbol, df)
+        self.history = df
         if self.last_time is None:
             # First run: start from the next closed candle; don't simulate trades on past data.
             self.last_time = df["timestamp"].iloc[-1]
             with self.store.candle():
                 self.store.save_state(self.symbol, self.key, self.timeframe,
                                       self.engine.to_state(), self.last_time)
-            return
-
-        signals = self.signal_fn(df)
+            return df.iloc[0:0]
+        df = df.assign(signal=self.signal_fn(df))
         new = df["timestamp"] > self.last_time
         if new.any():
             first_new = df.loc[new, "timestamp"].iloc[0]
             gap = (first_new - pd.Timestamp(self.last_time)) // pd.Timedelta(milliseconds=timeframe_ms(self.timeframe)) - 1
             if gap > 0:
                 print(f"⚠️ [{self.symbol}] {gap} candles missed beyond the fetch window; continuing")
+        return df[new]
 
-        for (_, row), sig in zip(df[new].iterrows(), signals[new]):
-            with self.store.candle():
-                self.engine.on_bar(row["timestamp"], row["open"], row["high"], row["low"],
-                                   row["close"], sig, row["ATR"], row["RSI"])
-                if sig in ("BUY", "SELL"):
-                    side = self.engine.position.side if self.engine.position else None
-                    self.store.log_signal(self.key, self.timeframe, self.symbol, row["timestamp"], sig,
-                                          row["RSI"], row["close"], side, describe_action(self.engine, sig))
-                t, eq = self.engine.equity_curve[-1]
-                self.store.log_equity(self.key, self.timeframe, self.symbol, t, eq, row["close"])
-                self.store.save_state(self.symbol, self.key, self.timeframe,
-                                      self.engine.to_state(), row["timestamp"])
-            self.engine.equity_curve.clear()  # already stored; keep memory flat
-            self.last_time = row["timestamp"]
+    def step(self, row):
+        """Process one closed candle. Call inside the store's candle() transaction."""
+        sig = row["signal"]
+        self.engine.on_bar(row["timestamp"], row["open"], row["high"], row["low"],
+                           row["close"], sig, row["ATR"], row["RSI"])
+        if sig in ("BUY", "SELL"):
+            side = self.engine.position.side if self.engine.position else None
+            self.store.log_signal(self.key, self.timeframe, self.symbol, row["timestamp"], sig,
+                                  row["RSI"], row["close"], side, describe_action(self.engine, sig))
+        t, eq = self.engine.equity_curve[-1]
+        self.store.log_equity(self.key, self.timeframe, self.symbol, t, eq, row["close"])
+        self.store.save_state(self.symbol, self.key, self.timeframe,
+                              self.engine.to_state(), row["timestamp"])
+        self.engine.equity_curve.clear()  # already stored; keep memory flat
+        self.last_time = row["timestamp"]
 
-        last = df.iloc[-1]
+    def report(self):
+        if self.history is None or self.history.empty:
+            return
+        last = self.history.iloc[-1]
         pos = self.engine.position
         pos_show = f"{pos.side} stop {pos.stop:.8g}" if pos and pos.stop else (pos.side if pos else "-")
-        print(f"[{self.symbol}] {_fmt_time(last['timestamp'])} | Signal: {signals.iloc[-1]} | "
+        sig = self.signal_fn(self.history).iloc[-1]
+        print(f"[{self.symbol}] {_fmt_time(last['timestamp'])} | Signal: {sig} | "
               f"RSI: {last['RSI']:.2f} | Close: {last['close']:.8g} | Position: {pos_show} | "
               f"Equity: {self.engine.equity:.2f}")
+
+    def update(self):
+        for _, row in self.prepare().iterrows():
+            with self.store.candle():
+                self.step(row)
+        self.report()
+
+
+def period_ends(t, timeframe):
+    """True if candle t is the last one of its calendar month."""
+    nxt = pd.Timestamp(t) + pd.Timedelta(milliseconds=timeframe_ms(timeframe))
+    return nxt.month != pd.Timestamp(t).month
+
+
+class PortfolioRunner:
+    """Runs all symbols of an instance in step and rebalances them to inverse-volatility
+    weights after the last candle of each month (and once at the start). A rebalance
+    resizes each symbol's engine to weight × portfolio value; a symbol in a position
+    trades the difference at the close with fee and slippage. Candle times are processed
+    in order across symbols, each time in one transaction together with its rebalance."""
+
+    def __init__(self, runners, store, key, timeframe, lookback=sizing.LOOKBACK):
+        self.runners, self.store, self.key, self.timeframe = runners, store, key, timeframe
+        self.lookback = lookback
+
+    def rebalance(self, t, closes):
+        """closes: {symbol: close Series ending at t}."""
+        price = {s: float(c.iloc[-1]) for s, c in closes.items()}
+        engines = {r.symbol: r.engine for r in self.runners if r.symbol in closes}
+        marked = {s: e.marked_equity(price[s]) for s, e in engines.items()}
+        total = sum(marked.values())
+        weights = sizing.inverse_vol_weights(closes, self.lookback)
+        costs = {}
+        for s, e in engines.items():
+            costs[s] = e.resize(weights[s] * total, price[s])
+            self.store.log_weight(self.key, self.timeframe, t, s, weights[s], costs[s])
+            self.store.save_state(s, self.key, self.timeframe, e.to_state(), t)
+            if self.store.has_equity(self.key, self.timeframe, s, t):
+                self.store.log_equity(self.key, self.timeframe, s, t, e.marked_equity(price[s]), price[s])
+        top = sorted(weights.items(), key=lambda x: -x[1])[:3]
+        print(f"⚖️  Rebalanced {len(engines)} symbols at {_fmt_time(t)}: value {total:.2f}, "
+              f"cost {sum(costs.values()):.2f}; largest weights "
+              + ", ".join(f"{s} {w * 100:.1f}%" for s, w in top))
+
+    def update(self):
+        pending = {}
+        for r in self.runners:
+            try:
+                pending[r] = r.prepare()
+            except Exception as e:
+                print(f"[ERROR] {r.symbol}: {e}")
+        ready = [r for r in pending if r.history is not None and not r.history.empty]
+        if self.store.last_rebalance(self.key, self.timeframe) is None and ready:
+            # Start: split the capital by weight before the first candle is traded.
+            t = max(r.last_time for r in ready)
+            with self.store.candle():
+                self.rebalance(t, {r.symbol: r.history.set_index("timestamp")["close"].loc[:t] for r in ready})
+        times = sorted({t for df in pending.values() for t in df["timestamp"]})
+        for t in times:
+            with self.store.candle():
+                for r, df in pending.items():
+                    rows = df[df["timestamp"] == t]
+                    if len(rows):
+                        r.step(rows.iloc[0])
+                if period_ends(t, self.timeframe):
+                    have = [r for r in ready if r.last_time == t]
+                    if len(have) < len(ready):
+                        print(f"⚠️ Rebalance at {_fmt_time(t)} without "
+                              f"{', '.join(r.symbol for r in ready if r not in have)} (no candle yet)")
+                    self.rebalance(t, {r.symbol: r.history.set_index("timestamp")["close"].loc[:t] for r in have})
+        for r in self.runners:
+            r.report()
 
 
 def sleep_until_next_close(timeframe, check_every_s=30):
@@ -211,13 +292,18 @@ def main(instance_name="forward-v9", rebuild=False):
                             params=inst.params, label=inst.run_key) for s in inst.symbol_list]
     resumed = sum(r.last_time is not None for r in runners)
     print(f"📡 Paper instance '{inst.name}': {inst.strategy} {inst.params} stop={inst.stop}, "
-          f"timeframe {inst.timeframe}, {len(runners)} symbols ({resumed} resumed from paper.db)\n")
+          f"sizing {inst.sizing}, timeframe {inst.timeframe}, {len(runners)} symbols "
+          f"({resumed} resumed from paper.db)\n")
+    portfolio = PortfolioRunner(runners, store, inst.run_key, inst.timeframe) if inst.sizing == "inverse_vol" else None
     while True:
-        for r in runners:
-            try:
-                r.update()
-            except Exception as e:
-                print(f"[ERROR] {r.symbol}: {e}")
+        if portfolio:
+            portfolio.update()
+        else:
+            for r in runners:
+                try:
+                    r.update()
+                except Exception as e:
+                    print(f"[ERROR] {r.symbol}: {e}")
         sleep_until_next_close(inst.timeframe)
 
 

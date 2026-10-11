@@ -26,6 +26,8 @@
         <div class="form-text">Empty fields use the default shown.</div></div>
       <div class="col-md-6"><label class="form-label" id="equity-label">Equity per symbol (USDT)</label>
         <input class="form-control" name="equity" type="number" min="10" step="any" id="equity"></div>
+      <div class="col-md-6"><label class="form-label">Sizing</label><select class="form-select" id="sizing"></select>
+        <div class="form-text" id="sizing-help"></div></div>
       <div class="col-md-6"><label class="form-label">Symbols</label>
         <select class="form-select" id="symbol-mode"><option value="all">All default symbols</option><option value="custom">Custom list</option></select></div>
       <div class="col-12 d-none" id="symbols-box"><textarea class="form-control font-monospace" name="symbols" rows="2" placeholder="BTC/USDT, ETH/USDT"></textarea></div>
@@ -81,8 +83,13 @@ async function initForm() {
   document.getElementById("strategy").value = "v9";
   document.getElementById("stop").innerHTML = Object.entries(META.stops)
     .map(([k, v]) => opt(k, v == null ? `${k} (exit on signals only)` : `${k} (ATR × ${v})`)).join("");
+  document.getElementById("sizing").innerHTML = Object.entries(META.sizings).map(([k, v]) => opt(k, k)).join("");
   renderParams(); modeChanged();
 }
+function sizingChanged() {
+  document.getElementById("sizing-help").textContent = META.sizings[document.getElementById("sizing").value] || "";
+}
+document.getElementById("sizing").addEventListener("change", sizingChanged);
 function renderParams() {
   const s = META.strategies.find(x => x.key === document.getElementById("strategy").value);
   document.getElementById("strategy-desc").textContent = s.description;
@@ -100,6 +107,9 @@ function modeChanged() {
   document.getElementById("stop-help").textContent = testnet ? "Testnet instances exit on signals only (exchange-side stops aren't implemented)." : "";
   if (testnet) document.getElementById("stop").value = "none";
   document.getElementById("stop").disabled = testnet;
+  if (testnet) document.getElementById("sizing").value = "equal";
+  document.getElementById("sizing").disabled = testnet;
+  sizingChanged();
 }
 document.getElementById("strategy").addEventListener("change", renderParams);
 document.getElementById("mode").addEventListener("change", modeChanged);
@@ -112,7 +122,8 @@ document.getElementById("form").addEventListener("submit", async e => {
   const params = {};
   document.querySelectorAll("[data-param]").forEach(el => { if (el.value !== "") params[el.dataset.param] = el.value; });
   const body = { name: f.get("name"), mode: f.get("mode"), strategy: f.get("strategy"), timeframe: f.get("timeframe"),
-    stop: document.getElementById("stop").value, equity: f.get("equity"), description: f.get("description"), params,
+    stop: document.getElementById("stop").value, sizing: document.getElementById("sizing").value,
+    equity: f.get("equity"), description: f.get("description"), params,
     symbols: document.getElementById("symbol-mode").value === "custom"
       ? f.get("symbols").split(/[\s,]+/).filter(Boolean) : null };
   try {

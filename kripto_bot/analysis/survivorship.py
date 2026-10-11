@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 from kripto_bot import config, paths
-from kripto_bot.core import archive, strategy
+from kripto_bot.core import archive, sizing, strategy
 from kripto_bot.core.engine import run_backtest
 from kripto_bot.core.indicators import add_indicators
 from kripto_bot.core.metrics import max_drawdown_pct
@@ -171,13 +171,7 @@ def inverse_vol_weights(assets, members, lookback=60):
     out = {}
     for m, names in members.items():
         prev = m - pd.Timedelta(days=1)
-        out[m] = {}
-        for a in names:
-            r = closes[a].loc[:prev].iloc[-(lookback + 1):].pct_change().dropna()
-            sigma = r.std(ddof=1)
-            out[m][a] = 1 / sigma if sigma > 0 else 0.0
-        if not any(out[m].values()):
-            out[m] = {a: 1.0 for a in names}
+        out[m] = sizing.inverse_vol_weights({a: closes[a].loc[:prev] for a in names}, lookback) if names else {}
     return out
 
 

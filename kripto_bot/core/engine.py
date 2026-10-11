@@ -128,6 +128,25 @@ class Engine:
         direction = 1 if p.side == "LONG" else -1
         return p.equity_before - p.entry_fee + direction * p.qty * (price - p.entry_price)
 
+    def resize(self, target, price):
+        """Set the sleeve's marked equity to `target` at `price` (portfolio rebalancing).
+        In a position the difference is traded at `price` with fee and slippage, which is
+        taken from the target; flat, only cash moves. Returns the cost."""
+        marked = self.marked_equity(price)
+        if marked <= 0:
+            return 0.0
+        cost = 0.0
+        if self.position is not None:
+            cost = abs(target - marked) * (self.config.fee_rate + self.config.slippage_bps / 10_000)
+        k = (target - cost) / marked
+        self.equity *= k
+        if self.position is not None:
+            p = self.position
+            p.qty *= k
+            p.entry_fee *= k
+            p.equity_before *= k
+        return cost
+
     # ---------- main step ----------
     def on_bar(self, time, open_, high, low, close, signal="-", atr=None, rsi=None):
         """Process one closed candle and the signal computed at its close."""

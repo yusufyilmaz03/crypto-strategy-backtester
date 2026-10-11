@@ -77,7 +77,7 @@ def _inst(name):
 
 
 def _instance_view(inst):
-    d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop",
+    d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop", "sizing",
                                        "equity", "enabled", "description", "created_at", "run_key")}
     d["symbols"] = inst.symbol_list
     d["custom_symbols"] = bool(inst.symbols)
@@ -175,7 +175,7 @@ def api_strategies():
                             (" / ".join(n) if isinstance(n, tuple) else n): v
                             for n, v in strategy.PARAM_GRIDS.get(k, {}).items()}}
                        for k in strategy.STRATEGY_DISPATCH],
-        "timeframes": instances.TIMEFRAMES, "modes": instances.MODES,
+        "timeframes": instances.TIMEFRAMES, "modes": instances.MODES, "sizings": instances.SIZINGS,
         "stops": dict(config.STOPLOSS_CONFIG),
         "symbols": list(config.SYMBOLS), "default_equity": config.INITIAL_EQUITY,
         "default_capital": config.TRADING_CAPITAL_USDT,

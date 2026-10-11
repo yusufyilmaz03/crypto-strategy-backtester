@@ -51,7 +51,7 @@ async function load() {
       <div class="card card-instance h-100"><div class="card-body">
         <div class="d-flex justify-content-between mb-1"><h6 class="mb-0 text-body">${KB.esc(i.name)}</h6>
           <span>${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}</span></div>
-        <div class="small text-secondary mb-3">${KB.esc(i.strategy)} · ${KB.esc(KB.params(i.params))} · ${KB.esc(i.timeframe)} · stop ${KB.esc(i.stop)} · ${i.symbols.length} symbols</div>
+        <div class="small text-secondary mb-3">${KB.esc(i.strategy)} · ${KB.esc(KB.params(i.params))} · ${KB.esc(i.timeframe)} · stop ${KB.esc(i.stop)}${i.sizing === "equal" ? "" : ` · ${KB.esc(i.sizing)} sizing`} · ${i.symbols.length} symbols</div>
         <div class="row text-center g-2">
           <div class="col metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
           <div class="col metric"><div class="label">Buy &amp; hold</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>

@@ -77,3 +77,10 @@ def test_engine_config_follows_instance(path):
     inst = instances.create({"name": "loose-v5", "strategy": "v5", "stop": "loose", "equity": 250}, path)
     cfg = inst.engine_config()
     assert cfg.atr_multiplier == 2.0 and cfg.initial_equity == 250.0
+
+
+def test_unknown_fields_from_a_newer_version_are_ignored(tmp_path):
+    import json
+    path = tmp_path / "instances.json"
+    path.write_text(json.dumps([{"name": "abc", "mode": "paper", "future_field": 1}]))
+    assert instances.load_all(str(path))["abc"].sizing == "equal"

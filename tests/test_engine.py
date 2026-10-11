@@ -165,3 +165,18 @@ def test_no_stop_when_multiplier_is_none():
     df, sig = frame([(100, 100, 100, 100), (100, 100, 50, 60)], ["BUY", "-"])
     trades, _ = run_backtest(df, sig, cfg)
     assert trades.iloc[0].reason == "END"
+
+
+def test_resize_scales_a_position_and_charges_the_traded_difference():
+    from kripto_bot.core.engine import Engine
+    cfg = EngineConfig(fee_rate=0.001, slippage_bps=5, atr_multiplier=None)
+    e = Engine(cfg)
+    e.on_bar(pd.Timestamp("2024-01-01"), 100, 100, 100, 100, "BUY")
+    e.on_bar(pd.Timestamp("2024-01-02"), 100, 110, 100, 110, "BUY")       # enters at the open
+    marked = e.marked_equity(110)
+    cost = e.resize(2 * marked, 110)
+    assert cost == pytest.approx(marked * 0.0015)
+    assert e.marked_equity(110) == pytest.approx(2 * marked - cost)
+    assert e.marked_equity(121) - e.marked_equity(110) == pytest.approx(e.position.qty * 11)
+    flat = Engine(cfg)
+    assert flat.resize(500, 100) == 0 and flat.equity == 500              # cash moves for free

@@ -23,9 +23,11 @@ from kripto_bot.settings import SYMBOL_RE
 INSTANCES_FILE = paths.runtime("instances.json")
 
 MODES = ["paper", "testnet"]
+SIZINGS = {"equal": "Equal capital per symbol, never rebalanced",
+           "inverse_vol": "Monthly rebalanced to 1/volatility weights (docs/v9-sizing-test.md)"}
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
-SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "symbols", "equity"]
+SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "symbols", "equity", "sizing"]
 
 
 class InstanceError(ValueError):
@@ -42,6 +44,7 @@ class Instance:
     stop: str = "none"                 # key of config.STOPLOSS_CONFIG
     symbols: list | None = None        # None = config.SYMBOLS
     equity: float = 1000.0             # paper: per symbol; testnet: total capital
+    sizing: str = "equal"              # key of SIZINGS
     enabled: bool = False              # should run_all.py keep it running?
     run_key: str = ""                  # paper: key in paper.db; testnet: database file in runtime/
     description: str = ""
@@ -111,6 +114,10 @@ def validate(inst, existing):
         raise InstanceError(f"stop must be one of {', '.join(config.STOPLOSS_CONFIG)}")
     if inst.mode == "testnet" and config.STOPLOSS_CONFIG[inst.stop] is not None:
         raise InstanceError("testnet instances can't use a stop yet (exchange-side stop orders aren't implemented)")
+    if inst.sizing not in SIZINGS:
+        raise InstanceError(f"sizing must be one of {', '.join(SIZINGS)}")
+    if inst.sizing != "equal" and inst.mode != "paper":
+        raise InstanceError("only paper instances can use portfolio sizing for now")
     if inst.symbols:
         inst.symbols = [s.strip().upper() for s in inst.symbols if s.strip()]
         bad = [s for s in inst.symbols if not SYMBOL_RE.match(s)]
@@ -157,7 +164,8 @@ def load_all(path=None):
         return items
     with open(path) as f:
         raw = json.load(f)
-    return {d["name"]: Instance(**d) for d in raw}
+    known = Instance.__dataclass_fields__     # fields written by a newer version are ignored
+    return {d["name"]: Instance(**{k: v for k, v in d.items() if k in known}) for d in raw}
 
 
 def save_all(items, path=None):

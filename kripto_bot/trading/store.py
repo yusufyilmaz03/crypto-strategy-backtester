@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS equity (
     symbol TEXT, strategy TEXT, timeframe TEXT, time TEXT, equity REAL, close REAL,
     PRIMARY KEY (symbol, strategy, timeframe, time)
 );
+CREATE TABLE IF NOT EXISTS weights (
+    strategy TEXT, timeframe TEXT, time TEXT, symbol TEXT, weight REAL, cost REAL,
+    PRIMARY KEY (strategy, timeframe, time, symbol)
+);
 """
 
 
@@ -139,6 +143,20 @@ class PaperStore:
             "INSERT OR REPLACE INTO equity (symbol, strategy, timeframe, time, equity, close)"
             " VALUES (?, ?, ?, ?, ?, ?)",
             (symbol, strategy, timeframe, _t(time), float(equity), _f(close)))
+
+    def has_equity(self, strategy, timeframe, symbol, time):
+        return self.conn.execute("SELECT 1 FROM equity WHERE strategy=? AND timeframe=? AND symbol=? AND time=?",
+                                 (strategy, timeframe, symbol, _t(time))).fetchone() is not None
+
+    def log_weight(self, strategy, timeframe, time, symbol, weight, cost):
+        """Target weight set at a portfolio rebalance and the trading cost it caused."""
+        self.conn.execute("INSERT OR REPLACE INTO weights VALUES (?, ?, ?, ?, ?, ?)",
+                          (strategy, timeframe, _t(time), symbol, float(weight), float(cost)))
+
+    def last_rebalance(self, strategy, timeframe):
+        row = self.conn.execute("SELECT MAX(time) FROM weights WHERE strategy=? AND timeframe=?",
+                                (strategy, timeframe)).fetchone()
+        return pd.Timestamp(row[0]) if row and row[0] else None
 
     def fill_missing_closes(self, strategy, timeframe, symbol, candles):
         """Add closes to equity rows written before closes were stored (candles: timestamp, close)."""
