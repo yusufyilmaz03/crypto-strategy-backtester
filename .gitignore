@@ -34,17 +34,21 @@ claude/
 # Local OHLCV cache
 data/
 
-# Paper trading database
+# Paper trading database (and SQLite side files of every database)
 paper.db
+*.db-shm
+*.db-wal
 
 # Order-sending trading state and kill switch
 testnet.db
+testnet-*.db
 live.db
 KILL_SWITCH
-*.db.lock
+*.lock
 
 # Dashboard-managed settings and instances
 settings.json
 instances.json
 status.json
 playground.db
+*.tmp
