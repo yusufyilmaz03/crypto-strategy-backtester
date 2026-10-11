@@ -179,7 +179,7 @@ The bots act on candle closes (daily candles close at 00:00 UTC), so the supervi
 **On a Mac:** install the supervisor as a background service. It starts at login, restarts after a crash and keeps the Mac from idle sleeping while it is on power (a closed laptop lid still sleeps it):
 
 ```bash
-python -m kripto_bot service install     # status | uninstall
+python -m kripto_bot service install     # status | restart | uninstall
 ```
 
 Only one supervisor runs at a time, so stop a manually started one first. Its output goes to `runtime/logs/supervisor.log`.

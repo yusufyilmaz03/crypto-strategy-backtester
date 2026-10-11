@@ -23,6 +23,8 @@ def test_install_and_uninstall_call_launchctl(tmp_path):
     service.install(run=run, path=path)
     assert plistlib.load(open(path, "rb"))["Label"] == service.LABEL
     assert calls[-1][:2] == ["launchctl", "bootstrap"] and calls[-1][-1] == path
+    service.restart(run=run, path=path)
+    assert calls[-1][:3] == ["launchctl", "kickstart", "-k"]
     service.uninstall(run=run, path=path)
     assert calls[-1][:2] == ["launchctl", "bootout"]
     import os

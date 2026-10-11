@@ -3,6 +3,7 @@
 
     python -m kripto_bot service install     # start now and at every login
     python -m kripto_bot service status
+    python -m kripto_bot service restart     # after a code update
     python -m kripto_bot service uninstall   # stop and remove
 
 The service runs `python -m kripto_bot run --keep-awake`: the supervisor keeps
@@ -68,6 +69,15 @@ def uninstall(run=subprocess.run, path=PLIST):
     print("⏹  Service stopped and removed.")
 
 
+def restart(run=subprocess.run, path=PLIST):
+    if not os.path.exists(path):
+        raise SystemExit("Service not installed (python -m kripto_bot service install).")
+    r = _launchctl("kickstart", "-k", f"{domain()}/{LABEL}", run=run)   # -k: stop the running one first
+    if r.returncode != 0:
+        raise SystemExit(f"launchctl kickstart failed: {r.stderr.strip() or r.stdout.strip()}")
+    print("🔄 Service restarted.")
+
+
 def status(run=subprocess.run, path=PLIST):
     if not os.path.exists(path):
         print("Service not installed.")
@@ -86,11 +96,11 @@ def status(run=subprocess.run, path=PLIST):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("action", choices=["install", "uninstall", "status"])
+    ap.add_argument("action", choices=["install", "uninstall", "status", "restart"])
     a = ap.parse_args()
     if sys.platform != "darwin":
         raise SystemExit("The service command is for macOS (launchd). On a server use Docker, see the README.")
-    {"install": install, "uninstall": uninstall, "status": status}[a.action]()
+    {"install": install, "uninstall": uninstall, "status": status, "restart": restart}[a.action]()
 
 
 if __name__ == "__main__":

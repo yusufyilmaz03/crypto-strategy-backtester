@@ -21,7 +21,7 @@ COMMANDS = {
     "forward-report": ("kripto_bot.analysis.forward_report", "forward-test metrics vs buy-and-hold"),
     "holdout-test": ("kripto_bot.analysis.holdout_test", "the one-off v9 holdout test (already run)"),
     "telegram-setup": ("kripto_bot.tools.telegram_setup", "find the Telegram chat id and send a test message"),
-    "service": ("kripto_bot.tools.service", "macOS background service: install | status | uninstall"),
+    "service": ("kripto_bot.tools.service", "macOS background service: install | status | restart | uninstall"),
     "health": ("kripto_bot.tools.binance_health", "Binance ping, clock drift and candle latency"),
     "plot-summary": ("kripto_bot.tools.plot_summary", "return bar chart from the grid backtest"),
     "plot-chart": ("kripto_bot.tools.plot_multi_chart", "profitable out-of-sample combinations chart"),
