@@ -3,3 +3,4 @@ pandas>=2.2
 matplotlib>=3.9
 flask>=3.0
 python-dotenv>=1.0
+certifi>=2024.0

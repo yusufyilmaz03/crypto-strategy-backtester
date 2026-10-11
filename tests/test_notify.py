@@ -192,7 +192,7 @@ def test_telegram_errors_hide_the_token(monkeypatch):
     def offline(*a, **k):
         raise urllib.error.URLError("nodename nor servname provided")
 
-    monkeypatch.setattr(notify.urllib.request, "urlopen", offline)
+    monkeypatch.setattr(notify.net, "urlopen", offline)
     with pytest.raises(notify.TelegramError) as e:
         notify.telegram_call("123:SECRET", "sendMessage", {"chat_id": 1, "text": "x"})
     assert "SECRET" not in str(e.value) and "network error" in str(e.value)

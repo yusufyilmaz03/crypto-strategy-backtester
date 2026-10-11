@@ -23,11 +23,10 @@ import threading
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 
 import pandas as pd
 
-from kripto_bot import config, instances, paths, settings
+from kripto_bot import config, instances, net, paths, settings
 from kripto_bot.app import reporting
 from kripto_bot.trading import store
 
@@ -49,7 +48,7 @@ def telegram_call(token, method, params=None, timeout=15):
     url = API.format(token=token, method=method)
     data = urllib.parse.urlencode(params or {}).encode()
     try:
-        with urllib.request.urlopen(url, data=data, timeout=timeout) as r:
+        with net.urlopen(url, data=data, timeout=timeout) as r:
             body = json.load(r)
     except urllib.error.HTTPError as e:
         try:
