@@ -152,6 +152,7 @@ A candidate passes when its portfolio return and cost-stressed return are positi
 - **v1–v7 on 1m–4h:** no edge after costs. Walk-forward out-of-sample portfolios trail buy-and-hold, and every candidate turns negative with costs × 1.5.
 - **Trend following on 1d (Phase 2b):** the best candidate, v9 (close above SMA50, no stop), returned +36.7% out-of-sample against −26.6% for buy-and-hold, with roughly half the drawdown, but its deflated Sharpe ratio (0.01) is far from the 0.95 bar, so it did not pass.
 - **v9 holdout** ([docs/v9-holdout-test.md](docs/v9-holdout-test.md), pre-registered, run once): +7.2% vs −11.4%, Sharpe 0.42 vs 0.07, max drawdown 24.7% vs 48.9%. The robust part of the result is the lower drawdown; the evidence for excess return is still weak.
+- **Survivorship-free test** ([docs/v9-survivorship-test.md](docs/v9-survivorship-test.md), pre-registered, run once): on 2018–2022, a period never used before, with a monthly point-in-time top-50 universe that includes delisted coins, v9 returned +676% (Sharpe 1.09, max drawdown 55%) vs −29% for buy-and-hold (0.43, 91%); the bootstrap 90% interval of the Sharpe difference is [0.14, 1.15] and all 8 tested SMA lengths beat buy-and-hold. The same test shows a large survivorship bias in 2022–2026: on a realistic universe v9 was about flat (−9%) while buy-and-hold lost 76%.
 - A 180-day paper forward test of v9 is running ([docs/forward-test.md](docs/forward-test.md)).
 
 ## Testnet trading
