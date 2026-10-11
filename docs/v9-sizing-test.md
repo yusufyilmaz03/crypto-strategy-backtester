@@ -52,3 +52,30 @@ the paper forward test stays the independent check.
   as a new paper instance next to `forward-v9` (the forward test itself stays as it is);
   testnet and live use need the bot's sizing changed and the user's approval.
 - FAIL: v9 keeps equal weights.
+
+## Result (run once, 2026-10-12)
+
+| | Period B equal | Period B inverse vol 60d | Period A equal | Period A inverse vol 60d |
+|---|---|---|---|---|
+| Return | +676.0% | **+841.0%** | −9.2% | **+48.0%** |
+| CAGR | 53.9% | 60.3% | −2.4% | 10.3% |
+| Sharpe | 1.09 | **1.17** | 0.14 | **0.45** |
+| Max drawdown | 55.1% | **54.2%** | 64.0% | **54.0%** |
+| Exposure | 43.0% | 43.0% | 41.2% | 42.7% |
+
+All four criteria hold: **PASS**. (The equal-weight rows match the survivorship test exactly.)
+
+- Bootstrap 90% CI of Sharpe(inverse vol) − Sharpe(equal): period B [−0.01, 0.18]
+  (P(diff ≤ 0) = 7.8%), period A [0.21, 0.42] (P = 0.0%).
+- Lookbacks 30 / 90 days: Sharpe B 1.19 / 1.13, A 0.49 / 0.42. All three beat equal
+  weight; the 60-day choice is not changed.
+- Ignored rebalancing cost: average one-way monthly weight turnover is 19% (B) and 22%
+  (A). Trading it on the ~43% of capital that is invested at fill costs of 0.15% costs
+  roughly 0.03% a month (~0.3% a year), far below the differences above.
+
+Interpretation: inverse-volatility weights helped in both periods, clearly in 2022–2026
+(when the most volatile small caps collapsed) and modestly in 2018–2022. Equal weight
+let the wildest coins dominate the risk; scaling them down kept most of the trend gains.
+Because both periods were already used for equal-weight v9, this is supporting evidence,
+not an independent test. Next step per the commitments: a paper instance with
+inverse-volatility sizing next to `forward-v9`.
