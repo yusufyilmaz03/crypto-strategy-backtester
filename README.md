@@ -123,6 +123,7 @@ Safety:
 - The bot only trades positions it opened itself and checks them against the exchange balance on start. Candles missed while it was down are not traded.
 - `TRADING_CAPITAL_USDT` is split equally across symbols; `MAX_ORDER_USDT` caps each order; after a `DAILY_LOSS_LIMIT_PCT` loss no new entries are made until the next UTC day.
 - Kill switch: create a file named `KILL_SWITCH` to stop new entries; put the word `flatten` in it to close every position.
+- Testnet prices and fees differ from mainnet (fees are often zero and order books are thin), so testnet profit and slippage numbers are not meaningful; the testnet only verifies the order flow.
 - Live trading is refused unless `TRADING_MODE = "live"` **and** `LIVE_TRADING_ENABLED = True`.
 
 ## Notes and limitations
