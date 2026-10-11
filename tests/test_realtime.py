@@ -86,6 +86,29 @@ def test_restart_resumes_and_catches_up(tmp_path, feed):
     assert [t.pnl for t in got] == pytest.approx(expected.pnl.tolist())
 
 
+def test_restart_with_a_label_keeps_the_position(tmp_path, feed, monkeypatch):
+    """Regression: the state was saved under the label but loaded under the strategy key,
+    so every restart of a labelled run (all instances) silently reset its engines."""
+    db = str(tmp_path / "paper.db")
+    label = "v9 fast=1 slow=50 stop=none"
+    trend = FULL.copy()
+    trend[["open", "high", "low", "close"]] = trend[["open", "high", "low", "close"]].mul(
+        [1 + 0.002 * k for k in range(len(trend))], axis=0)            # rising: v9 stays long
+    monkeypatch.setattr(run_realtime, "fetch_recent",
+                        lambda s, tf, limit=200, **kw: trend.iloc[:feed.n].tail(limit).reset_index(drop=True))
+    r1 = run_realtime.SymbolRunner("X/USDT", "5m", "v9", EngineConfig(), PaperStore(db),
+                                   params={"fast": 1, "slow": 50}, label=label)
+    r1.update()
+    for _ in range(5):
+        feed.n += 1
+        r1.update()
+    assert r1.engine.position is not None
+    r2 = run_realtime.SymbolRunner("X/USDT", "5m", "v9", EngineConfig(), PaperStore(db),
+                                   params={"fast": 1, "slow": 50}, label=label)
+    assert r2.last_time == r1.last_time
+    assert r2.engine.position is not None and r2.engine.position.trade_id == r1.engine.position.trade_id
+
+
 def test_changing_strategy_starts_fresh(tmp_path, feed):
     db = str(tmp_path / "paper.db")
     r1 = run_realtime.SymbolRunner("X/USDT", "5m", "v5", EngineConfig(), PaperStore(db))
@@ -136,3 +159,39 @@ def test_missing_closes_are_filled_on_update(tmp_path, feed):
     r.update()
     row = store.read("equity")
     assert row["close"].iloc[0] == pytest.approx(FULL.close.iloc[feed.n - 2])
+
+
+def _labelled_run(tmp_path, feed, monkeypatch, steps=40):
+    from kripto_bot import instances
+    inst = instances.create({"name": "fwd", "strategy": "v9", "params": {"fast": 1, "slow": 50},
+                             "timeframe": "5m", "symbols": ["X/USDT"]}, str(tmp_path / "i.json"))
+    store = PaperStore(str(tmp_path / "paper.db"))
+    r = run_realtime.SymbolRunner("X/USDT", "5m", "v9", inst.engine_config(), store,
+                                  params=inst.params, label=inst.run_key)
+    r.update()
+    for _ in range(steps):
+        feed.n += 1
+        r.update()
+    return inst, store, r
+
+
+def test_rebuild_state_restores_what_the_bug_lost(tmp_path, feed, monkeypatch):
+    inst, store, r = _labelled_run(tmp_path, feed, monkeypatch, steps=120)
+    good = r.engine.to_state()
+    assert r.engine.trades or r.engine.position                          # something to restore
+    with store.candle():                                                 # what a buggy restart saved
+        store.save_state("X/USDT", inst.run_key, "5m", run_realtime.Engine(inst.engine_config()).to_state(),
+                         r.last_time)
+    run_realtime.rebuild_state(inst, store, log=lambda *a: None)
+    state, last = store.load_state("X/USDT", inst.run_key, "5m")
+    assert last == r.last_time and state == good
+
+
+def test_rebuild_state_refuses_on_mismatch(tmp_path, feed, monkeypatch):
+    inst, store, r = _labelled_run(tmp_path, feed, monkeypatch)
+    store.conn.execute("UPDATE equity SET equity = equity * 1.01 WHERE rowid = 3")
+    store.conn.commit()
+    before = store.load_state("X/USDT", inst.run_key, "5m")
+    with pytest.raises(run_realtime.RebuildError, match="equity differs"):
+        run_realtime.rebuild_state(inst, store, log=lambda *a: None)
+    assert store.load_state("X/USDT", inst.run_key, "5m") == before

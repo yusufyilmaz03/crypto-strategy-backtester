@@ -47,7 +47,7 @@ class SymbolRunner:
         self.signal_fn = partial(strategy.get_strategy(strategy_key), **(params or {}))
         self.store = store
         self.engine = Engine(engine_cfg, symbol, on_open=self._opened, on_close=self._closed)
-        state, self.last_time = store.load_state(symbol, strategy_key, timeframe)
+        state, self.last_time = store.load_state(symbol, self.key, timeframe)   # saved under self.key too
         if state is not None:
             self.engine.load_state(state)
 
@@ -124,7 +124,74 @@ def sleep_until_next_close(timeframe, check_every_s=30):
         time.sleep(min(check_every_s, remaining / 1000))
 
 
-def main(instance_name="forward-v9"):
+class RebuildError(RuntimeError):
+    pass
+
+
+def rebuild_state(inst, store, log=print, tol=1e-6):
+    """Recompute each symbol's saved engine state by replaying the candles the instance
+    already recorded, and save it only if the replay reproduces the recorded equity,
+    closed trades and open position exactly. Recorded results are not changed.
+
+    Repairs states lost to the bug that saved under the run key but loaded under the
+    strategy key (every restart then started the engines from scratch)."""
+    fn = partial(strategy.get_strategy(inst.strategy), **inst.params)
+    cfg = inst.engine_config()
+    eq = store.read("equity", "WHERE strategy=? AND timeframe=?", (inst.run_key, inst.timeframe))
+    trades = store.read("trades", "WHERE strategy=? AND timeframe=?", (inst.run_key, inst.timeframe))
+    step = pd.Timedelta(milliseconds=timeframe_ms(inst.timeframe))
+    rebuilt, problems = {}, []
+    for symbol in inst.symbol_list:
+        rec = eq[eq.symbol == symbol].assign(time=lambda d: pd.to_datetime(d.time)).sort_values("time")
+        if rec.empty:
+            log(f"  {symbol}: nothing recorded, skipped")
+            continue
+        first, last = rec.time.iloc[0], rec.time.iloc[-1]
+        need = int((pd.Timestamp(now_ms(), unit="ms") - first) / step) + HISTORY + 2
+        if need > MAX_FETCH:
+            raise RebuildError(f"{symbol}: {need} candles needed, more than one request can fetch")
+        df = add_indicators(fetch_recent(symbol, inst.timeframe, need))
+        sig = fn(df)
+        engine = Engine(cfg, symbol)
+        sel = (df.timestamp >= first) & (df.timestamp <= last)
+        for (_, row), x in zip(df[sel].iterrows(), sig[sel]):
+            engine.on_bar(row["timestamp"], row["open"], row["high"], row["low"], row["close"],
+                          x, row["ATR"], row["RSI"])
+        replay = pd.Series(dict(engine.equity_curve))
+        recorded = rec.set_index("time")["equity"]
+        diff = (replay.reindex(recorded.index) / recorded - 1).abs().max()
+        mine = trades[trades.symbol == symbol]
+        closed = mine[mine.exit_time.notna()].sort_values("entry_time")
+        open_ = mine[mine.exit_time.isna()]
+        issues = []
+        if len(replay) != len(recorded) or not diff <= tol:
+            issues.append(f"equity differs (max {diff:.2e})")
+        if len(engine.trades) != len(closed) or any(
+                abs(t.pnl - p) > tol * 1000 for t, p in zip(engine.trades, closed.pnl)):
+            issues.append(f"closed trades differ ({len(engine.trades)} replayed vs {len(closed)} recorded)")
+        if (engine.position is None) != open_.empty or len(open_) > 1:
+            issues.append(f"open position differs (replay {'open' if engine.position else 'flat'}, "
+                          f"{len(open_)} open recorded)")
+        elif engine.position is not None:
+            o = open_.iloc[0]
+            if pd.Timestamp(o.entry_time) != pd.Timestamp(engine.position.entry_time) or \
+                    abs(o.entry_price / engine.position.entry_price - 1) > tol:
+                issues.append("open position entry differs")
+            engine.position.trade_id = o.trade_id      # later exits update the recorded row
+        if issues:
+            problems.append(f"{symbol}: {'; '.join(issues)}")
+        rebuilt[symbol] = (engine.to_state(), last)
+        log(f"  {symbol}: {len(recorded)} candles, {len(engine.trades)} closed, "
+            f"{'in position' if engine.position else 'flat'}{', MISMATCH' if issues else ''}")
+    if problems:
+        raise RebuildError("replay doesn't match the records, nothing saved:\n  " + "\n  ".join(problems))
+    with store.candle():
+        for symbol, (state, last) in rebuilt.items():
+            store.save_state(symbol, inst.run_key, inst.timeframe, state, last)
+    return rebuilt
+
+
+def main(instance_name="forward-v9", rebuild=False):
     from kripto_bot import instances
     inst = instances.get(instance_name)
     if inst.mode != "paper":
@@ -132,6 +199,14 @@ def main(instance_name="forward-v9"):
     lock = single_instance(store_mod.DB_FILE, inst.name)  # noqa: F841 (held until exit)
     cfg = inst.engine_config()
     store = PaperStore()
+    if rebuild:
+        print(f"🔧 Rebuilding the engine states of '{inst.name}' from its records...")
+        try:
+            rebuilt = rebuild_state(inst, store)
+        except RebuildError as e:
+            raise SystemExit(f"❌ {e}")
+        print(f"✅ {len(rebuilt)} symbol states verified and saved. Start the instance again.")
+        return
     runners = [SymbolRunner(s, inst.timeframe, inst.strategy, cfg, store,
                             params=inst.params, label=inst.run_key) for s in inst.symbol_list]
     resumed = sum(r.last_time is not None for r in runners)
@@ -150,4 +225,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Paper trading for one instance (see instances.json).")
     ap.add_argument("--instance", default="forward-v9")
-    main(ap.parse_args().instance)
+    ap.add_argument("--rebuild-state", action="store_true",
+                    help="recompute saved engine states from the recorded candles (instance must be stopped)")
+    a = ap.parse_args()
+    main(a.instance, a.rebuild_state)

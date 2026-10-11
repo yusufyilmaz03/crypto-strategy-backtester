@@ -40,3 +40,12 @@ needs explicit approval before any order-sending code is written.
 `kripto_bot/` package. The forward test now runs as the `forward-v9` instance under
 `python -m kripto_bot run`, its data is in `runtime/paper.db` (same run key), and the
 report is `python -m kripto_bot forward-report`.
+
+**Note (2026-10-12, bug fix, no change to the rules):** paper runners saved their engine
+state under the run key (`v9 fast=1 slow=50 stop=none`) but loaded it under the strategy key
+(`v9`), so a restart started the engines from scratch. The recorded results up to the
+2026-10-10 candle are not affected (no candle was processed after a reset: equity is
+continuous, every symbol has at most one open trade), but the restarts of 2026-10-11
+overwrote the saved states. The fix loads under the run key; the states were rebuilt by
+replaying the recorded candles (`--rebuild-state`), which reproduced the recorded equity,
+closed trades and all 33 open positions exactly before anything was saved.
