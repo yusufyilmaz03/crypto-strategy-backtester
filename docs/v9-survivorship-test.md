@@ -91,3 +91,64 @@ is not charged (same for both sides).
   smaller than 50 at first: 2 assets in January 2018, 38 on average over period B
   (period A always has 50).
 - Daily candles: intraday moves and the exact delisting price are not modeled.
+
+## Result (run once, 2026-10-12)
+
+601 assets after exclusions, 400 of them in a universe at some point. Output:
+`results/survivorship_results.csv` and `results/survivorship_universes.csv`.
+
+### Primary test: period B (2018-01 → 2022-09), point-in-time top 50
+
+| | v9 | Buy-and-hold |
+|---|---|---|
+| Total return | **+676.0%** | −29.1% |
+| CAGR | 53.9% | −7.0% |
+| Sharpe (daily, annualized) | **1.09** | 0.43 |
+| Max drawdown | **55.1%** | 90.8% |
+| Exposure | 43.0% | 99.8% |
+| Entries | 1954 | |
+| With costs × 1.5: return / Sharpe | +619.2% / 1.05 | −29.9% / 0.43 |
+
+All four criteria hold: **PASS**.
+
+- Bootstrap: Sharpe(v9) − Sharpe(buy-and-hold) 90% CI **[0.14, 1.15]**, share of resamples
+  with a difference ≤ 0: 1.6%.
+- Top 20 universe: v9 +374.1% (Sharpe 0.88, max DD 55.1%) vs buy-and-hold −53.6% (0.33, 90.0%).
+- Neighborhood: **8 of 8** SMA lengths beat buy-and-hold on both Sharpe and drawdown, so SMA50
+  is not an isolated optimum. Sharpe by length: 20: 1.06 · 30: 1.11 · 40: 1.13 · 50: 1.09 ·
+  70: 0.94 · 100: 0.88 · 150: 0.55 · 200: 0.53 (shorter lengths do better in this period;
+  this is not used to change the length).
+
+Yearly (descriptive, not pre-registered): v9 / buy-and-hold 2018 −26.7% / −79.0%,
+2019 +27.2% / −4.0%, 2020 +149.7% / +198.9%, 2021 +434.7% / +434.8%, 2022 (to September)
+−37.6% / −78.0%. v9 keeps pace in the boom and loses far less in the crashes.
+
+Data check after the run (looking for errors, not changing anything): the largest daily
+and monthly moves of universe members are real events (DOGE January 2021 +392% in a day,
+ALPHA +1009%, SHIB +830% in a month); no price glitches were found.
+
+### Survivorship bias: period A (2022-10 → 2026-09)
+
+| | v9 return / Sharpe / max DD | Buy-and-hold return / Sharpe / max DD |
+|---|---|---|
+| 42 survivors (what Phase 2b looked at) | +233.3% / 0.94 / 55.2% | +23.1% / 0.43 / 85.0% |
+| Point-in-time top 50 | −9.2% / 0.14 / 64.0% | −76.0% / −0.11 / 91.1% |
+| Point-in-time top 20 | +53.1% / 0.46 / 48.1% | −37.5% / 0.20 / 81.3% |
+
+The bias is large: using today's survivors added about 240 points of return to v9 and about
+100 points to buy-and-hold over these four years. v9's advantage over buy-and-hold survives
+it (Sharpe and drawdown better in every universe), but its absolute return on a realistic
+universe was about zero.
+
+### Interpretation
+
+- v9 now has out-of-sample support from a period it was never fitted on, on a universe
+  without survivorship bias, robust to costs and to the SMA length. The mechanism is the
+  same everywhere: similar gains in rising markets, much smaller losses in falling ones.
+- Expectations must come from the realistic numbers, not the survivor ones: in 2022–2026 a
+  realistic universe would have left v9 roughly flat while buy-and-hold lost three
+  quarters. The edge is relative (risk), and its absolute return depends on the market
+  having strong up-trends to ride.
+- Next: the paper forward test continues. For Phase 5 the evidence now supports v9 as a
+  candidate; sizing and universe choice (survivors vs a rolling top-N) should follow from
+  these results.
