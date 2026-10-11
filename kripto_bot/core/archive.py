@@ -95,7 +95,8 @@ def load_symbol(symbol, interval="1d", refresh=True, get=_get, mapper=map):
     else:
         missing = months
     frames = [cached] if cached is not None and len(cached) else []
-    urls = [f"{FILES}/data/spot/monthly/klines/{symbol}/{interval}/{symbol}-{interval}-{m}.zip" for m in missing]
+    q = urllib.parse.quote(symbol)          # a few tickers are not ASCII
+    urls = [f"{FILES}/data/spot/monthly/klines/{q}/{interval}/{q}-{interval}-{m}.zip" for m in missing]
     for raw in mapper(get, urls):
         with zipfile.ZipFile(io.BytesIO(raw)) as z:
             frames.append(parse_klines(z.read(z.namelist()[0])))

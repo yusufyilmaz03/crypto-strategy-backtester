@@ -30,9 +30,12 @@ QUOTE = "USDT"
 STABLE_BASES = {
     "USDC", "BUSD", "TUSD", "USDP", "PAX", "DAI", "FDUSD", "USDS", "USDSB", "SUSD", "UST", "USTC",
     "EUR", "GBP", "AUD", "TRY", "BRL", "RUB", "BIDR", "IDRT", "NGN", "UAH", "ZAR", "BKRW", "BVND",
-    "PAXG", "AEUR", "EURI", "XUSD", "USD1", "BFUSD", "PYUSD", "USDE", "RLUSD", "USDF", "XAUT",
+    "PAXG", "AEUR", "EURI", "XUSD", "USD1", "BFUSD", "PYUSD", "USDE", "RLUSD", "USDF", "XAUT", "U", "KGST",
 }
 LEVERAGED_SUFFIXES = ("UP", "DOWN", "BULL", "BEAR")
+LEVERAGED_TOKENS = {"BULL", "BEAR"}                 # 3x BTC tokens of 2020
+# Tokenized stocks and ETFs (AAPLB, NVDAB, SPYB, ...) Binance listed from June 2026 on.
+STOCK_TOKENS_FROM = pd.Timestamp("2026-06-01")
 MIN_HISTORY = 60
 VOLUME_DAYS = 30
 MAX_GAP_DAYS = 5
@@ -42,8 +45,10 @@ NEIGHBORS = [20, 30, 40, 50, 70, 100, 150, 200]
 
 
 # ---------------------------------------------------------------- universe
-def excluded(base, all_bases):
-    if base in STABLE_BASES:
+def excluded(base, all_bases, first=None):
+    if base in STABLE_BASES or base in LEVERAGED_TOKENS:
+        return True
+    if first is not None and base.endswith("B") and first >= STOCK_TOKENS_FROM:
         return True
     return any(base.endswith(s) and len(base) > len(s) and base[:-len(s)] in all_bases
                for s in LEVERAGED_SUFFIXES)
@@ -54,7 +59,7 @@ def build_assets(frames):
     bases = {s[:-len(QUOTE)] for s in frames}
     out = {}
     for sym, df in sorted(frames.items()):
-        if excluded(sym[:-len(QUOTE)], bases):
+        if df.empty or excluded(sym[:-len(QUOTE)], bases, df["timestamp"].iloc[0]):
             continue
         for k, piece in enumerate(archive.split_listings(df, MAX_GAP_DAYS)):
             out[sym if k == 0 else f"{sym}#{k + 1}"] = piece

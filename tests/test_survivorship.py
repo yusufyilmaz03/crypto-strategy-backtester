@@ -58,9 +58,10 @@ def test_reused_ticker_is_split_and_stablecoins_dropped():
     new = frame("2022-03-01", 30, price=5)
     frames = {"LUNAUSDT": pd.concat([old, new], ignore_index=True), "USDCUSDT": frame("2022-01-01", 30),
               "BTCUSDT": frame("2022-01-01", 30), "BTCUPUSDT": frame("2022-01-01", 30),
-              "JUPUSDT": frame("2022-01-01", 30)}
+              "JUPUSDT": frame("2022-01-01", 30), "BULLUSDT": frame("2020-01-17", 30),
+              "NVDABUSDT": frame("2026-06-11", 30), "BNBUSDT": frame("2017-11-06", 30)}
     assets = sv.build_assets(frames)
-    assert set(assets) == {"LUNAUSDT", "LUNAUSDT#2", "BTCUSDT", "JUPUSDT"}
+    assert set(assets) == {"LUNAUSDT", "LUNAUSDT#2", "BTCUSDT", "JUPUSDT", "BNBUSDT"}
     assert assets["LUNAUSDT#2"].close.iloc[0] == 5
 
 
