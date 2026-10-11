@@ -90,7 +90,7 @@ def test_instance_data_endpoints(client, tmp_path, monkeypatch):
 
 def test_settings_api(client):
     v = client.get("/api/settings").get_json()
-    assert "Costs" in v["groups"] and set(v["secrets"]) == {"Binance API key", "Testnet API key"}
+    assert "Costs" in v["groups"] and set(v["secrets"]) == {"Binance API key", "Testnet API key", "Telegram bot"}
     r = _post(client, "/api/settings", {"changes": {"MAX_ORDER_USDT": 42}})
     assert r.status_code == 200 and r.get_json()["restart"] == ["testnet"]
     assert config.MAX_ORDER_USDT == 42.0

@@ -14,7 +14,7 @@ from flask import Flask, jsonify, render_template, request
 
 from kripto_bot import config
 from kripto_bot import instances, paths
-from kripto_bot.app import playground
+from kripto_bot.app import notify, playground
 from kripto_bot.app import reporting
 from kripto_bot import settings
 from kripto_bot.core import strategy
@@ -250,7 +250,8 @@ def _settings_view():
         })
     return {"groups": groups, "secrets": {
         "Binance API key": bool(config.BINANCE_API_KEY and config.BINANCE_API_SECRET),
-        "Testnet API key": bool(config.BINANCE_TESTNET_API_KEY and config.BINANCE_TESTNET_API_SECRET)}}
+        "Testnet API key": bool(config.BINANCE_TESTNET_API_KEY and config.BINANCE_TESTNET_API_SECRET),
+        "Telegram bot": bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)}}
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
@@ -278,6 +279,18 @@ def api_settings_restart():
             instances.update(inst.name, restart_requested_at=now)
             done.append(inst.name)
     return jsonify({"restarted": done})
+
+
+@app.route("/api/notify/test", methods=["POST"])
+def api_notify_test():
+    sender = notify.from_config()
+    if not sender.enabled:
+        raise ApiError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not set in .env")
+    try:
+        sender.send_now("✅ Test message from the kripto-bot panel.")
+    except notify.TelegramError as e:
+        raise ApiError(f"Telegram: {e}")
+    return jsonify({"sent": True})
 
 
 # ---------------------------------------------------------------- backtests

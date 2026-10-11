@@ -68,6 +68,15 @@ MAX_ORDER_USDT = 100.0           # hard cap per order
 DAILY_LOSS_LIMIT_PCT = 5.0       # no new entries for the rest of the UTC day below this loss
 KILL_SWITCH_FILE = paths.runtime("KILL_SWITCH")  # if this file exists: no new entries; "flatten" in it closes all
 
+# ===== Notifications (app/notify.py) =====
+# Telegram messages from the supervisor. The bot token and chat id live in .env
+# (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID); without them nothing is sent.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+NOTIFY_TRADES = True             # opened/closed positions and testnet orders
+NOTIFY_DAILY_SUMMARY = True      # one summary of every instance per day
+NOTIFY_SUMMARY_HOUR_UTC = 6      # when the daily summary is sent (06 UTC = 09:00 in Turkey)
+
 # ===== Grid backtest (analysis/multi_backtest.py) =====
 TIMEFRAMES = ["1m", "3m", "5m"]
 STRATEGY_LIST = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"]

@@ -42,7 +42,10 @@ function render() {
   const secrets = `<div class="col-lg-6"><div class="card h-100"><div class="card-header fw-semibold">API keys</div><div class="card-body">
     ${Object.entries(VIEW.secrets).map(([k, ok]) => `<div class="d-flex justify-content-between mb-2"><span>${KB.esc(k)}</span>
       ${ok ? '<span class="badge text-bg-success">set</span>' : '<span class="badge text-bg-secondary">not set</span>'}</div>`).join("")}
-    <div class="form-text">Keys are kept in <code>.env</code> and are never shown or edited here.</div></div></div></div>`;
+    <div class="form-text">Keys are kept in <code>.env</code> and are never shown or edited here.
+      Telegram: see <code>python -m kripto_bot telegram-setup</code>.</div>
+    ${VIEW.secrets["Telegram bot"] ? '<button class="btn btn-outline-secondary btn-sm mt-2" onclick="testTelegram()"><i class="bi bi-send"></i> Send test message</button>' : ""}
+    </div></div></div>`;
   document.getElementById("groups").innerHTML = groups + secrets;
 }
 function valueOf(s) {
@@ -71,6 +74,10 @@ async function save(reset = []) {
   } catch (e) { KB.toast(e.message, "danger"); }
 }
 function resetKey(key) { save([key]); }
+async function testTelegram() {
+  try { await KB.api("/api/notify/test", { method: "POST" }); KB.toast("Test message sent"); }
+  catch (e) { KB.toast(e.message, "danger"); }
+}
 async function restartAffected(services) {
   try { const r = await KB.api("/api/settings/restart", { method: "POST", body: { services } });
         KB.toast(r.restarted.length ? `Restarting: ${r.restarted.join(", ")}` : "No running instances affected");

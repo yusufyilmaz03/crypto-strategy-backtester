@@ -55,7 +55,7 @@ def isolated_paths(tmp_path, monkeypatch):
     """Every file the app would write lands in tmp_path, never in runtime/ or results/."""
     from kripto_bot import config, instances, settings
     from kripto_bot.analysis import multi_backtest, research
-    from kripto_bot.app import dashboard, playground, reporting, run_all
+    from kripto_bot.app import dashboard, notify, playground, reporting, run_all
     from kripto_bot.trading import store
 
     rt = tmp_path / "runtime"
@@ -64,7 +64,8 @@ def isolated_paths(tmp_path, monkeypatch):
                             (settings, "SETTINGS_FILE", "settings.json"), (playground, "PLAYGROUND_DB", "playground.db"),
                             (reporting, "STATUS_FILE", "status.json"), (run_all, "STATUS_FILE", "status.json"),
                             (reporting, "LOG_DIR", "logs"), (run_all, "LOG_DIR", "logs"),
-                            (config, "KILL_SWITCH_FILE", "KILL_SWITCH")]:
+                            (config, "KILL_SWITCH_FILE", "KILL_SWITCH"),
+                            (notify, "STATE_FILE", "notify_state.json")]:
         monkeypatch.setattr(mod, attr, str(rt / name))
     monkeypatch.setattr(multi_backtest, "OUT_FILE", str(tmp_path / "multi_backtest_strategies.csv"))
     monkeypatch.setattr(dashboard, "BACKTEST_FILE", str(tmp_path / "multi_backtest_strategies.csv"))

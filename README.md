@@ -171,6 +171,16 @@ Safety:
 - Testnet prices and fees differ from mainnet (fees are often zero and order books are thin), so testnet profit and slippage numbers are not meaningful; the testnet only verifies the order flow.
 - Live trading is refused unless `TRADING_MODE = "live"` **and** `LIVE_TRADING_ENABLED = True`.
 
+## Notifications
+
+The supervisor can send Telegram messages: opened and closed positions, testnet orders, testnet warnings and errors, crashed or blocked processes, kill switch changes, and a daily summary of every enabled instance. It reads the bots' databases every 30 seconds, so the bots themselves never wait on Telegram; positions opened on the same candle arrive as one message.
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and put its token in `.env` as `TELEGRAM_BOT_TOKEN`.
+2. Send any message to the bot, then run `python -m kripto_bot telegram-setup`; it prints your chat id.
+3. Put the id in `.env` as `TELEGRAM_CHAT_ID`, run `telegram-setup` again for a test message, and restart `python -m kripto_bot run`.
+
+Trade messages, the daily summary and its hour can be switched on the Settings page without a restart. Errors, crashes and the kill switch are always reported.
+
 ## Notes and limitations
 
 - Each instance keeps its own state; the dashboard only accepts changes to an instance's description and running state, so results always belong to one setup.

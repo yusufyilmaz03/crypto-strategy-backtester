@@ -62,6 +62,14 @@ SCHEMA = [
             "Only the testnet can be used from the dashboard.", choices=["testnet", "live"], editable=False),
     Setting("LIVE_TRADING_ENABLED", "Order execution", "Live trading enabled", "bool",
             "Can only be switched on in config.py, on purpose.", editable=False),
+    # Notifications
+    Setting("NOTIFY_TRADES", "Notifications", "Trade messages", "bool",
+            "Telegram message when positions open or close and for testnet orders. "
+            "Errors, crashes and the kill switch are always reported."),
+    Setting("NOTIFY_DAILY_SUMMARY", "Notifications", "Daily summary", "bool",
+            "One message a day with every instance's return, buy-and-hold and drawdown."),
+    Setting("NOTIFY_SUMMARY_HOUR_UTC", "Notifications", "Daily summary hour (UTC)", "int",
+            "Hour of the day the summary is sent (6 UTC = 09:00 in Turkey).", 0, 23),
     # Backtest / research
     Setting("BACKTEST_DAYS", "Backtest & research", "Grid backtest history (days)", "int",
             "History length of the grid backtest.", 7, 3650),

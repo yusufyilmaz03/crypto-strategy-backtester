@@ -24,6 +24,7 @@ import time
 import pandas as pd
 
 from kripto_bot import config, instances, paths
+from kripto_bot.app import notify
 
 LOG_DIR = paths.LOG_DIR
 STATUS_FILE = paths.runtime("status.json")
@@ -36,7 +37,7 @@ RELOAD_EVERY_S = 2.0
 
 
 class Service:
-    def __init__(self, name, cmd, log_dir=None, color=""):
+    def __init__(self, name, cmd, log_dir=None, color="", on_exit=None):
         log_dir = log_dir or LOG_DIR
         self.name, self.cmd = name, cmd
         self.prefix = f"{color}[{name}]{RESET if color else ''}"
@@ -49,6 +50,7 @@ class Service:
         self.restarts = 0
         self.last_exit = None
         self.note = ""
+        self.on_exit = on_exit      # called with (name, code, seconds ran, STABLE_AFTER_S)
 
     def start(self):
         env = dict(os.environ, PYTHONUNBUFFERED="1", DASHBOARD_DEBUG="0")
@@ -90,6 +92,8 @@ class Service:
         self.proc = None
         self.restarts += 1
         self.next_start = now + self.backoff
+        if self.on_exit:
+            self.on_exit(self.name, code, ran, STABLE_AFTER_S)
 
     def stop(self, timeout=10):
         if self.running:
@@ -114,7 +118,7 @@ def instance_command(inst):
 
 
 class Supervisor:
-    def __init__(self, with_dashboard=True, instances_path=None, log_dir=None, status_file=None):
+    def __init__(self, with_dashboard=True, instances_path=None, log_dir=None, status_file=None, watcher=None):
         log_dir = log_dir or LOG_DIR
         status_file = status_file or STATUS_FILE
         self.instances_path = instances_path
@@ -123,9 +127,12 @@ class Supervisor:
         self.services = {}          # service name -> Service
         self.blocked = {}           # instance name -> reason it can't start
         self.last_reload = 0.0
+        self.watcher = watcher      # notify.Watcher or None
+        on_exit = watcher.service_exited if watcher else None
+        self.on_exit = on_exit
         if with_dashboard:
             self.services["dashboard"] = Service("dashboard", [sys.executable, "-u", "-m", "kripto_bot.app.dashboard"],
-                                                 log_dir, DASHBOARD_COLOR)
+                                                 log_dir, DASHBOARD_COLOR, on_exit)
 
     def _desired(self):
         try:
@@ -148,7 +155,7 @@ class Supervisor:
             svc = self.services.get(name)
             if svc is None:
                 color = PALETTE[len(self.services) % len(PALETTE)]
-                self.services[name] = Service(name, instance_command(inst), self.log_dir, color)
+                self.services[name] = Service(name, instance_command(inst), self.log_dir, color, self.on_exit)
             elif inst.restart_requested_at and svc.started and \
                     pd.Timestamp(inst.restart_requested_at).timestamp() > svc.started:
                 svc.emit("restart requested from the dashboard")
@@ -173,9 +180,14 @@ class Supervisor:
             self.last_reload = now
         for s in list(self.services.values()):
             s.check()
+        if self.watcher:
+            self.watcher.poll(self.blocked)
         self.write_status()
 
     def run(self, poll_s=1.0, should_stop=lambda: False):
+        if self.watcher:
+            self.reconcile()
+            self.watcher.started([n for n in self.services if n != "dashboard"])
         try:
             while not should_stop():
                 self.tick()
@@ -185,6 +197,9 @@ class Supervisor:
                 s.stop()
             if os.path.exists(self.status_file):
                 os.remove(self.status_file)
+            if self.watcher:
+                self.watcher.stopped()
+                self.watcher.sender.flush()
 
 
 def _raise_interrupt(*_):
@@ -195,9 +210,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-dashboard", action="store_true")
     a = ap.parse_args()
-    sup = Supervisor(with_dashboard=not a.no_dashboard)
+    sender = notify.from_config()
+    watcher = notify.Watcher(sender) if sender.enabled else None
+    sup = Supervisor(with_dashboard=not a.no_dashboard, watcher=watcher)
     print(f"▶️  Supervisor started (logs in {LOG_DIR}). Instances follow runtime/instances.json; "
-          "Ctrl+C stops everything.\n")
+          "Ctrl+C stops everything.")
+    print("🔔 Telegram notifications on.\n" if watcher else
+          "🔕 Telegram notifications off (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set in .env).\n")
     signal.signal(signal.SIGTERM, _raise_interrupt)   # `kill` stops cleanly too
     try:
         sup.run()
