@@ -1,0 +1,15 @@
+# 24/7 on a server: docker compose up -d --build
+# Needs .env with the API keys and DASHBOARD_PASSWORD (see .env.example).
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    init: true                      # reaps child processes; SIGTERM reaches the supervisor
+    stop_grace_period: 30s
+    env_file: .env
+    ports:
+      - "127.0.0.1:5002:5002"       # only reachable from the server itself: use an SSH tunnel
+    volumes:
+      - ./runtime:/app/runtime      # databases, instances, settings, logs, kill switch
+      - ./results:/app/results
+      - ./data:/app/data

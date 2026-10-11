@@ -1,0 +1,15 @@
+.env
+.git
+.github
+.pytest_cache
+__pycache__
+env
+venv
+claude
+CLAUDE.md
+runtime
+results
+data
+csv_old
+tests
+docs

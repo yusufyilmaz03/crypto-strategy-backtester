@@ -1,16 +1,21 @@
 # kripto_bot/app/dashboard.py
 """Flask control panel: overview, bot instances, playground, settings and backtests.
 
-Binds to 127.0.0.1 only. Requests that change something must carry the header
+Binds to 127.0.0.1 by default. Requests that change something must carry the header
 X-Requested-With: kripto-bot; browsers don't let other websites send it, which keeps
 pages you visit from driving the panel behind your back (CSRF).
+
+On a server (Docker) set DASHBOARD_HOST=0.0.0.0 and DASHBOARD_PASSWORD in .env: every
+request then needs HTTP basic auth (any user name). The panel refuses to listen
+beyond 127.0.0.1 without a password.
 """
+import hmac
 import importlib
 import json
 import os
 
 import pandas as pd
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 from kripto_bot import config
 from kripto_bot import instances, paths
@@ -27,6 +32,21 @@ CSRF_HEADER = ("X-Requested-With", "kripto-bot")
 
 class ApiError(Exception):
     pass
+
+
+def _password():
+    return os.environ.get("DASHBOARD_PASSWORD", "")
+
+
+@app.before_request
+def _auth_guard():
+    pw = _password()
+    if not pw:
+        return None
+    auth = request.authorization
+    if auth and auth.password and hmac.compare_digest(auth.password.encode(), pw.encode()):
+        return None
+    return Response("Login required", 401, {"WWW-Authenticate": 'Basic realm="kripto-bot"'})
 
 
 @app.before_request
@@ -306,9 +326,18 @@ def api_backtest():
     return jsonify({"results": json.loads(df.to_json(orient="records"))})
 
 
+def bind_host():
+    host = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
+    if host not in ("127.0.0.1", "localhost") and not _password():
+        raise SystemExit(f"Refusing to listen on {host} without DASHBOARD_PASSWORD (set it in .env).")
+    return host
+
+
 if __name__ == "__main__":
-    print("Starting dashboard on http://127.0.0.1:5002 ...")
+    host = bind_host()
+    print(f"Starting dashboard on http://{host}:5002 ...")
     # Debug mode reloads on code changes; run_all.py turns it off (DASHBOARD_DEBUG=0)
     # because the reloader runs the app in a child process the supervisor can't see.
-    debug = os.environ.get("DASHBOARD_DEBUG", "1") != "0"
-    app.run(host="127.0.0.1", port=5002, debug=debug, use_reloader=debug)
+    # Never on a network: the debugger would let anyone run code.
+    debug = os.environ.get("DASHBOARD_DEBUG", "1") != "0" and host in ("127.0.0.1", "localhost")
+    app.run(host=host, port=5002, debug=debug, use_reloader=debug)

@@ -131,3 +131,26 @@ def test_strategies_api(client):
     assert "v9" in keys and d["stops"]["none"] is None
     v9 = next(s for s in d["strategies"] if s["key"] == "v9")
     assert {p["name"] for p in v9["params"]} == {"fast", "slow"} and v9["description"]
+
+
+def test_password_protects_every_request(client, monkeypatch):
+    import base64
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "s3cret")
+    assert client.get("/").status_code == 401
+    assert client.get("/api/overview").status_code == 401
+    good = {"Authorization": "Basic " + base64.b64encode(b"me:s3cret").decode()}
+    bad = {"Authorization": "Basic " + base64.b64encode(b"me:nope").decode()}
+    assert client.get("/", headers=bad).status_code == 401
+    assert client.get("/", headers=good).status_code == 200
+    assert client.post("/api/kill-switch", json={"mode": "off"}, headers=good).status_code == 403  # CSRF still on
+
+
+def test_network_bind_requires_password(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_HOST", "0.0.0.0")
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    with pytest.raises(SystemExit, match="DASHBOARD_PASSWORD"):
+        dashboard.bind_host()
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "x")
+    assert dashboard.bind_host() == "0.0.0.0"
+    monkeypatch.delenv("DASHBOARD_HOST")
+    assert dashboard.bind_host() == "127.0.0.1"

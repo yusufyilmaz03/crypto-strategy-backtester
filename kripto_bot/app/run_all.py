@@ -11,6 +11,7 @@ runtime/status.json for the dashboard. Ctrl+C stops everything.
 
     python -m kripto_bot run                  # dashboard + enabled instances
     python -m kripto_bot run --no-dashboard   # instances only
+    python -m kripto_bot run --keep-awake     # macOS: no idle sleep while running
 """
 import argparse
 import json
@@ -25,6 +26,7 @@ import pandas as pd
 
 from kripto_bot import config, instances, paths
 from kripto_bot.app import notify
+from kripto_bot.trading.store import AlreadyRunning, single_instance
 
 LOG_DIR = paths.LOG_DIR
 STATUS_FILE = paths.runtime("status.json")
@@ -209,7 +211,17 @@ def _raise_interrupt(*_):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-dashboard", action="store_true")
+    ap.add_argument("--keep-awake", action="store_true",
+                    help="macOS: keep the computer from idle sleeping while the supervisor runs (on power)")
     a = ap.parse_args()
+    try:
+        lock = single_instance(paths.runtime("supervisor"))  # noqa: F841 (held until exit)
+    except AlreadyRunning:
+        raise SystemExit("❌ Another supervisor is already running (maybe the background service: "
+                         "python -m kripto_bot service status).")
+    if a.keep_awake and sys.platform == "darwin":
+        # caffeinate ends by itself when this process exits (-w)
+        subprocess.Popen(["caffeinate", "-i", "-s", "-w", str(os.getpid())])
     sender = notify.from_config()
     watcher = notify.Watcher(sender) if sender.enabled else None
     sup = Supervisor(with_dashboard=not a.no_dashboard, watcher=watcher)

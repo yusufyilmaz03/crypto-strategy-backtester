@@ -171,6 +171,26 @@ Safety:
 - Testnet prices and fees differ from mainnet (fees are often zero and order books are thin), so testnet profit and slippage numbers are not meaningful; the testnet only verifies the order flow.
 - Live trading is refused unless `TRADING_MODE = "live"` **and** `LIVE_TRADING_ENABLED = True`.
 
+## Running 24/7
+
+The bots act on candle closes (daily candles close at 00:00 UTC), so the supervisor has to be running then. Missed paper candles are caught up later at historical prices; testnet instances skip them.
+
+**On a Mac:** install the supervisor as a background service. It starts at login, restarts after a crash and keeps the Mac from idle sleeping while it is on power (a closed laptop lid still sleeps it):
+
+```bash
+python -m kripto_bot service install     # status | uninstall
+```
+
+Only one supervisor runs at a time, so stop a manually started one first. Its output goes to `runtime/logs/supervisor.log`.
+
+**On a server (Docker):** copy the project, create `.env` (API keys, Telegram, and `DASHBOARD_PASSWORD`) and run:
+
+```bash
+docker compose up -d --build
+```
+
+State stays in `runtime/`, `results/` and `data/` on the host. The panel is published on the server's 127.0.0.1 only; open it through an SSH tunnel (`ssh -L 5002:127.0.0.1:5002 user@server`, then http://127.0.0.1:5002) and log in with any user name and the password. The panel refuses to listen beyond 127.0.0.1 without a password, and Flask's debug mode is never on there.
+
 ## Notifications
 
 The supervisor can send Telegram messages: opened and closed positions, testnet orders, testnet warnings and errors, crashed or blocked processes, kill switch changes, and a daily summary of every enabled instance. It reads the bots' databases every 30 seconds, so the bots themselves never wait on Telegram; positions opened on the same candle arrive as one message.
@@ -187,5 +207,5 @@ Trade messages, the daily summary and its hour can be switched on the Settings p
 - In paper trading, stops are evaluated when a candle closes (as if a stop order had been resting at the stop price), not tick by tick.
 - Times in logs are UTC candle times.
 - A second copy of the same instance refuses to start (`*.lock` files in `runtime/`).
-- The dashboard listens on 127.0.0.1 only and requires an `X-Requested-With: kripto-bot` header on every change, so other websites can't drive it. Add authentication before exposing it on a network.
+- The dashboard listens on 127.0.0.1 by default and requires an `X-Requested-With: kripto-bot` header on every change, so other websites can't drive it. With `DASHBOARD_PASSWORD` set it also requires HTTP basic auth (see *Running 24/7*).
 - In the grid backtest strategies run with their default parameters, so its walk-forward folds are plain out-of-sample windows. Parameter optimization happens in the research runner.
