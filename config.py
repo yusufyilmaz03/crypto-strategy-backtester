@@ -84,6 +84,9 @@ RESEARCH_STRATEGIES = ["v8", "v9", "v10"]
 RESEARCH_STOPS = [None, 2.0, 3.0]   # ATR multipliers; None = exit on signals only
 ROTATION_TIMEFRAMES = ["1d"]        # cross-sectional rotation (R1)
 HOLDOUT_FRACTION = 0.2              # last 20% of each timeframe is kept for the final test
+# Holdout periods not used yet (the 1d holdout was spent on docs/v9-holdout-test.md).
+# The playground leaves them out unless they are switched on explicitly.
+UNUSED_HOLDOUTS = {"4h": "2026-05-07 19:31:35"}
 PRIOR_TRIALS = 21                   # candidates tested in Phase 2, counted in the deflated Sharpe
 WFO_FOLDS = 5
 WFO_MIN_TRAIN_FRACTION = 0.4        # first 40% of the development data is only used for training

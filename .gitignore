@@ -47,3 +47,4 @@ KILL_SWITCH
 settings.json
 instances.json
 status.json
+playground.db

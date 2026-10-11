@@ -62,10 +62,6 @@ class Instance:
     def lock_path(self):
         return f"{self.run_key}.lock" if self.mode == "testnet" else f"paper.db.{self.name}.lock"
 
-    @property
-    def log_name(self):
-        return f"instance-{self.name}"
-
 
 def param_spec(key):
     """Tunable parameters of a strategy: [{"name", "default", "type"}] from its signature."""

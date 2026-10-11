@@ -193,6 +193,20 @@ STRATEGY_DISPATCH = {
     "v10": generate_signals_v10_turtle,
 }
 
+# Short descriptions for the dashboard.
+STRATEGY_INFO = {
+    "v1": "RSI + EMA crossover: buy oversold in an EMA uptrend, sell overbought in a downtrend.",
+    "v2": "Like v1, but the condition must hold on the last `confirm` candles.",
+    "v3": "RSI + EMA with looser thresholds than v1.",
+    "v4": "Bollinger Band mean reversion with an RSI filter.",
+    "v5": "EMA cross trading only in the trend direction, with an RSI filter.",
+    "v6": "Donchian channel breakout with an ATR threshold against false breakouts.",
+    "v7": "Trend filter (EMA fast vs slow) plus an RSI pullback-and-cross entry.",
+    "v8": "Time-series momentum: long while the return over `lookback` candles is positive.",
+    "v9": "Moving-average regime: long while SMA(fast) is above SMA(slow); fast=1 is the close.",
+    "v10": "Turtle-style breakout: enter above the prior `entry`-bar high, exit below the `exit_len`-bar low.",
+}
+
 # Parameter grids for walk-forward optimization. Kept small on purpose: every extra
 # combination is another chance to fit noise. Tuples of names vary together.
 PARAM_GRIDS = {
