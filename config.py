@@ -92,6 +92,13 @@ COST_STRESS = 1.5                   # fees and slippage multiplier for the stres
 RESEARCH_MIN_CANDLES = 500          # skip symbols with a shorter development history
 
 
+# ===== Dashboard overrides =====
+# Values saved from the dashboard's settings page (settings.json) replace the defaults above.
+from settings import load_overrides as _load_overrides  # noqa: E402
+
+globals().update(_load_overrides())
+
+
 # ===== Helpers =====
 def engine_config():
     """Engine settings for backtests and research (stop from STOPLOSS_MODE)."""

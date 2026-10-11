@@ -42,3 +42,8 @@ testnet.db
 live.db
 KILL_SWITCH
 *.db.lock
+
+# Dashboard-managed settings and instances
+settings.json
+instances.json
+status.json
