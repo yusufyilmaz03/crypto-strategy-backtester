@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Playground{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Playground</h1>
+  <span class="small text-secondary" id="run-count"></span>
+</div>
+<div class="row g-4">
+  <div class="col-lg-3">
+    <form class="card" id="form"><div class="card-body">
+      <div class="mb-2"><label class="form-label small mb-0">Symbol</label>
+        <input class="form-control" name="symbol" value="BTC/USDT" list="symbols" required><datalist id="symbols"></datalist></div>
+      <div class="row g-2 mb-2">
+        <div class="col"><label class="form-label small mb-0">Timeframe</label><select class="form-select" name="timeframe" id="timeframe"></select></div>
+        <div class="col"><label class="form-label small mb-0">Days</label><input class="form-control" name="days" type="number" value="365" min="1" step="any"></div>
+      </div>
+      <div class="mb-2"><label class="form-label small mb-0">Strategy</label><select class="form-select" name="strategy" id="strategy"></select>
+        <div class="form-text" id="strategy-desc"></div></div>
+      <div class="row g-2 mb-2" id="params"></div>
+      <div class="mb-2"><label class="form-label small mb-0">Stop</label><select class="form-select" name="stop" id="stop"></select></div>
+      <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="include_holdout" id="holdout">
+        <label class="form-check-label small" for="holdout">Include unused holdout data</label>
+        <div class="form-text">Off by default so experiments don't use up data kept for final tests.</div></div>
+      <button class="btn btn-primary w-100" type="submit" id="run-btn"><i class="bi bi-play-fill"></i> Run backtest</button>
+    </div></form>
+    <p class="small text-secondary mt-3">Same engine as the bots: signals on closed candles, fills at the next open, fees and slippage from Settings, long-only.
+      Every run is logged. Many variants on the same data will find something that looks good by chance, so treat good results here as ideas to test on new data.</p>
+  </div>
+  <div class="col-lg-9">
+    <div class="alert alert-info d-none" id="note"></div>
+    <div class="row g-3 mb-3" id="metrics"><div class="col text-secondary">Pick a setup and run a backtest.</div></div>
+    <div class="card mb-3"><div class="card-body p-2"><div id="price" style="height: 420px"></div></div></div>
+    <div class="card mb-3"><div class="card-body p-2">
+      <div class="small text-secondary px-1">Return (%) <span style="color:#20c997">● strategy</span> <span style="color:#adb5bd">● buy &amp; hold</span></div>
+      <div id="equity" style="height: 200px"></div></div></div>
+    <div class="card"><div class="card-body table-responsive" style="max-height: 360px"><table class="table table-sm mb-0" id="trades"></table></div></div>
+  </div>
+</div>
+<h2 class="h5 mt-5">History</h2>
+<div class="card"><div class="table-responsive" style="max-height: 400px"><table class="table table-sm table-hover mb-0" id="history"></table></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+let META, priceChart, equityChart, last;
+const opt = (v, l) => `<option value="${KB.esc(v)}">${KB.esc(l ?? v)}</option>`;
+const OVERLAY_COLORS = ["#ffc107", "#0dcaf0", "#d63384", "#6f42c1"];
+
+async function init() {
+  META = await KB.api("/api/strategies");
+  document.getElementById("symbols").innerHTML = META.symbols.map(s => opt(s)).join("");
+  document.getElementById("timeframe").innerHTML = META.timeframes.map(t => opt(t)).join("");
+  document.getElementById("timeframe").value = "1d";
+  document.getElementById("strategy").innerHTML = META.strategies.map(s => opt(s.key, `${s.key} · ${s.description.split(":")[0]}`)).join("");
+  document.getElementById("strategy").value = "v9";
+  document.getElementById("stop").innerHTML = Object.entries(META.stops)
+    .map(([k, v]) => opt(k, v == null ? `${k} (signals only)` : `${k} (ATR × ${v})`)).join("");
+  renderParams(); loadHistory();
+}
+function renderParams() {
+  const s = META.strategies.find(x => x.key === document.getElementById("strategy").value);
+  document.getElementById("strategy-desc").textContent = s.description;
+  document.getElementById("params").innerHTML = s.params.map(p =>
+    `<div class="col-6"><label class="form-label small mb-0">${KB.esc(p.name)}</label>
+     <input class="form-control form-control-sm" data-param="${KB.esc(p.name)}" type="number" step="${p.type === "int" ? 1 : "any"}" placeholder="${KB.esc(p.default)}"></div>`).join("");
+}
+document.getElementById("strategy").addEventListener("change", renderParams);
+
+function chartOptions(height) {
+  const text = KB.cssVar("--bs-body-color"), grid = KB.cssVar("--bs-border-color-translucent");
+  return { height, layout: { background: { color: "transparent" }, textColor: text },
+           grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+           timeScale: { timeVisible: true, borderColor: grid }, rightPriceScale: { borderColor: grid } };
+}
+function draw(r) {
+  last = r;
+  const priceEl = document.getElementById("price"), eqEl = document.getElementById("equity");
+  priceChart?.remove(); equityChart?.remove();
+  priceChart = LightweightCharts.createChart(priceEl, { ...chartOptions(420), width: priceEl.clientWidth });
+  const candles = priceChart.addCandlestickSeries({ upColor: "#20c997", downColor: "#dc3545", borderVisible: false,
+                                                    wickUpColor: "#20c997", wickDownColor: "#dc3545" });
+  candles.setData(r.candles);
+  Object.entries(r.overlays).forEach(([name, data], k) =>
+    priceChart.addLineSeries({ color: OVERLAY_COLORS[k % 4], lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: name }).setData(data));
+  const markers = [];
+  r.trades.forEach(t => {
+    markers.push({ time: t.entry_time, position: "belowBar", color: "#20c997", shape: "arrowUp", text: "B" });
+    markers.push({ time: t.exit_time, position: "aboveBar", color: t.return_pct >= 0 ? "#20c997" : "#dc3545",
+                   shape: "arrowDown", text: `${t.reason === "STOP" ? "S" : t.reason === "END" ? "E" : "X"} ${t.return_pct.toFixed(1)}%` });
+  });
+  candles.setMarkers(markers.sort((a, b) => a.time - b.time));
+  priceChart.timeScale().fitContent();
+
+  equityChart = LightweightCharts.createChart(eqEl, { ...chartOptions(200), width: eqEl.clientWidth });
+  equityChart.addLineSeries({ color: "#adb5bd", lineWidth: 1, lineStyle: 2, priceLineVisible: false }).setData(r.buy_hold);
+  equityChart.addLineSeries({ color: "#20c997", lineWidth: 2, priceLineVisible: false }).setData(r.equity);
+  equityChart.timeScale().fitContent();
+  priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => range && equityChart.timeScale().setVisibleLogicalRange(range));
+}
+function showMetrics(r) {
+  const m = r.metrics, pf = m.profit_factor === "inf" ? "∞" : KB.num(m.profit_factor);
+  const cell = (label, value, cls = "") => `<div class="col-6 col-md-3 col-xl"><div class="card h-100"><div class="card-body metric py-2">
+    <div class="label">${label}</div><div class="value ${cls}">${value}</div></div></div></div>`;
+  document.getElementById("metrics").innerHTML =
+    cell("Return", KB.pct(m.return_pct), KB.sign(m.return_pct)) + cell("Buy &amp; hold", KB.pct(m.buy_hold_pct), KB.sign(m.buy_hold_pct)) +
+    cell("Sharpe", KB.num(m.sharpe)) + cell("Max DD", KB.num(m.max_drawdown_pct, 1) + "%") +
+    cell("Trades", `${m.trades} <small class="text-secondary">${KB.num(m.win_rate_pct, 0)}% win</small>`) +
+    cell("Profit factor", pf) + cell("Exposure", KB.num(m.exposure_pct, 0) + "%");
+  const note = document.getElementById("note");
+  note.textContent = `${r.symbol} ${r.timeframe} · ${KB.time(r.start)} → ${KB.time(r.end)}` + (r.note ? ` · ${r.note}` : "");
+  note.classList.remove("d-none");
+  KB.table(document.getElementById("trades"), [...r.trades].reverse(), [
+    ["Entry", t => KB.time(new Date(t.entry_time * 1000).toISOString())], ["Exit", t => KB.time(new Date(t.exit_time * 1000).toISOString())],
+    ["Entry price", t => KB.num(t.entry_price, 6)], ["Exit price", t => KB.num(t.exit_price, 6)],
+    ["Return", t => `<span class="${KB.sign(t.return_pct)}">${KB.pct(t.return_pct)}</span>`], ["Exit reason", t => KB.esc(t.reason)]],
+    "No trades in this window.");
+}
+async function loadHistory() {
+  const h = await KB.api("/api/playground/history");
+  document.getElementById("run-count").textContent = `${h.total} runs logged`;
+  KB.table(document.getElementById("history"), h.runs, [
+    ["#", r => r.id], ["Time", r => KB.time(r.created_at)], ["Symbol", r => KB.esc(r.symbol)], ["TF", r => KB.esc(r.timeframe)],
+    ["Strategy", r => KB.esc(r.strategy)], ["Params", r => KB.esc(KB.params(JSON.parse(r.params || "{}")))], ["Stop", r => KB.esc(r.stop)],
+    ["Window", r => `${KB.time(r.start).slice(0, 10)} → ${KB.time(r.end).slice(0, 10)}`],
+    ["Return", r => `<span class="${KB.sign(r.return_pct)}">${KB.pct(r.return_pct)}</span>`],
+    ["B&amp;H", r => KB.pct(r.buy_hold_pct)], ["Sharpe", r => KB.num(r.sharpe)], ["Max DD", r => KB.num(r.max_drawdown_pct, 1) + "%"],
+    ["Trades", r => r.trades]], "No runs yet.");
+}
+document.getElementById("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = new FormData(e.target), btn = document.getElementById("run-btn"), params = {};
+  document.querySelectorAll("[data-param]").forEach(el => { if (el.value !== "") params[el.dataset.param] = el.value; });
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Running…';
+  try {
+    const r = await KB.api("/api/playground/run", { method: "POST", body: {
+      symbol: f.get("symbol"), timeframe: f.get("timeframe"), days: f.get("days"), strategy: f.get("strategy"),
+      stop: f.get("stop"), params, include_holdout: !!f.get("include_holdout") } });
+    showMetrics(r); draw(r); loadHistory();
+  } catch (ex) { KB.toast(ex.message, "danger"); }
+  finally { btn.disabled = false; btn.innerHTML = '<i class="bi bi-play-fill"></i> Run backtest'; }
+});
+window.addEventListener("resize", () => {
+  priceChart?.applyOptions({ width: document.getElementById("price").clientWidth });
+  equityChart?.applyOptions({ width: document.getElementById("equity").clientWidth });
+});
+window.addEventListener("kb-theme", () => last && draw(last));
+init();
+</script>
+{% endblock %}

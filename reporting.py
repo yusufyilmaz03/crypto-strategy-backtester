@@ -119,8 +119,9 @@ def summary(inst, paper_db=DB_FILE):
     return out
 
 
-def service_status(name, status_file=STATUS_FILE, max_age_s=15):
+def service_status(name, status_file=None, max_age_s=15):
     """State of an instance's process as reported by run_all.py."""
+    status_file = status_file or STATUS_FILE
     if not os.path.exists(status_file):
         return {"state": "supervisor not running"}
     try:
@@ -136,7 +137,8 @@ def service_status(name, status_file=STATUS_FILE, max_age_s=15):
     return st["services"].get(name, {"state": "stopped"})
 
 
-def log_tail(name, lines=200, log_dir=LOG_DIR):
+def log_tail(name, lines=200, log_dir=None):
+    log_dir = log_dir or LOG_DIR
     path = os.path.join(log_dir, f"{name}.log")
     if not os.path.exists(path):
         return []

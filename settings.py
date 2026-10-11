@@ -122,8 +122,9 @@ def coerce(setting, value):
     return v
 
 
-def load_overrides(path=SETTINGS_FILE):
+def load_overrides(path=None):
     """Saved overrides for editable settings; invalid or unknown entries are ignored."""
+    path = path or SETTINGS_FILE
     if not os.path.exists(path):
         return {}
     try:
@@ -143,8 +144,9 @@ def load_overrides(path=SETTINGS_FILE):
     return out
 
 
-def save(changes, path=SETTINGS_FILE):
+def save(changes, path=None):
     """Validate and store changes. Returns (saved overrides, services needing a restart)."""
+    path = path or SETTINGS_FILE
     current = load_overrides(path)
     restart = set()
     for key, value in changes.items():
@@ -164,8 +166,9 @@ def save(changes, path=SETTINGS_FILE):
     return current, sorted(restart)
 
 
-def reset(key, path=SETTINGS_FILE):
+def reset(key, path=None):
     """Remove an override so the config.py default applies again."""
+    path = path or SETTINGS_FILE
     current = load_overrides(path)
     current.pop(key, None)
     with open(path, "w") as f:

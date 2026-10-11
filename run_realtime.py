@@ -72,6 +72,7 @@ class SymbolRunner:
         if df.empty:
             return
         df = add_indicators(df)
+        self.store.fill_missing_closes(self.key, self.timeframe, self.symbol, df)
         if self.last_time is None:
             # First run: start from the next closed candle; don't simulate trades on past data.
             self.last_time = df["timestamp"].iloc[-1]

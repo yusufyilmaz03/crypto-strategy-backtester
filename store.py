@@ -137,6 +137,13 @@ class PaperStore:
             " VALUES (?, ?, ?, ?, ?, ?)",
             (symbol, strategy, timeframe, _t(time), float(equity), _f(close)))
 
+    def fill_missing_closes(self, strategy, timeframe, symbol, candles):
+        """Add closes to equity rows written before closes were stored (candles: timestamp, close)."""
+        rows = [(_f(c), symbol, strategy, timeframe, _t(t)) for t, c in zip(candles["timestamp"], candles["close"])]
+        self.conn.executemany("UPDATE equity SET close=? WHERE symbol=? AND strategy=? AND timeframe=? AND time=?"
+                              " AND close IS NULL", rows)
+        self.conn.commit()
+
     # ---------- reads (dashboard) ----------
     def read(self, table, where="", params=()):
         return pd.read_sql_query(f"SELECT * FROM {table} {where}", self.conn, params=params)

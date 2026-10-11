@@ -79,7 +79,7 @@ def _secs(ts):
 
 
 def run(symbol, timeframe, strategy_key, params=None, stop="none", days=365, include_holdout=False,
-        log=True, db=PLAYGROUND_DB, loader=load_ohlcv):
+        log=True, db=None, loader=None):
     symbol = symbol.strip().upper()
     if strategy_key not in strategy.STRATEGY_DISPATCH:
         raise PlaygroundError(f"unknown strategy {strategy_key}")
@@ -97,7 +97,7 @@ def run(symbol, timeframe, strategy_key, params=None, stop="none", days=365, inc
         raise PlaygroundError(f"{days:g} days of {timeframe} is {candles:.0f} candles; allowed 10-{MAX_CANDLES}")
 
     warm_days = WARMUP * timeframe_ms(timeframe) / 86_400_000
-    df = loader(symbol, timeframe, days + warm_days)
+    df = (loader or load_ohlcv)(symbol, timeframe, days + warm_days)
     if df.empty:
         raise PlaygroundError(f"no data for {symbol} {timeframe}")
     note = None
@@ -137,7 +137,7 @@ def run(symbol, timeframe, strategy_key, params=None, stop="none", days=365, inc
                     "return_pct": r.return_pct, "reason": r.reason} for r in tr.itertuples()],
     }
     if log:
-        result["run_id"] = _log(db, result)
+        result["run_id"] = _log(db or PLAYGROUND_DB, result)
     return result
 
 
@@ -162,8 +162,8 @@ def _log(db, r):
         return cur.lastrowid
 
 
-def history(limit=50, db=PLAYGROUND_DB):
-    with _connect(db) as conn:
+def history(limit=50, db=None):
+    with _connect(db or PLAYGROUND_DB) as conn:
         total = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
         rows = pd.read_sql_query("SELECT * FROM runs ORDER BY id DESC LIMIT ?", conn, params=(limit,))
     return total, rows

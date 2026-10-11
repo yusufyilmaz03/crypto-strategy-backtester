@@ -45,10 +45,14 @@ A Python research tool for testing technical trading strategies on historical cr
 ├── forward_report.py    # forward-test report: paper results vs buy-and-hold
 ├── broker.py            # order execution (ccxt; testnet by default) and a fake broker for tests
 ├── run_testnet.py       # order-sending loop on Binance Spot Testnet
-├── run_all.py           # starts paper, testnet and dashboard from one terminal
+├── run_all.py           # supervisor: dashboard + one process per enabled instance
+├── instances.py         # named bot instances (instances.json)
+├── settings.py          # settings editable from the dashboard (settings.json)
+├── playground.py        # interactive backtests for the dashboard
+├── reporting.py         # read-side helpers for the dashboard
 ├── testnet_check.py     # end-to-end check of the testnet order flow
 ├── docs/                # research pre-registrations and results
-├── dashboard.py         # Flask dashboard (templates/)
+├── dashboard.py         # Flask control panel (templates/, static/)
 ├── plot_summary.py      # return bar chart for one strategy
 ├── plot_multi_chart.py  # profitable out-of-sample combinations chart
 └── tests/               # pytest suite
@@ -70,12 +74,21 @@ cp .env.example .env
 
 Run the pieces:
 
-Long-running services from one terminal (output prefixed per service and written to `logs/`; crashed services restart; Ctrl+C stops all):
+Everything day-to-day runs from the control panel:
 
 ```bash
-python run_all.py                   # paper + dashboard, plus testnet if its keys are in .env
-python run_all.py paper dashboard   # or pick services
+python run_all.py          # dashboard + every enabled bot instance; open http://127.0.0.1:5002
 ```
+
+The panel has:
+
+- **Overview**: supervisor and kill switch status, every instance with return, buy-and-hold and drawdown.
+- **Instances**: create named strategy setups (paper or testnet), start/stop/restart them, and see each one's equity vs buy-and-hold, positions, trades, signals and live log. Several paper instances can run in parallel; one testnet instance at a time (they share one exchange account). An instance's setup is fixed after creation.
+- **Playground**: backtest any symbol, timeframe, strategy, parameters and stop on a candlestick chart with trade markers and indicator overlays. Runs are logged; unused holdout data is left out unless requested.
+- **Settings**: costs, risk limits, symbol list and research settings with validation (stored in `settings.json`). API keys and the live trading switch can't be changed from the panel.
+- **Backtests**: results of `multi_backtest.py`.
+
+`run_all.py` runs one process per enabled instance (see `instances.json`), restarts crashed ones and writes logs to `logs/`. Ctrl+C stops everything.
 
 Individual scripts:
 
@@ -138,8 +151,9 @@ Safety:
 
 ## Notes and limitations
 
-- Paper trading keeps separate state per run (strategy, parameters, stop mode) and timeframe; changing `STRATEGY`, `STRATEGY_PARAMS`, `PAPER_STOPLOSS_MODE` or `TIMEFRAME` starts a fresh run (the dashboard shows the configured one).
+- Each instance keeps its own state; the dashboard only accepts changes to an instance's description and running state, so results always belong to one setup.
 - In paper trading, stops are evaluated when a candle closes (as if a stop order had been resting at the stop price), not tick by tick.
 - Times in logs are UTC candle times.
-- `run_realtime.py` and `run_testnet.py` refuse to start a second copy on the same database (`*.db.lock`).
+- A second copy of the same instance refuses to start (`*.lock` files).
+- The dashboard listens on 127.0.0.1 only and requires an `X-Requested-With: kripto-bot` header on every change, so other websites can't drive it. Add authentication before exposing it on a network.
 - In `multi_backtest.py` strategies run with their default parameters, so its walk-forward folds are plain out-of-sample windows. Parameter optimization happens in `research.py`.

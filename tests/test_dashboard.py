@@ -1,79 +1,133 @@
 import json
 
+import pandas as pd
 import pytest
 
 import config
 import dashboard
+import instances
+import playground
+import reporting
 import run_realtime
+import settings
 from conftest import make_ohlcv
 from engine import EngineConfig
 from store import PaperStore
 
 FULL = make_ohlcv(700, seed=3)
+H = {"X-Requested-With": "kripto-bot"}
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(config, "strategy_label", lambda: "v5")
-    monkeypatch.setattr(config, "TIMEFRAME", "5m")
-    monkeypatch.setattr(config, "SYMBOLS", ["X/USDT", "Y/USDT"])
+    monkeypatch.setattr(instances, "INSTANCES_FILE", str(tmp_path / "instances.json"))
+    monkeypatch.setattr(settings, "SETTINGS_FILE", str(tmp_path / "settings.json"))
+    monkeypatch.setattr(playground, "PLAYGROUND_DB", str(tmp_path / "pg.db"))
+    monkeypatch.setattr(reporting, "STATUS_FILE", str(tmp_path / "status.json"))
+    monkeypatch.setattr(reporting, "LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setattr(config, "KILL_SWITCH_FILE", str(tmp_path / "KILL_SWITCH"))
+    dashboard.app.config["TESTING"] = True
+    return dashboard.app.test_client()
+
+
+def _post(c, url, body=None):
+    return c.post(url, json=body or {}, headers=H)
+
+
+def test_pages_render(client):
+    for url in ["/", "/instances", "/instances/forward-v9", "/playground", "/settings", "/backtest", "/health"]:
+        assert client.get(url).status_code == 200, url
+    assert client.get("/instances/nope").status_code == 400
+
+
+def test_mutations_require_csrf_header(client):
+    assert client.post("/api/kill-switch", json={"mode": "block"}).status_code == 403
+    assert client.delete("/api/instances/forward-v9").status_code == 403
+
+
+def test_instance_lifecycle(client):
+    r = _post(client, "/api/instances", {"name": "trend", "strategy": "v10", "timeframe": "4h",
+                                         "params": {"entry": "55"}, "symbols": ["btc/usdt"]})
+    assert r.status_code == 201 and r.get_json()["params"] == {"entry": 55}
+    assert _post(client, "/api/instances", {"name": "trend"}).status_code == 400          # duplicate
+    assert _post(client, "/api/instances/trend/action", {"action": "start"}).get_json()["enabled"]
+    assert client.delete("/api/instances/trend", headers=H).status_code == 400             # running
+    _post(client, "/api/instances/trend/action", {"action": "stop"})
+    _post(client, "/api/instances/trend/action", {"action": "describe", "description": "hi"})
+    assert client.get("/api/instances/trend").get_json()["description"] == "hi"
+    assert client.delete("/api/instances/trend", headers=H).status_code == 200
+    names = [i["name"] for i in client.get("/api/instances").get_json()]
+    assert names == ["forward-v9", "testnet-v9"]
+
+
+def test_instance_data_endpoints(client, tmp_path, monkeypatch):
+    inst = instances.create({"name": "demo", "strategy": "v5", "timeframe": "5m", "stop": "loose",
+                             "symbols": ["X/USDT"], "equity": 1000})
     state = {"n": 300}
     monkeypatch.setattr(run_realtime, "fetch_recent",
                         lambda s, tf, limit=200, **kw: FULL.iloc[:state["n"]].tail(limit).reset_index(drop=True))
     monkeypatch.setattr(run_realtime, "now_ms",
                         lambda: int(FULL.timestamp.iloc[state["n"] - 1].value // 10**6) + 60_000)
-    runner = run_realtime.SymbolRunner("X/USDT", "5m", "v5", EngineConfig(), PaperStore())
+    runner = run_realtime.SymbolRunner("X/USDT", "5m", "v5", inst.engine_config(), PaperStore(),
+                                       label=inst.run_key)
     runner.update()
     while state["n"] < len(FULL):
         state["n"] += 1
         runner.update()
-    dashboard.app.config["TESTING"] = True
-    return dashboard.app.test_client(), runner
 
-
-def test_routes(client):
-    c, _ = client
-    for url in ["/", "/signals", "/trades", "/pnl_data", "/equity_data", "/last_trade",
-                "/dist_data?metric=winloss", "/dist_data?metric=pnl_by_symbol", "/backtest",
-                "/api/backtest", "/health"]:
-        assert c.get(url).status_code == 200, url
-
-
-def test_equity_matches_engine(client):
-    c, runner = client
-    data = json.loads(c.get("/equity_data").data)
-    # Portfolio = traded symbol's equity + one idle symbol at its initial equity.
+    curves = client.get("/api/instances/demo/curves").get_json()
     marked = runner.engine.marked_equity(FULL.close.iloc[-1])
-    expected = (marked + config.INITIAL_EQUITY) / (2 * config.INITIAL_EQUITY) * 100 - 100
-    assert data["return_pct"][-1] == pytest.approx(expected, abs=1e-3)
-    pnl = json.loads(c.get("/pnl_data").data)
-    assert pnl["cum_pnl"][-1] == pytest.approx(sum(t.pnl for t in runner.engine.trades))
+    assert curves["strategy"][-1] == pytest.approx((marked / 1000 - 1) * 100, abs=1e-3)
+    closes = FULL.close.iloc[299:]
+    assert curves["buy_hold"][-1] == pytest.approx((closes.iloc[-1] / closes.iloc[1] - 1) * 100, abs=1e-3)
+    summary = client.get("/api/instances/demo").get_json()["summary"]
+    assert summary["closed_trades"] == len(runner.engine.trades)
+    for table in ["positions", "trades", "signals", "log"]:
+        assert client.get(f"/api/instances/demo/{table}").status_code == 200
+    json.dumps(client.get("/api/overview").get_json())
 
 
-def test_empty_database(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    c = dashboard.app.test_client()
-    for url in ["/", "/signals", "/trades", "/pnl_data", "/equity_data", "/last_trade"]:
-        assert c.get(url).status_code == 200, url
+def test_settings_api(client):
+    v = client.get("/api/settings").get_json()
+    assert "Costs" in v["groups"] and set(v["secrets"]) == {"Binance API key", "Testnet API key"}
+    r = _post(client, "/api/settings", {"changes": {"MAX_ORDER_USDT": 42}})
+    assert r.status_code == 200 and r.get_json()["restart"] == ["testnet"]
+    assert config.MAX_ORDER_USDT == 42.0
+    assert _post(client, "/api/settings", {"changes": {"LIVE_TRADING_ENABLED": True}}).status_code == 400
+    assert _post(client, "/api/settings", {"changes": {"FEE_RATE_TAKER": 9}}).status_code == 400
+    _post(client, "/api/settings", {"reset": ["MAX_ORDER_USDT"]})
+    assert config.MAX_ORDER_USDT == 100.0
 
 
-def test_buy_and_hold_line(client):
-    c, _ = client
-    data = json.loads(c.get("/equity_data").data)
-    closes = FULL.close.iloc[299:]   # candles fed to the engine (first one only sets the start)
-    expected = (closes.iloc[-1] / closes.iloc[1] - 1) * 100
-    assert data["buy_hold_pct"][-1] == pytest.approx(expected, abs=1e-3)  # endpoint rounds to 4 decimals
-    assert len(data["buy_hold_pct"]) == len(data["return_pct"])
+def test_settings_restart_marks_running_instances(client):
+    r = _post(client, "/api/settings/restart", {"services": ["paper"]}).get_json()
+    assert r["restarted"] == ["forward-v9"]
+    assert instances.get("forward-v9").restart_requested_at
 
 
-def test_store_adds_close_column_to_old_databases(tmp_path):
-    import sqlite3
-    db = tmp_path / "old.db"
-    with sqlite3.connect(db) as conn:
-        conn.execute("CREATE TABLE equity (symbol TEXT, strategy TEXT, timeframe TEXT, time TEXT, "
-                     "equity REAL, PRIMARY KEY (symbol, strategy, timeframe, time))")
-    s = PaperStore(str(db))
-    with s.candle():
-        s.log_equity("r", "1d", "A", "2026-01-01", 1000.0, 10.0)
-    assert s.read("equity")["close"].tolist() == [10.0]
+def test_kill_switch(client):
+    assert _post(client, "/api/kill-switch", {"mode": "flatten"}).get_json()["kill_switch"] == "flatten"
+    assert client.get("/api/overview").get_json()["kill_switch"] == "flatten"
+    assert _post(client, "/api/kill-switch", {"mode": "off"}).get_json()["kill_switch"] == "off"
+    assert _post(client, "/api/kill-switch", {"mode": "boom"}).status_code == 400
+
+
+def test_playground_api(client, monkeypatch):
+    df = make_ohlcv(800, seed=5, freq="1D", start="2024-01-01")
+    monkeypatch.setattr(playground, "load_ohlcv", lambda s, tf, days: df)
+    r = _post(client, "/api/playground/run", {"symbol": "BTC/USDT", "timeframe": "1d", "strategy": "v9",
+                                              "params": {"slow": 50}, "days": 200})
+    assert r.status_code == 200, r.get_json()
+    assert len(r.get_json()["candles"]) == 200
+    assert client.get("/api/playground/history").get_json()["total"] == 1
+    bad = _post(client, "/api/playground/run", {"symbol": "BTC/USDT", "timeframe": "1d", "strategy": "v99"})
+    assert bad.status_code == 400 and "unknown strategy" in bad.get_json()["error"]
+
+
+def test_strategies_api(client):
+    d = client.get("/api/strategies").get_json()
+    keys = [s["key"] for s in d["strategies"]]
+    assert "v9" in keys and d["stops"]["none"] is None
+    v9 = next(s for s in d["strategies"] if s["key"] == "v9")
+    assert {p["name"] for p in v9["params"]} == {"fast", "slow"} and v9["description"]

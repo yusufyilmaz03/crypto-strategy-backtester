@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>{% endblock %}
+{% block content %}
+<nav class="small mb-2"><a href="/instances">Instances</a> / {{ name }}</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-1">{{ name }} <span id="badges"></span></h1>
+    <div class="text-secondary" id="setup-line">…</div>
+  </div>
+  <div class="btn-group" id="actions"></div>
+</div>
+<div class="input-group input-group-sm mb-4" style="max-width: 640px">
+  <span class="input-group-text">Description</span>
+  <input class="form-control" id="description" maxlength="500">
+  <button class="btn btn-outline-secondary" onclick="saveDescription()">Save</button>
+</div>
+
+<div class="row g-3 mb-4" id="metrics"></div>
+
+<div class="card mb-4"><div class="card-body">
+  <h6 class="card-title">Return vs equal-weight buy &amp; hold (%)</h6>
+  <canvas id="chart" height="90"></canvas>
+</div></div>
+
+<ul class="nav nav-tabs" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t-pos">Positions</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-trades" id="trades-tab">Trades</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-signals" id="signals-tab">Signals</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-log">Log</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-setup">Setup</button></li>
+</ul>
+<div class="tab-content border border-top-0 rounded-bottom p-3 mb-4">
+  <div class="tab-pane fade show active table-responsive" id="t-pos"><table class="table table-sm" id="positions"></table></div>
+  <div class="tab-pane fade table-responsive" id="t-trades" style="max-height: 520px"><table class="table table-sm" id="trades"></table></div>
+  <div class="tab-pane fade table-responsive" id="t-signals" style="max-height: 520px"><table class="table table-sm" id="signals"></table></div>
+  <div class="tab-pane fade" id="t-log"><div class="log bg-body-tertiary p-2 rounded" id="log">…</div></div>
+  <div class="tab-pane fade" id="t-setup"><pre class="small mb-0" id="setup"></pre></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const NAME = {{ name|tojson }}, N = encodeURIComponent(NAME);
+let INST, chart, armedDelete = 0;
+
+function metric(label, value, sub, cls = "") {
+  return `<div class="col-6 col-md-3 col-xl"><div class="card h-100"><div class="card-body metric">
+    <div class="label">${label}</div><div class="value ${cls}">${value}</div><div class="sub">${sub || "&nbsp;"}</div></div></div></div>`;
+}
+async function loadInstance() {
+  INST = await KB.api(`/api/instances/${N}`);
+  const s = INST.summary, paper = INST.mode === "paper";
+  document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}`;
+  document.getElementById("setup-line").textContent =
+    `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.symbols.length} symbols · ` +
+    (paper ? `${INST.equity} USDT per symbol` : `${INST.equity} USDT capital`);
+  if (document.activeElement.id !== "description") document.getElementById("description").value = INST.description || "";
+  document.getElementById("actions").innerHTML = INST.enabled
+    ? `<button class="btn btn-outline-secondary" onclick="act('restart')"><i class="bi bi-arrow-repeat"></i> Restart</button>
+       <button class="btn btn-outline-danger" onclick="act('stop')"><i class="bi bi-stop-fill"></i> Stop</button>`
+    : `<button class="btn btn-success" onclick="act('start')"><i class="bi bi-play-fill"></i> Start</button>
+       <button class="btn btn-outline-danger" onclick="del()"><i class="bi bi-trash"></i> Delete</button>`;
+  document.getElementById("metrics").innerHTML =
+    metric("Return", KB.pct(s.return_pct), `buy &amp; hold ${KB.pct(s.buy_hold_pct)}`, KB.sign(s.return_pct)) +
+    metric("Sharpe", KB.num(s.sharpe), `buy &amp; hold ${KB.num(s.buy_hold_sharpe)}`) +
+    metric("Max drawdown", KB.num(s.max_dd_pct, 1) + "%", `buy &amp; hold ${KB.num(s.buy_hold_max_dd_pct, 1)}%`) +
+    metric("Closed trades", s.closed_trades, `win rate ${KB.num(s.win_rate_pct, 1)}%`) +
+    metric("Open positions", s.open_positions, `${s.days} days · last ${KB.time(s.last_candle)}`);
+  document.getElementById("trades-tab").textContent = paper ? "Trades" : "Orders";
+  document.getElementById("signals-tab").textContent = paper ? "Signals" : "Events";
+  document.getElementById("setup").textContent = JSON.stringify(INST, null, 2);
+}
+async function loadChart() {
+  const d = await KB.api(`/api/instances/${N}/curves`);
+  const color = KB.cssVar("--bs-body-color");
+  const data = { labels: d.labels.map(KB.time), datasets: [
+    { label: "Strategy", data: d.strategy, borderColor: "#20c997", pointRadius: 0, borderWidth: 2 },
+    { label: "Buy & hold", data: d.buy_hold, borderColor: "#adb5bd", borderDash: [5, 5], pointRadius: 0, borderWidth: 1.5 }] };
+  if (chart) { chart.data = data; chart.update(); return; }
+  chart = new Chart(document.getElementById("chart"), { type: "line", data, options: {
+    animation: false, interaction: { mode: "index", intersect: false },
+    plugins: { legend: { labels: { color } } },
+    scales: { x: { ticks: { color, maxTicksLimit: 10 } }, y: { ticks: { color, callback: v => v + "%" } } } } });
+}
+async function loadTables() {
+  const paper = INST.mode === "paper";
+  const [pos, trades, signals, log] = await Promise.all(["positions", "trades", "signals", "log"].map(t => KB.api(`/api/instances/${N}/${t}`)));
+  KB.table(document.getElementById("positions"), pos, paper ? [
+    ["Symbol", r => KB.esc(r.symbol)], ["Side", r => KB.esc(r.side)], ["Entry time", r => KB.time(r.entry_time)],
+    ["Entry price", r => KB.num(r.entry_price, 6)], ["Qty", r => KB.num(r.qty, 6)], ["Stop", r => KB.num(r.stop, 6)]] : [
+    ["Symbol", r => KB.esc(r.symbol)], ["Qty", r => KB.num(r.qty, 8)], ["Cost", r => KB.num(r.cost)],
+    ["Entry price", r => KB.num(r.entry_price, 6)], ["Entry time", r => KB.time(r.entry_time)]], "No open positions.");
+  KB.table(document.getElementById("trades"), trades, paper ? [
+    ["Symbol", r => KB.esc(r.symbol)], ["Entry", r => KB.time(r.entry_time)], ["Exit", r => KB.time(r.exit_time)],
+    ["Entry price", r => KB.num(r.entry_price, 6)], ["Exit price", r => KB.num(r.exit_price, 6)],
+    ["Return", r => `<span class="${KB.sign(r.return_pct)}">${KB.pct(r.return_pct)}</span>`],
+    ["PnL", r => KB.num(r.pnl)], ["Reason", r => KB.esc(r.reason ?? "open")]] : [
+    ["Time", r => KB.time(r.created_at)], ["Symbol", r => KB.esc(r.symbol)], ["Side", r => KB.esc(r.side)],
+    ["Status", r => KB.esc(r.status)], ["Filled", r => KB.num(r.filled, 8)], ["Avg price", r => KB.num(r.average, 6)],
+    ["Ref price", r => KB.num(r.ref_price, 6)], ["Cost", r => KB.num(r.cost)], ["PnL", r => KB.num(r.pnl)],
+    ["Error", r => KB.esc(r.error ?? "")]], paper ? "No trades yet." : "No orders yet.");
+  KB.table(document.getElementById("signals"), signals, paper ? [
+    ["Candle", r => KB.time(r.candle_time)], ["Symbol", r => KB.esc(r.symbol)], ["Signal", r => KB.esc(r.signal)],
+    ["RSI", r => KB.num(r.rsi)], ["Close", r => KB.num(r.close, 6)], ["Position", r => KB.esc(r.position)],
+    ["Action", r => KB.esc(r.action)]] : [
+    ["Time", r => KB.time(r.time)], ["Level", r => KB.esc(r.level)], ["Symbol", r => KB.esc(r.symbol ?? "")],
+    ["Message", r => KB.esc(r.message)]], paper ? "No signals yet." : "No events yet.");
+  const logEl = document.getElementById("log"), atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+  logEl.textContent = log.length ? log.join("\n") : "No log yet (logs are written when the instance runs under run_all.py).";
+  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+}
+async function refresh() { try { await loadInstance(); await Promise.all([loadChart(), loadTables()]); } catch (e) { KB.toast(e.message, "danger"); } }
+async function act(action) {
+  try { await KB.api(`/api/instances/${N}/action`, { method: "POST", body: { action } }); KB.toast(`${action} requested`); refresh(); }
+  catch (e) { KB.toast(e.message, "danger"); }
+}
+async function saveDescription() {
+  try { await KB.api(`/api/instances/${N}/action`, { method: "POST",
+          body: { action: "describe", description: document.getElementById("description").value } }); KB.toast("Saved"); }
+  catch (e) { KB.toast(e.message, "danger"); }
+}
+async function del() {
+  if (Date.now() - armedDelete > 5000) { armedDelete = Date.now();
+    KB.toast("Click Delete again within 5 seconds. Stored results are kept.", "warning"); return; }
+  try { await KB.api(`/api/instances/${N}`, { method: "DELETE" }); location.href = "/instances"; }
+  catch (e) { KB.toast(e.message, "danger"); }
+}
+window.addEventListener("kb-theme", () => { chart?.destroy(); chart = null; loadChart(); });
+refresh(); setInterval(refresh, 15000);
+</script>
+{% endblock %}

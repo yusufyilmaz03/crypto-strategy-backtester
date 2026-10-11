@@ -50,7 +50,6 @@ def test_config_applies_overrides(tmp_path, monkeypatch):
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"SLIPPAGE_BPS": 12}))
     monkeypatch.setattr(settings, "SETTINGS_FILE", str(path))
-    monkeypatch.setattr(settings.load_overrides, "__defaults__", (str(path),))
     import config
     try:
         importlib.reload(config)

@@ -125,3 +125,14 @@ def test_sleep_uses_wall_clock(monkeypatch):
     run_realtime.sleep_until_next_close("1d")
     assert len(sleeps) <= 2 or clock["now"] >= (1_000_000_000_000 // 86_400_000 + 1) * 86_400_000
     assert sleeps[0] <= 30
+
+
+def test_missing_closes_are_filled_on_update(tmp_path, feed):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    t = FULL.timestamp.iloc[feed.n - 2]
+    with store.candle():
+        store.log_equity("v5", "5m", "X/USDT", t, 1000.0)          # old row without a close
+    r = run_realtime.SymbolRunner("X/USDT", "5m", "v5", EngineConfig(), store)
+    r.update()
+    row = store.read("equity")
+    assert row["close"].iloc[0] == pytest.approx(FULL.close.iloc[feed.n - 2])

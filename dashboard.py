@@ -1,213 +1,297 @@
 # dashboard.py
-"""Flask dashboard: paper trading results (from paper.db) and backtest comparisons."""
+"""Flask control panel: overview, bot instances, playground, settings and backtests.
+
+Binds to 127.0.0.1 only. Requests that change something must carry the header
+X-Requested-With: kripto-bot; browsers don't let other websites send it, which keeps
+pages you visit from driving the panel behind your back (CSRF).
+"""
+import importlib
 import json
 import os
-import sqlite3
 
 import pandas as pd
 from flask import Flask, jsonify, render_template, request
 
 import config
-from metrics import max_drawdown_pct
-from store import DB_FILE
+import instances
+import playground
+import reporting
+import settings
+import strategy
 
 app = Flask(__name__)
 
 BACKTEST_FILE = "multi_backtest_strategies.csv"
-
-TRADE_COLUMNS = {
-    "trade_id": "TradeID", "entry_time": "Timestamp Entry", "exit_time": "Timestamp Exit",
-    "symbol": "Symbol", "side": "Position", "entry_price": "Entry Price", "exit_price": "Exit Price",
-    "stop": "Stop", "entry_rsi": "Entry RSI", "pnl": "PnL", "return_pct": "Return%",
-    "fees": "Fees", "reason": "Close Reason",
-}
-SIGNAL_COLUMNS = {
-    "candle_time": "Candle Time", "symbol": "Symbol", "signal": "Signal", "rsi": "RSI",
-    "close": "Close", "position": "Position", "action": "Action",
-}
+CSRF_HEADER = ("X-Requested-With", "kripto-bot")
 
 
-def current_run():
-    """Strategy and timeframe shown by default: the ones paper trading is configured for."""
-    return (request.args.get("strategy", config.strategy_label()),
-            request.args.get("timeframe", config.TIMEFRAME))
+class ApiError(Exception):
+    pass
 
 
-def load_table(table, order=None):
-    """Rows of `table` for the current run; empty frame if the database doesn't exist yet."""
-    if not os.path.exists(DB_FILE):
-        return pd.DataFrame()
-    strat, tf = current_run()
-    with sqlite3.connect(DB_FILE) as conn:
-        try:
-            query = f"SELECT * FROM {table} WHERE strategy=? AND timeframe=?"
-            if order:
-                query += f" ORDER BY {order}"
-            return pd.read_sql_query(query, conn, params=(strat, tf))
-        except Exception:
-            return pd.DataFrame()
+@app.before_request
+def _csrf_guard():
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        if request.headers.get(CSRF_HEADER[0]) != CSRF_HEADER[1]:
+            return jsonify({"error": "missing request header"}), 403
+    return None
 
 
-def load_trades():
-    df = load_table("trades", "entry_time")
-    if df.empty:
-        return df
-    return df.rename(columns=TRADE_COLUMNS)[list(TRADE_COLUMNS.values())]
+@app.errorhandler(instances.InstanceError)
+@app.errorhandler(settings.SettingsError)
+@app.errorhandler(playground.PlaygroundError)
+@app.errorhandler(ApiError)
+def _bad_request(e):
+    return jsonify({"error": str(e)}), 400
 
 
-def portfolio_equity():
-    """Sum of per-symbol equity over time (symbols without data count at initial equity)."""
-    eq = load_table("equity", "time")
-    if eq.empty:
-        return pd.Series(dtype=float)
-    wide = eq.pivot_table(index="time", columns="symbol", values="equity").sort_index().ffill()
-    idle = len(config.SYMBOLS) - wide.shape[1]
-    total = wide.fillna(config.INITIAL_EQUITY).sum(axis=1) + max(idle, 0) * config.INITIAL_EQUITY
-    return total
+def records(df):
+    """DataFrame -> JSON-safe list of dicts (NaN -> null)."""
+    if df is None or df.empty:
+        return []
+    return json.loads(df.to_json(orient="records", date_format="iso"))
 
 
+def _inst(name):
+    return instances.get(name)
+
+
+def _instance_view(inst):
+    d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop",
+                                       "equity", "enabled", "description", "created_at", "run_key")}
+    d["symbols"] = inst.symbol_list
+    d["custom_symbols"] = bool(inst.symbols)
+    d["status"] = reporting.service_status(inst.name)
+    d["summary"] = reporting.summary(inst)
+    return d
+
+
+def _kill_state():
+    path = config.KILL_SWITCH_FILE
+    if not os.path.exists(path):
+        return "off"
+    with open(path) as f:
+        return "flatten" if "flatten" in f.read().lower() else "block"
+
+
+# ---------------------------------------------------------------- pages
 @app.route("/")
-def index():
-    trades = load_trades()
-    closed = trades[trades["Timestamp Exit"].notna()] if not trades.empty else trades
-    equity = portfolio_equity()
-    start_equity = config.INITIAL_EQUITY * len(config.SYMBOLS)
-    summary = {
-        "strategy": current_run()[0], "timeframe": current_run()[1],
-        "total_pnl": float(closed["PnL"].sum()) if len(closed) else 0.0,
-        "return_pct": (equity.iloc[-1] / start_equity - 1) * 100 if len(equity) else 0.0,
-        "win_rate": float((closed["PnL"] > 0).mean() * 100) if len(closed) else None,
-        "max_dd": max_drawdown_pct(pd.concat([pd.Series([start_equity]), equity.reset_index(drop=True)]))
-                  if len(equity) else 0.0,
-        "open_trades": int(trades["Timestamp Exit"].isna().sum()) if len(trades) else 0,
-        "closed_trades": int(len(closed)),
-    }
-    return render_template("index.html", **summary)
+def overview():
+    return render_template("overview.html", page="overview")
 
 
-@app.route("/signals")
-def signals():
-    df = load_table("signals", "id DESC")
-    if not df.empty:
-        df = df.rename(columns=SIGNAL_COLUMNS)[list(SIGNAL_COLUMNS.values())]
-    return render_template("table.html", title="Signals Log",
-                           tables=[df.to_html(classes="table table-striped", index=False)])
+@app.route("/instances")
+def instances_page():
+    return render_template("instances.html", page="instances")
 
 
-@app.route("/trades")
-def trades():
-    df = load_trades()
-    if not df.empty:
-        df = df.iloc[::-1]
-    return render_template("table.html", title="Trades Log",
-                           tables=[df.to_html(classes="table table-striped", index=False)])
+@app.route("/instances/<name>")
+def instance_page(name):
+    _inst(name)
+    return render_template("instance.html", page="instances", name=name)
 
 
-@app.route("/pnl_data")
-def pnl_data():
-    df = load_trades()
-    df = df[df["Timestamp Exit"].notna()].sort_values("Timestamp Exit") if not df.empty else df
-    if df.empty:
-        return jsonify({"labels": [], "cum_pnl": [], "trade_pnl": [], "win": 0, "loss": 0})
-    return jsonify({
-        "labels": df["Timestamp Exit"].tolist(),
-        "cum_pnl": df["PnL"].cumsum().tolist(),
-        "trade_pnl": df["PnL"].tolist(),
-        "win": int((df["PnL"] > 0).sum()),
-        "loss": int((df["PnL"] <= 0).sum()),
-    })
+@app.route("/playground")
+def playground_page():
+    return render_template("playground.html", page="playground")
 
 
-def buy_and_hold():
-    """Equal-weight buy-and-hold of the traded symbols over the same candles, as return %."""
-    eq = load_table("equity", "time")
-    if eq.empty or eq["close"].isna().all():
-        return pd.Series(dtype=float)
-    closes = eq.pivot_table(index="time", columns="symbol", values="close").sort_index()
-    return ((1 + closes.pct_change().mean(axis=1, skipna=True).fillna(0)).cumprod() - 1) * 100
+@app.route("/settings")
+def settings_page():
+    return render_template("settings.html", page="settings")
 
-
-@app.route("/equity_data")
-def equity_data():
-    eq = portfolio_equity()
-    start_equity = config.INITIAL_EQUITY * len(config.SYMBOLS)
-    bh = buy_and_hold().reindex(eq.index)
-    return jsonify({"labels": eq.index.tolist(),
-                    "return_pct": ((eq / start_equity - 1) * 100).round(4).tolist(),
-                    "buy_hold_pct": [None if pd.isna(v) else round(float(v), 4) for v in bh]})
-
-
-@app.route("/last_trade")
-def last_trade():
-    df = load_trades()
-    if df.empty:
-        return jsonify({"trade": None})
-    last = df.iloc[-1].to_dict()
-    # NaN -> None (for JSON)
-    return jsonify({"trade": {k: (None if pd.isna(v) else v) for k, v in last.items()}})
-
-
-@app.route("/dist_data")
-def dist_data():
-    """
-    metric:
-      - winloss            -> [Win, Loss] counts
-      - pnl_by_symbol      -> total PnL per symbol
-      - count_by_symbol    -> trade count per symbol
-    """
-    df = load_trades()
-    df = df[df["Timestamp Exit"].notna()] if not df.empty else df
-    if df.empty:
-        return jsonify({"labels": [], "values": []})
-
-    metric = request.args.get("metric", "winloss")
-    if metric == "winloss":
-        return jsonify({"labels": ["Win", "Loss"],
-                        "values": [int((df["PnL"] > 0).sum()), int((df["PnL"] <= 0).sum())]})
-
-    if metric in ("pnl_by_symbol", "count_by_symbol"):
-        g = df.groupby("Symbol")["PnL"]
-        g = (g.sum() if metric == "pnl_by_symbol" else g.count()).sort_values(ascending=False)
-        # top 12 for readability, the rest as "Others"
-        if len(g) > 12:
-            g = pd.concat([g.iloc[:12], pd.Series({"Others": g.iloc[12:].sum()})])
-        return jsonify({"labels": g.index.tolist(), "values": [float(x) for x in g.values]})
-
-    return jsonify({"labels": [], "values": []})
-
-
-# ============================================================
-# Backtest comparison page + API
-# ============================================================
 
 @app.route("/backtest")
 def backtest():
-    # renders templates/backtest.html
-    return render_template("backtest.html")
+    return render_template("backtest.html", page="backtest")
 
 
+@app.route("/health")
+def health():
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- overview
+@app.route("/api/overview")
+def api_overview():
+    status = {"running": False}
+    if os.path.exists(reporting.STATUS_FILE):
+        try:
+            with open(reporting.STATUS_FILE) as f:
+                st = json.load(f)
+            age = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(st["updated_at"])).total_seconds()
+            status = {"running": age < 15, "updated_at": st["updated_at"], "pid": st.get("supervisor_pid")}
+        except (OSError, ValueError, KeyError):
+            pass
+    return jsonify({
+        "supervisor": status,
+        "kill_switch": _kill_state(),
+        "trading_mode": config.TRADING_MODE, "live_enabled": config.LIVE_TRADING_ENABLED,
+        "instances": [_instance_view(i) for i in instances.load_all().values()],
+    })
+
+
+@app.route("/api/kill-switch", methods=["GET", "POST"])
+def api_kill_switch():
+    if request.method == "POST":
+        mode = (request.get_json(silent=True) or {}).get("mode")
+        if mode == "off":
+            if os.path.exists(config.KILL_SWITCH_FILE):
+                os.remove(config.KILL_SWITCH_FILE)
+        elif mode in ("block", "flatten"):
+            with open(config.KILL_SWITCH_FILE, "w") as f:
+                f.write("flatten" if mode == "flatten" else "")
+        else:
+            raise ApiError("mode must be off, block or flatten")
+    return jsonify({"kill_switch": _kill_state()})
+
+
+# ---------------------------------------------------------------- instances
+@app.route("/api/strategies")
+def api_strategies():
+    return jsonify({
+        "strategies": [{"key": k, "description": strategy.STRATEGY_INFO.get(k, ""),
+                        "params": instances.param_spec(k), "grid": {
+                            (" / ".join(n) if isinstance(n, tuple) else n): v
+                            for n, v in strategy.PARAM_GRIDS.get(k, {}).items()}}
+                       for k in strategy.STRATEGY_DISPATCH],
+        "timeframes": instances.TIMEFRAMES, "modes": instances.MODES,
+        "stops": dict(config.STOPLOSS_CONFIG),
+        "symbols": list(config.SYMBOLS), "default_equity": config.INITIAL_EQUITY,
+        "default_capital": config.TRADING_CAPITAL_USDT,
+    })
+
+
+@app.route("/api/instances", methods=["GET", "POST"])
+def api_instances():
+    if request.method == "POST":
+        inst = instances.create(request.get_json(silent=True) or {})
+        return jsonify(_instance_view(inst)), 201
+    return jsonify([_instance_view(i) for i in instances.load_all().values()])
+
+
+@app.route("/api/instances/<name>", methods=["GET", "DELETE"])
+def api_instance(name):
+    if request.method == "DELETE":
+        instances.delete(name)
+        return jsonify({"deleted": name})
+    return jsonify(_instance_view(_inst(name)))
+
+
+@app.route("/api/instances/<name>/action", methods=["POST"])
+def api_instance_action(name):
+    d = request.get_json(silent=True) or {}
+    action = d.get("action")
+    if action == "start":
+        inst = instances.update(name, enabled=True)
+    elif action == "stop":
+        inst = instances.update(name, enabled=False)
+    elif action == "restart":
+        inst = instances.update(name, restart_requested_at=pd.Timestamp.now(tz="UTC").isoformat())
+    elif action == "describe":
+        inst = instances.update(name, description=str(d.get("description", ""))[:500])
+    else:
+        raise ApiError("action must be start, stop, restart or describe")
+    return jsonify(_instance_view(inst))
+
+
+@app.route("/api/instances/<name>/curves")
+def api_instance_curves(name):
+    strat, bh = reporting.curves(_inst(name))
+    return jsonify({"labels": [t.isoformat() for t in strat.index],
+                    "strategy": [round(float(v), 4) for v in strat],
+                    "buy_hold": [None if pd.isna(v) else round(float(v), 4) for v in bh]})
+
+
+@app.route("/api/instances/<name>/<table>")
+def api_instance_table(name, table):
+    inst = _inst(name)
+    if table == "positions":
+        return jsonify(records(reporting.positions(inst)))
+    if table == "trades":
+        return jsonify(records(reporting.trades(inst).iloc[::-1]))
+    if table == "signals":
+        return jsonify(records(reporting.signals(inst)))
+    if table == "log":
+        return jsonify(reporting.log_tail(inst.name, int(request.args.get("lines", 200))))
+    raise ApiError(f"unknown table {table}")
+
+
+# ---------------------------------------------------------------- playground
+@app.route("/api/playground/run", methods=["POST"])
+def api_playground_run():
+    d = request.get_json(silent=True) or {}
+    try:
+        result = playground.run(d.get("symbol", ""), d.get("timeframe", "1d"), d.get("strategy", "v9"),
+                                d.get("params") or {}, d.get("stop", "none"), d.get("days", 365),
+                                bool(d.get("include_holdout")))
+    except playground.PlaygroundError:
+        raise
+    except Exception as e:  # e.g. a symbol Binance doesn't list
+        raise ApiError(f"{type(e).__name__}: {e}")
+    return jsonify(result)
+
+
+@app.route("/api/playground/history")
+def api_playground_history():
+    total, rows = playground.history()
+    return jsonify({"total": total, "runs": records(rows)})
+
+
+# ---------------------------------------------------------------- settings
+def _settings_view():
+    overrides = settings.load_overrides()
+    groups = {}
+    for s in settings.SCHEMA:
+        groups.setdefault(s.group, []).append({
+            "key": s.key, "label": s.label, "kind": s.kind, "help": s.help, "min": s.min, "max": s.max,
+            "choices": s.choices, "editable": s.editable, "restart": s.restart,
+            "value": getattr(config, s.key), "overridden": s.key in overrides,
+        })
+    return {"groups": groups, "secrets": {
+        "Binance API key": bool(config.BINANCE_API_KEY and config.BINANCE_API_SECRET),
+        "Testnet API key": bool(config.BINANCE_TESTNET_API_KEY and config.BINANCE_TESTNET_API_SECRET)}}
+
+
+@app.route("/api/settings", methods=["GET", "POST"])
+def api_settings():
+    if request.method == "POST":
+        d = request.get_json(silent=True) or {}
+        for key in d.get("reset", []):
+            settings.reset(key)
+        _, restart = settings.save(d.get("changes", {}))
+        importlib.reload(config)
+        view = _settings_view()
+        view["restart"] = restart
+        return jsonify(view)
+    return jsonify(_settings_view())
+
+
+@app.route("/api/settings/restart", methods=["POST"])
+def api_settings_restart():
+    """Restart the running instances affected by a settings change."""
+    services = set((request.get_json(silent=True) or {}).get("services", []))
+    now = pd.Timestamp.now(tz="UTC").isoformat()
+    done = []
+    for inst in instances.load_all().values():
+        if inst.enabled and inst.mode in services:
+            instances.update(inst.name, restart_requested_at=now)
+            done.append(inst.name)
+    return jsonify({"restarted": done})
+
+
+# ---------------------------------------------------------------- backtests
 @app.route("/api/backtest")
 def api_backtest():
-    """
-    Return backtest results (multi_backtest_strategies.csv) as JSON.
-    One row per symbol / timeframe / strategy / segment (ALL, IS, OOS, WF1..).
-    """
+    """multi_backtest_strategies.csv as JSON (one row per symbol/timeframe/strategy/segment)."""
     if not os.path.exists(BACKTEST_FILE):
         return jsonify({"results": []})
     df = pd.read_csv(BACKTEST_FILE)
     if df.empty or "Segment" not in df.columns:
         return jsonify({"results": []})
-
-    # inf (e.g. profit factor without losing trades) and NaN are not valid JSON
     df = df.replace([float("inf"), float("-inf")], None)
-    data = json.loads(df.to_json(orient="records"))
-    return jsonify({"results": data})
+    return jsonify({"results": json.loads(df.to_json(orient="records"))})
 
-# ============================================================
-
-@app.route("/health")
-def health():
-    return jsonify({"ok": True})
 
 if __name__ == "__main__":
     print("Starting dashboard on http://127.0.0.1:5002 ...")
