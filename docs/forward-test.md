@@ -35,3 +35,8 @@ produces genuinely new out-of-sample data without risking money.
 Passing is necessary but not sufficient: six months is short. Together with the
 Phase 2b development result it would justify moving to the testnet phase, which
 needs explicit approval before any order-sending code is written.
+
+**Note (2026-10-12, code layout change, no change to the test):** the code moved into the
+`kripto_bot/` package. The forward test now runs as the `forward-v9` instance under
+`python -m kripto_bot run`, its data is in `runtime/paper.db` (same run key), and the
+report is `python -m kripto_bot forward-report`.

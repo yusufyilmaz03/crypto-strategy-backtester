@@ -1,12 +1,12 @@
 import pandas as pd
 import pytest
 
-import strategy
+from kripto_bot.core import strategy
 from conftest import make_ohlcv
-from engine import EngineConfig
-from evaluation import walk_forward_splits
-from indicators import add_indicators
-from optimize import _chain, walk_forward_optimize
+from kripto_bot.core.engine import EngineConfig
+from kripto_bot.analysis.evaluation import walk_forward_splits
+from kripto_bot.core.indicators import add_indicators
+from kripto_bot.analysis.optimize import _chain, walk_forward_optimize
 
 
 @pytest.fixture(scope="module")

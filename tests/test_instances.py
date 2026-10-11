@@ -1,8 +1,8 @@
 import pytest
 
-import config
-import instances
-from instances import InstanceError
+from kripto_bot import config
+from kripto_bot import instances
+from kripto_bot.instances import InstanceError
 
 
 @pytest.fixture

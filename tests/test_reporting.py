@@ -3,10 +3,10 @@ import json
 import pandas as pd
 import pytest
 
-import instances
-import reporting
-from engine import Position, Trade
-from store import PaperStore
+from kripto_bot import instances
+from kripto_bot.app import reporting
+from kripto_bot.core.engine import Position, Trade
+from kripto_bot.trading.store import PaperStore
 
 
 @pytest.fixture

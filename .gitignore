@@ -10,10 +10,14 @@ venv/
 __pycache__/
 *.pyc
 
-# Old experiment outputs and logs
+# Bot state (databases, instances, settings, logs, kill switch) and run outputs
+runtime/
+results/
+*.log
+
+# Old flat layout: these move into runtime/ and results/ on the first run
 csv_old/
 logs/
-*.log
 summary.png
 signals_log.csv
 trades_log.csv

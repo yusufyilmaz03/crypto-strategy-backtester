@@ -3,7 +3,7 @@ import math
 import pandas as pd
 import pytest
 
-from metrics import bars_per_year, compute_metrics, max_drawdown_pct, sharpe_ratio
+from kripto_bot.core.metrics import bars_per_year, compute_metrics, max_drawdown_pct, sharpe_ratio
 
 
 def _equity(values, freq="1h"):
@@ -70,7 +70,7 @@ def test_profit_factor_without_losses_is_inf():
 
 def test_probabilistic_sharpe():
     import numpy as np
-    from metrics import probabilistic_sharpe
+    from kripto_bot.core.metrics import probabilistic_sharpe
 
     rng = np.random.default_rng(0)
     good = pd.Series(rng.normal(0.002, 0.01, 2000))
@@ -84,7 +84,7 @@ def test_probabilistic_sharpe():
 
 def test_deflated_sharpe_penalizes_many_trials():
     import numpy as np
-    from metrics import deflated_sharpe, expected_max_sharpe
+    from kripto_bot.core.metrics import deflated_sharpe, expected_max_sharpe
 
     assert expected_max_sharpe(1, 0.05) == 0.0
     assert expected_max_sharpe(100, 0.05) > expected_max_sharpe(10, 0.05) > 0

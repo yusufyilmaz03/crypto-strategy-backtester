@@ -3,10 +3,10 @@ import json
 import pandas as pd
 import pytest
 
-import config
-import playground
+from kripto_bot import config
+from kripto_bot.app import playground
 from conftest import make_ohlcv
-from playground import PlaygroundError, history, run
+from kripto_bot.app.playground import PlaygroundError, history, run
 
 
 def loader(n=800, freq="1D", start="2024-01-01"):
@@ -47,9 +47,9 @@ def test_invalid_requests(args, message):
 
 
 def test_matches_engine_directly():
-    from engine import run_backtest
-    from indicators import add_indicators
-    import strategy
+    from kripto_bot.core.engine import run_backtest
+    from kripto_bot.core.indicators import add_indicators
+    from kripto_bot.core import strategy
 
     r = run("X/USDT", "1d", "v10", {}, "none", 300, log=False, loader=loader())
     df = add_indicators(make_ohlcv(800, seed=5, freq="1D", start="2024-01-01"))

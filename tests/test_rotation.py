@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from conftest import make_ohlcv
-from rotation import build_panel, rotation_combinations, simulate
+from kripto_bot.analysis.rotation import build_panel, rotation_combinations, simulate
 
 
 def panel(prices):
@@ -62,8 +62,8 @@ def test_grid():
 
 
 def test_walk_forward_rotation_structure():
-    from engine import EngineConfig
-    from rotation import walk_forward_rotation
+    from kripto_bot.core.engine import EngineConfig
+    from kripto_bot.analysis.rotation import walk_forward_rotation
 
     frames = {f"S{i}": make_ohlcv(900, seed=i, freq="1D") for i in range(8)}
     opens, closes = build_panel(frames)

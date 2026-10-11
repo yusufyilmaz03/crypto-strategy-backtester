@@ -1,6 +1,6 @@
 import pandas as pd
 
-import data
+from kripto_bot.core import data
 from conftest import MINUTE, FakeExchange
 
 T0 = 1_700_000_000_000 - (1_700_000_000_000 % MINUTE)

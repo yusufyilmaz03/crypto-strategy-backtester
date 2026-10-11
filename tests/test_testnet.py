@@ -1,13 +1,13 @@
 import pandas as pd
 import pytest
 
-import broker as broker_mod
-import config
-from broker import FakeBroker, client_order_id
+from kripto_bot.trading import broker as broker_mod
+from kripto_bot import config
+from kripto_bot.trading.broker import FakeBroker, client_order_id
 from conftest import make_ohlcv
-from engine import Engine, EngineConfig
-from run_testnet import RiskGuard, SymbolTrader, Trader, decide
-from store import TradingStore
+from kripto_bot.core.engine import Engine, EngineConfig
+from kripto_bot.trading.run_testnet import RiskGuard, SymbolTrader, Trader, decide
+from kripto_bot.trading.store import TradingStore
 
 SYM = "BTC/USDT"
 

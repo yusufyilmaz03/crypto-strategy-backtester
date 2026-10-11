@@ -1,10 +1,10 @@
 import pytest
 
-import strategy
+from kripto_bot.core import strategy
 from conftest import make_ohlcv
-from engine import EngineConfig, run_backtest
-from evaluation import evaluate_segment, is_oos_split, walk_forward_splits
-from indicators import add_indicators
+from kripto_bot.core.engine import EngineConfig, run_backtest
+from kripto_bot.analysis.evaluation import evaluate_segment, is_oos_split, walk_forward_splits
+from kripto_bot.core.indicators import add_indicators
 
 
 def test_is_oos_split():

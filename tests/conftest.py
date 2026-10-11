@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import data
+from kripto_bot.core import data
 
 MINUTE = 60_000
 
@@ -48,3 +48,27 @@ def make_ohlcv(n=500, seed=0, start="2025-01-01", freq="5min"):
         "open": open_, "high": high, "low": low, "close": close,
         "volume": rng.uniform(1, 10, n),
     })
+
+
+@pytest.fixture(autouse=True)
+def isolated_paths(tmp_path, monkeypatch):
+    """Every file the app would write lands in tmp_path, never in runtime/ or results/."""
+    from kripto_bot import config, instances, settings
+    from kripto_bot.analysis import multi_backtest, research
+    from kripto_bot.app import dashboard, playground, reporting, run_all
+    from kripto_bot.trading import store
+
+    rt = tmp_path / "runtime"
+    rt.mkdir()
+    for mod, attr, name in [(store, "DB_FILE", "paper.db"), (instances, "INSTANCES_FILE", "instances.json"),
+                            (settings, "SETTINGS_FILE", "settings.json"), (playground, "PLAYGROUND_DB", "playground.db"),
+                            (reporting, "STATUS_FILE", "status.json"), (run_all, "STATUS_FILE", "status.json"),
+                            (reporting, "LOG_DIR", "logs"), (run_all, "LOG_DIR", "logs"),
+                            (config, "KILL_SWITCH_FILE", "KILL_SWITCH")]:
+        monkeypatch.setattr(mod, attr, str(rt / name))
+    monkeypatch.setattr(multi_backtest, "OUT_FILE", str(tmp_path / "multi_backtest_strategies.csv"))
+    monkeypatch.setattr(dashboard, "BACKTEST_FILE", str(tmp_path / "multi_backtest_strategies.csv"))
+    for attr in ("RESULTS_FILE", "FOLDS_FILE", "SUMMARY_FILE", "META_FILE", "HOLDOUT_FILE"):
+        monkeypatch.setattr(research, attr, str(tmp_path / getattr(research, attr).rsplit("/", 1)[-1]))
+    monkeypatch.setattr(data, "CACHE_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr("kripto_bot.paths.runtime", lambda name: name if name.startswith("/") else str(rt / name))

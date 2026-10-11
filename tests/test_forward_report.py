@@ -1,10 +1,10 @@
 import pandas as pd
 import pytest
 
-import config
-import forward_report
-from engine import Position, Trade
-from store import PaperStore
+from kripto_bot import config
+from kripto_bot.analysis import forward_report
+from kripto_bot.core.engine import Position, Trade
+from kripto_bot.trading.store import PaperStore
 
 
 def test_report(tmp_path, monkeypatch):

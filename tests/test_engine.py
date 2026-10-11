@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from engine import Engine, EngineConfig, run_backtest
+from kripto_bot.core.engine import Engine, EngineConfig, run_backtest
 
 NO_COSTS = EngineConfig(fee_rate=0.0, slippage_bps=0.0, atr_multiplier=2.0, initial_equity=1000.0)
 
@@ -111,8 +111,8 @@ def test_compounding_across_trades():
 def test_incremental_feed_matches_batch():
     """The paper trader feeds candles one at a time; results must match the batch run."""
     from conftest import make_ohlcv
-    from indicators import add_indicators
-    import strategy
+    from kripto_bot.core.indicators import add_indicators
+    from kripto_bot.core import strategy
 
     df = add_indicators(make_ohlcv(600, seed=7))
     sig = strategy.get_strategy("v5")(df)
@@ -136,8 +136,8 @@ def test_state_roundtrip_continues_identically():
     import json
 
     from conftest import make_ohlcv
-    from indicators import add_indicators
-    import strategy
+    from kripto_bot.core.indicators import add_indicators
+    from kripto_bot.core import strategy
 
     df = add_indicators(make_ohlcv(600, seed=13))
     sig = strategy.get_strategy("v5")(df)

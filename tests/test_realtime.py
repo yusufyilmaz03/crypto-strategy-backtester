@@ -1,11 +1,11 @@
 import pytest
 
-import run_realtime
-import strategy
+from kripto_bot.trading import run_realtime
+from kripto_bot.core import strategy
 from conftest import make_ohlcv
-from engine import EngineConfig, run_backtest
-from indicators import add_indicators
-from store import PaperStore
+from kripto_bot.core.engine import EngineConfig, run_backtest
+from kripto_bot.core.indicators import add_indicators
+from kripto_bot.trading.store import PaperStore
 
 FULL = make_ohlcv(900, seed=11)
 
@@ -105,7 +105,7 @@ def test_params_and_label(tmp_path, feed):
 
 
 def test_strategy_label():
-    import config
+    from kripto_bot import config
     assert config.strategy_label().startswith(config.STRATEGY)
     assert f"stop={config.PAPER_STOPLOSS_MODE}" in config.strategy_label()
     assert config.engine_config().atr_multiplier == config.ATR_MULTIPLIER  # backtests keep their stop

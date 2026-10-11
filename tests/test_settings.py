@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-import settings
-from settings import BY_KEY, SettingsError, coerce, load_overrides, save
+from kripto_bot import settings
+from kripto_bot.settings import BY_KEY, SettingsError, coerce, load_overrides, save
 
 
 def test_coerce_types_and_limits():
@@ -50,7 +50,7 @@ def test_config_applies_overrides(tmp_path, monkeypatch):
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"SLIPPAGE_BPS": 12}))
     monkeypatch.setattr(settings, "SETTINGS_FILE", str(path))
-    import config
+    from kripto_bot import config
     try:
         importlib.reload(config)
         assert config.SLIPPAGE_BPS == 12.0

@@ -6,9 +6,10 @@ import time
 import pandas as pd
 import pytest
 
-import instances
-import run_all
-from run_all import Service, Supervisor
+from kripto_bot import instances
+from kripto_bot import paths
+from kripto_bot.app import run_all
+from kripto_bot.app.run_all import Service, Supervisor
 
 SLEEP = [sys.executable, "-u", "-c", "import time; print('up'); time.sleep(60)"]
 
@@ -97,13 +98,13 @@ def test_testnet_without_keys_is_blocked(sup, monkeypatch):
 
 
 def test_single_instance_lock(tmp_path):
-    from store import single_instance
+    from kripto_bot.trading.store import single_instance
 
     db = str(tmp_path / "paper.db")
     held = single_instance(db, "a")
-    code = ("import sys; sys.path.insert(0, %r); from store import single_instance, AlreadyRunning\n"
+    code = ("import sys; sys.path.insert(0, %r); from kripto_bot.trading.store import single_instance, AlreadyRunning\n"
             "try:\n    single_instance(%r, sys.argv[1])\nexcept AlreadyRunning:\n    sys.exit(7)"
-            % (run_all.HERE, db))
+            % (paths.ROOT, db))
     assert subprocess.run([sys.executable, "-c", code, "a"]).returncode == 7   # same instance refused
     assert subprocess.run([sys.executable, "-c", code, "b"]).returncode == 0   # other instance fine
     held.close()

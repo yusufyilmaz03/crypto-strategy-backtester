@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Settings</h1>
+  <button class="btn btn-primary btn-sm" onclick="save()"><i class="bi bi-check-lg"></i> Save changes</button>
+</div>
+<p class="text-secondary small">Changes are stored in <code>runtime/settings.json</code> and override the defaults in <code>kripto_bot/config.py</code>.
+  Strategy setups belong to instances (see Instances). Locked settings can only be changed in <code>config.py</code>.</p>
+<div class="alert alert-warning d-none" id="restart-box"></div>
+<div class="row g-4" id="groups"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+let VIEW;
+function input(s) {
+  const id = `s-${s.key}`, dis = s.editable ? "" : "disabled";
+  if (s.kind === "bool")
+    return `<div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="${id}" ${s.value ? "checked" : ""} ${dis}></div>`;
+  if (s.kind === "choice")
+    return `<select class="form-select form-select-sm" id="${id}" ${dis}>${s.choices.map(c =>
+      `<option ${c === s.value ? "selected" : ""}>${KB.esc(c)}</option>`).join("")}</select>`;
+  if (s.kind === "symbols")
+    return `<textarea class="form-control form-control-sm font-monospace" id="${id}" rows="4" ${dis}>${KB.esc(s.value.join(", "))}</textarea>`;
+  const step = s.kind === "int" ? 1 : "any";
+  return `<input class="form-control form-control-sm" id="${id}" type="number" step="${step}"
+            ${s.min != null ? `min="${s.min}"` : ""} ${s.max != null ? `max="${s.max}"` : ""} value="${KB.esc(s.value)}" ${dis}>`;
+}
+function render() {
+  const groups = Object.entries(VIEW.groups).map(([g, items]) => `<div class="col-lg-6"><div class="card h-100">
+    <div class="card-header fw-semibold">${KB.esc(g)}</div><div class="card-body">${items.map(s => `
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-baseline">
+          <label class="form-label mb-1" for="s-${s.key}">${KB.esc(s.label)}
+            ${s.editable ? "" : '<i class="bi bi-lock text-secondary" title="Locked"></i>'}
+            ${s.overridden ? '<span class="badge text-bg-info ms-1">changed</span>' : ""}</label>
+          ${s.overridden ? `<button class="btn btn-link btn-sm p-0" onclick="resetKey('${s.key}')">reset</button>` : ""}
+        </div>
+        ${input(s)}
+        <div class="form-text">${KB.esc(s.help)}${s.restart.length ? ` <span class="text-warning">Restarts: ${s.restart.join(", ")}.</span>` : ""}</div>
+      </div>`).join("")}</div></div></div>`).join("");
+  const secrets = `<div class="col-lg-6"><div class="card h-100"><div class="card-header fw-semibold">API keys</div><div class="card-body">
+    ${Object.entries(VIEW.secrets).map(([k, ok]) => `<div class="d-flex justify-content-between mb-2"><span>${KB.esc(k)}</span>
+      ${ok ? '<span class="badge text-bg-success">set</span>' : '<span class="badge text-bg-secondary">not set</span>'}</div>`).join("")}
+    <div class="form-text">Keys are kept in <code>.env</code> and are never shown or edited here.</div></div></div></div>`;
+  document.getElementById("groups").innerHTML = groups + secrets;
+}
+function valueOf(s) {
+  const el = document.getElementById(`s-${s.key}`);
+  if (s.kind === "bool") return el.checked;
+  if (s.kind === "symbols") return el.value.split(/[\s,]+/).filter(Boolean);
+  if (s.kind === "choice") return el.value;
+  return el.value === "" ? null : Number(el.value);
+}
+async function save(reset = []) {
+  const changes = {};
+  Object.values(VIEW.groups).flat().filter(s => s.editable).forEach(s => {
+    const v = valueOf(s);
+    if (JSON.stringify(v) !== JSON.stringify(s.value)) changes[s.key] = v;
+  });
+  if (!Object.keys(changes).length && !reset.length) { KB.toast("Nothing changed", "secondary"); return; }
+  try {
+    VIEW = await KB.api("/api/settings", { method: "POST", body: { changes, reset } });
+    render(); KB.toast("Settings saved");
+    const box = document.getElementById("restart-box");
+    if (VIEW.restart.length) {
+      box.innerHTML = `Running <b>${VIEW.restart.join(", ")}</b> instances use the old values until they restart.
+        <button class="btn btn-sm btn-warning ms-2" onclick="restartAffected(${KB.esc(JSON.stringify(VIEW.restart))})">Restart them now</button>`;
+      box.classList.remove("d-none");
+    }
+  } catch (e) { KB.toast(e.message, "danger"); }
+}
+function resetKey(key) { save([key]); }
+async function restartAffected(services) {
+  try { const r = await KB.api("/api/settings/restart", { method: "POST", body: { services } });
+        KB.toast(r.restarted.length ? `Restarting: ${r.restarted.join(", ")}` : "No running instances affected");
+        document.getElementById("restart-box").classList.add("d-none"); }
+  catch (e) { KB.toast(e.message, "danger"); }
+}
+KB.api("/api/settings").then(v => { VIEW = v; render(); });
+</script>
+{% endblock %}

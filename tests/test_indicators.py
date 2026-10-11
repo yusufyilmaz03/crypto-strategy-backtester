@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from conftest import make_ohlcv
-from indicators import add_indicators, atr, rma, rsi
+from kripto_bot.core.indicators import add_indicators, atr, rma, rsi
 
 
 def test_rma_matches_wilder_definition():

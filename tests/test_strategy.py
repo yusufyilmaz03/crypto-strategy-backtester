@@ -1,8 +1,8 @@
 import pytest
 
-import strategy
+from kripto_bot.core import strategy
 from conftest import make_ohlcv
-from indicators import add_indicators
+from kripto_bot.core.indicators import add_indicators
 
 KEYS = list(strategy.STRATEGY_DISPATCH)
 # Every strategy with its defaults plus the first and last combination of its grid.

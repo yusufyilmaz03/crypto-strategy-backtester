@@ -3,16 +3,16 @@ import json
 import pandas as pd
 import pytest
 
-import config
-import dashboard
-import instances
-import playground
-import reporting
-import run_realtime
-import settings
+from kripto_bot import config
+from kripto_bot.app import dashboard
+from kripto_bot import instances
+from kripto_bot.app import playground
+from kripto_bot.app import reporting
+from kripto_bot.trading import run_realtime
+from kripto_bot import settings
 from conftest import make_ohlcv
-from engine import EngineConfig
-from store import PaperStore
+from kripto_bot.core.engine import EngineConfig
+from kripto_bot.trading.store import PaperStore
 
 FULL = make_ohlcv(700, seed=3)
 H = {"X-Requested-With": "kripto-bot"}

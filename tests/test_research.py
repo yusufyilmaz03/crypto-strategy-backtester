@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from research import _portfolio, summarize
+from kripto_bot.analysis.research import _portfolio, summarize
 
 
 def _curve(values, start="2025-01-01"):
