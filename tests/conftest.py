@@ -72,4 +72,6 @@ def isolated_paths(tmp_path, monkeypatch):
     for attr in ("RESULTS_FILE", "FOLDS_FILE", "SUMMARY_FILE", "META_FILE", "HOLDOUT_FILE"):
         monkeypatch.setattr(research, attr, str(tmp_path / getattr(research, attr).rsplit("/", 1)[-1]))
     monkeypatch.setattr(data, "CACHE_DIR", str(tmp_path / "data"))
+    from kripto_bot.core import archive
+    monkeypatch.setattr(archive, "ARCHIVE_DIR", str(tmp_path / "archive"))
     monkeypatch.setattr("kripto_bot.paths.runtime", lambda name: name if name.startswith("/") else str(rt / name))

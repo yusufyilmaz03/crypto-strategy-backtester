@@ -17,6 +17,7 @@ COMMANDS = {
     "testnet-check": ("kripto_bot.trading.testnet_check", "check the testnet connection (--yes places orders)"),
     "backtest": ("kripto_bot.analysis.multi_backtest", "grid backtest → results/multi_backtest_strategies.csv"),
     "research": ("kripto_bot.analysis.research", "walk-forward research → results/research_*.csv"),
+    "survivorship": ("kripto_bot.analysis.survivorship", "v9 on a point-in-time universe incl. delisted coins"),
     "forward-report": ("kripto_bot.analysis.forward_report", "forward-test metrics vs buy-and-hold"),
     "holdout-test": ("kripto_bot.analysis.holdout_test", "the one-off v9 holdout test (already run)"),
     "telegram-setup": ("kripto_bot.tools.telegram_setup", "find the Telegram chat id and send a test message"),
