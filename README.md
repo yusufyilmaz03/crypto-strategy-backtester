@@ -45,6 +45,7 @@ A Python research tool for testing technical trading strategies on historical cr
 ├── forward_report.py    # forward-test report: paper results vs buy-and-hold
 ├── broker.py            # order execution (ccxt; testnet by default) and a fake broker for tests
 ├── run_testnet.py       # order-sending loop on Binance Spot Testnet
+├── run_all.py           # starts paper, testnet and dashboard from one terminal
 ├── testnet_check.py     # end-to-end check of the testnet order flow
 ├── docs/                # research pre-registrations and results
 ├── dashboard.py         # Flask dashboard (templates/)
@@ -68,6 +69,15 @@ cp .env.example .env
 ```
 
 Run the pieces:
+
+Long-running services from one terminal (output prefixed per service and written to `logs/`; crashed services restart; Ctrl+C stops all):
+
+```bash
+python run_all.py                   # paper + dashboard, plus testnet if its keys are in .env
+python run_all.py paper dashboard   # or pick services
+```
+
+Individual scripts:
 
 ```bash
 python multi_backtest.py   # grid backtest, writes multi_backtest_strategies.csv
@@ -131,4 +141,5 @@ Safety:
 - Paper trading keeps separate state per run (strategy, parameters, stop mode) and timeframe; changing `STRATEGY`, `STRATEGY_PARAMS`, `PAPER_STOPLOSS_MODE` or `TIMEFRAME` starts a fresh run (the dashboard shows the configured one).
 - In paper trading, stops are evaluated when a candle closes (as if a stop order had been resting at the stop price), not tick by tick.
 - Times in logs are UTC candle times.
+- `run_realtime.py` and `run_testnet.py` refuse to start a second copy on the same database (`*.db.lock`).
 - In `multi_backtest.py` strategies run with their default parameters, so its walk-forward folds are plain out-of-sample windows. Parameter optimization happens in `research.py`.

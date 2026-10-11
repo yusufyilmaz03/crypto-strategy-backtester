@@ -41,3 +41,4 @@ paper.db
 testnet.db
 live.db
 KILL_SWITCH
+*.db.lock

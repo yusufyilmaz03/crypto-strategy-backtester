@@ -211,5 +211,7 @@ def health():
 
 if __name__ == "__main__":
     print("Starting dashboard on http://127.0.0.1:5002 ...")
-    # use_reloader=True: reload automatically on code changes
-    app.run(host="127.0.0.1", port=5002, debug=True, use_reloader=True)
+    # Debug mode reloads on code changes; run_all.py turns it off (DASHBOARD_DEBUG=0)
+    # because the reloader runs the app in a child process the supervisor can't see.
+    debug = os.environ.get("DASHBOARD_DEBUG", "1") != "0"
+    app.run(host="127.0.0.1", port=5002, debug=debug, use_reloader=debug)

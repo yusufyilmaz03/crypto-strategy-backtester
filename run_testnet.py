@@ -27,7 +27,7 @@ from broker import CcxtBroker, Fill, client_order_id
 from data import fetch_recent, timeframe_ms
 from indicators import add_indicators
 from run_realtime import HISTORY, sleep_until_next_close
-from store import TradingStore
+from store import TradingStore, single_instance
 
 
 def decide(in_position, signal):
@@ -229,6 +229,7 @@ class Trader:
 
 def main():
     broker = CcxtBroker()
+    lock = single_instance(f"{broker.mode}.db")  # noqa: F841 (held until exit)
     store = TradingStore(f"{broker.mode}.db")
     trader = Trader(broker, store)
     for t in trader.traders:

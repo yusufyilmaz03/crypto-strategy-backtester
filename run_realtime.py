@@ -18,7 +18,7 @@ import strategy
 from data import fetch_recent, now_ms, timeframe_ms
 from engine import Engine
 from indicators import add_indicators
-from store import PaperStore
+from store import DB_FILE, PaperStore, single_instance
 
 HISTORY = 300          # closed candles needed for indicator warm-up
 MAX_FETCH = 1000       # Binance kline limit per request
@@ -123,6 +123,7 @@ def sleep_until_next_close(timeframe, check_every_s=30):
 
 
 def main():
+    lock = single_instance(DB_FILE)  # noqa: F841 (held until exit)
     cfg = config.paper_engine_config()
     store = PaperStore()
     label = config.strategy_label()

@@ -4,7 +4,9 @@
 All writes for one candle happen in a single transaction (see PaperStore.candle),
 so a crash never leaves the state and the logs out of sync.
 """
+import fcntl
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 
@@ -32,6 +34,25 @@ CREATE TABLE IF NOT EXISTS equity (
     PRIMARY KEY (symbol, strategy, timeframe, time)
 );
 """
+
+
+class AlreadyRunning(RuntimeError):
+    pass
+
+
+def single_instance(db_path):
+    """Hold an exclusive lock next to the database for the life of the process, so two
+    copies of a bot can't process the same candles (or send the same orders) twice."""
+    lock_path = f"{db_path}.lock"
+    handle = open(lock_path, "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise AlreadyRunning(f"another process is already using {db_path} ({lock_path} is locked)")
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle   # keep a reference; the lock is released when the process exits
 
 
 def _t(x):
