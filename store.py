@@ -40,10 +40,11 @@ class AlreadyRunning(RuntimeError):
     pass
 
 
-def single_instance(db_path):
+def single_instance(db_path, name=None):
     """Hold an exclusive lock next to the database for the life of the process, so two
-    copies of a bot can't process the same candles (or send the same orders) twice."""
-    lock_path = f"{db_path}.lock"
+    copies of a bot (or of one instance) can't process the same candles or send the
+    same orders twice."""
+    lock_path = f"{db_path}.{name}.lock" if name else f"{db_path}.lock"
     handle = open(lock_path, "w")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -63,9 +64,16 @@ def _f(x):
     return None if x is None or pd.isna(x) else float(x)
 
 
+def _connect(path):
+    """SQLite connection that several bot processes can share (WAL, wait on locks)."""
+    conn = sqlite3.connect(path, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
 class PaperStore:
     def __init__(self, path=DB_FILE):
-        self.conn = sqlite3.connect(path)
+        self.conn = _connect(path)
         self.conn.executescript(SCHEMA)
         # databases created before the close column existed
         cols = [r[1] for r in self.conn.execute("PRAGMA table_info(equity)")]
@@ -158,7 +166,7 @@ class TradingStore:
     bot opened itself, orders, equity snapshots, daily loss tracking and events."""
 
     def __init__(self, path):
-        self.conn = sqlite3.connect(path)
+        self.conn = _connect(path)
         self.conn.executescript(TRADING_SCHEMA)
         self.conn.commit()
 

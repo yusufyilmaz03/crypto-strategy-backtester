@@ -199,13 +199,15 @@ class SymbolTrader:
 
 
 class Trader:
-    def __init__(self, broker, store, symbols=None, timeframe=None, capital=None, guard=None):
+    def __init__(self, broker, store, symbols=None, timeframe=None, capital=None, guard=None,
+                 strategy_key=None, params=None):
         self.broker, self.store = broker, store
         self.timeframe = timeframe or config.TIMEFRAME
         symbols = [s for s in (symbols or config.SYMBOLS) if s in broker.markets] \
             if hasattr(broker, "markets") else list(symbols or config.SYMBOLS)
         capital = config.TRADING_CAPITAL_USDT if capital is None else capital
-        signal_fn = partial(strategy.get_strategy(config.STRATEGY), **config.STRATEGY_PARAMS)
+        key = strategy_key or config.STRATEGY
+        signal_fn = partial(strategy.get_strategy(key), **(config.STRATEGY_PARAMS if params is None else params))
         self.traders = [SymbolTrader(s, broker, store, signal_fn, self.timeframe, capital / len(symbols))
                         for s in symbols]
         self.guard = guard or RiskGuard(store)
@@ -227,15 +229,20 @@ class Trader:
                 self.store.event("ERROR", t.symbol, f"{type(e).__name__}: {e}")
 
 
-def main():
+def main(instance_name="testnet-v9"):
+    import instances
+    inst = instances.get(instance_name)
+    if inst.mode != "testnet":
+        raise SystemExit(f"{inst.name} is a {inst.mode} instance; use run_realtime.py")
     broker = CcxtBroker()
-    lock = single_instance(f"{broker.mode}.db")  # noqa: F841 (held until exit)
-    store = TradingStore(f"{broker.mode}.db")
-    trader = Trader(broker, store)
+    lock = single_instance(inst.run_key)  # noqa: F841 (held until exit)
+    store = TradingStore(inst.run_key)
+    trader = Trader(broker, store, symbols=inst.symbol_list, timeframe=inst.timeframe,
+                    capital=inst.equity, strategy_key=inst.strategy, params=inst.params)
     for t in trader.traders:
         t.reconcile()
-    print(f"⚙️  {broker.mode.upper()} trading: {config.strategy_label()}, timeframe {trader.timeframe}, "
-          f"{len(trader.traders)} symbols, capital {config.TRADING_CAPITAL_USDT} USDT, "
+    print(f"⚙️  {broker.mode.upper()} instance '{inst.name}': {inst.strategy} {inst.params}, "
+          f"timeframe {trader.timeframe}, {len(trader.traders)} symbols, capital {inst.equity} USDT, "
           f"max order {config.MAX_ORDER_USDT} USDT\n")
     while True:
         trader.run_once()
@@ -243,4 +250,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(description="Testnet trading for one instance (see instances.json).")
+    ap.add_argument("--instance", default="testnet-v9")
+    main(ap.parse_args().instance)

@@ -122,24 +122,30 @@ def sleep_until_next_close(timeframe, check_every_s=30):
         time.sleep(min(check_every_s, remaining / 1000))
 
 
-def main():
-    lock = single_instance(DB_FILE)  # noqa: F841 (held until exit)
-    cfg = config.paper_engine_config()
+def main(instance_name="forward-v9"):
+    import instances
+    inst = instances.get(instance_name)
+    if inst.mode != "paper":
+        raise SystemExit(f"{inst.name} is a {inst.mode} instance; use run_testnet.py")
+    lock = single_instance(DB_FILE, inst.name)  # noqa: F841 (held until exit)
+    cfg = inst.engine_config()
     store = PaperStore()
-    label = config.strategy_label()
-    runners = [SymbolRunner(s, config.TIMEFRAME, config.STRATEGY, cfg, store,
-                            params=config.STRATEGY_PARAMS, label=label) for s in config.SYMBOLS]
+    runners = [SymbolRunner(s, inst.timeframe, inst.strategy, cfg, store,
+                            params=inst.params, label=inst.run_key) for s in inst.symbol_list]
     resumed = sum(r.last_time is not None for r in runners)
-    print(f"📡 Paper trading started: {label}, timeframe {config.TIMEFRAME}, "
-          f"{len(runners)} symbols ({resumed} resumed from paper.db), long-only={not cfg.allow_short}\n")
+    print(f"📡 Paper instance '{inst.name}': {inst.strategy} {inst.params} stop={inst.stop}, "
+          f"timeframe {inst.timeframe}, {len(runners)} symbols ({resumed} resumed from paper.db)\n")
     while True:
         for r in runners:
             try:
                 r.update()
             except Exception as e:
                 print(f"[ERROR] {r.symbol}: {e}")
-        sleep_until_next_close(config.TIMEFRAME)
+        sleep_until_next_close(inst.timeframe)
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(description="Paper trading for one instance (see instances.json).")
+    ap.add_argument("--instance", default="forward-v9")
+    main(ap.parse_args().instance)
