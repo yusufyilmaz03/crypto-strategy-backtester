@@ -19,6 +19,7 @@ import os
 import plistlib
 import subprocess
 import sys
+import time
 
 from kripto_bot import paths
 
@@ -51,10 +52,21 @@ def domain():
     return f"gui/{os.getuid()}"
 
 
-def install(run=subprocess.run, path=PLIST):
+def _wait_until_unloaded(run, sleep, timeout):
+    """bootout returns while the old supervisor is still stopping its services; a
+    bootstrap before it is gone fails with "Bootstrap failed: 5: Input/output error"."""
+    deadline = time.monotonic() + timeout
+    while _launchctl("print", f"{domain()}/{LABEL}", run=run).returncode == 0:
+        if time.monotonic() > deadline:
+            raise SystemExit("The old service is still stopping; run the command again in a minute.")
+        sleep(0.5)
+
+
+def install(run=subprocess.run, path=PLIST, sleep=time.sleep, timeout=90):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     os.makedirs(paths.LOG_DIR, exist_ok=True)
     _launchctl("bootout", f"{domain()}/{LABEL}", run=run)           # replace an older version
+    _wait_until_unloaded(run, sleep, timeout)
     with open(path, "wb") as f:
         plistlib.dump(plist(), f)
     r = _launchctl("bootstrap", domain(), path, run=run)
