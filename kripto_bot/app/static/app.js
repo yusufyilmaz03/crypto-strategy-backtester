@@ -35,11 +35,40 @@ const KB = {
     box.appendChild(el);
     setTimeout(() => el.remove(), kind === "danger" ? 8000 : 4000);
   },
-  // Render rows into a table body: cols = [[header, row => html], ...]
-  table(el, rows, cols, empty = "Nothing here yet.") {
-    el.innerHTML = `<thead><tr>${cols.map(c => `<th>${c[0]}</th>`).join("")}</tr></thead><tbody>` +
+  // Render rows into a table: cols = [[header, row => html, row => sort value (optional)], ...].
+  // Clicking the header of a column with a sort value sorts by it (again: reverses). `sort` is
+  // the initial order, [column index, "asc" | "desc"]; a clicked order survives re-renders.
+  table(el, rows, cols, empty = "Nothing here yet.", sort = null) {
+    el._sort = el._sort || sort;
+    el._args = [rows, cols, empty];
+    const s = el._sort, key = s && cols[s[0]] && cols[s[0]][2];
+    if (key) {
+      const dir = s[1] === "asc" ? 1 : -1;
+      rows = [...rows].sort((a, b) => {          // stable: ties keep the server's order
+        const x = key(a), y = key(b);
+        if (x == null || y == null) return (x == null) - (y == null);   // missing values last
+        return (x < y ? -1 : x > y ? 1 : 0) * dir;
+      });
+    }
+    const head = cols.map((c, i) => {
+      if (!c[2]) return `<th>${c[0]}</th>`;
+      const icon = s && s[0] === i ? (s[1] === "asc" ? "bi-caret-up-fill" : "bi-caret-down-fill")
+                                   : "bi-chevron-expand text-body-tertiary";
+      return `<th role="button" class="user-select-none" data-sort="${i}">${c[0]} <i class="bi ${icon} small"></i></th>`;
+    }).join("");
+    el.innerHTML = `<thead><tr>${head}</tr></thead><tbody>` +
       (rows.length ? rows.map(r => `<tr>${cols.map(c => `<td>${c[1](r)}</td>`).join("")}</tr>`).join("")
                    : `<tr><td colspan="${cols.length}" class="text-muted">${empty}</td></tr>`) + "</tbody>";
+    if (!el._sortable) {
+      el._sortable = true;
+      el.addEventListener("click", e => {
+        const th = e.target.closest("th[data-sort]");
+        if (!th) return;
+        const i = Number(th.dataset.sort), cur = el._sort;
+        el._sort = [i, cur && cur[0] === i && cur[1] === "asc" ? "desc" : "asc"];
+        KB.table(el, ...el._args);
+      });
+    }
   },
   cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); },
 };

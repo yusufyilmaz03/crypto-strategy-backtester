@@ -34,7 +34,7 @@
   <div class="tab-pane fade show active table-responsive" id="t-pos"><table class="table table-sm" id="positions"></table></div>
   <div class="tab-pane fade table-responsive" id="t-trades" style="max-height: 520px"><table class="table table-sm" id="trades"></table></div>
   <div class="tab-pane fade table-responsive" id="t-signals" style="max-height: 520px"><table class="table table-sm" id="signals"></table></div>
-  <div class="tab-pane fade" id="t-log"><div class="log bg-body-tertiary p-2 rounded" id="log">…</div></div>
+  <div class="tab-pane fade" id="t-log"><div class="small text-secondary mb-1">Newest first.</div><div class="log bg-body-tertiary p-2 rounded" id="log">…</div></div>
   <div class="tab-pane fade" id="t-setup"><pre class="small mb-0" id="setup"></pre></div>
 </div>
 {% endblock %}
@@ -85,29 +85,40 @@ async function loadChart() {
 async function loadTables() {
   const paper = INST.mode === "paper";
   const [pos, trades, signals, log] = await Promise.all(["positions", "trades", "signals", "log"].map(t => KB.api(`/api/instances/${N}/${t}`)));
+  // Columns: [header, cell html, sort value]. Newest first by default; click a header to re-sort.
   KB.table(document.getElementById("positions"), pos, paper ? [
-    ["Symbol", r => KB.esc(r.symbol)], ["Side", r => KB.esc(r.side)], ["Entry time", r => KB.time(r.entry_time)],
-    ["Entry price", r => KB.num(r.entry_price, 6)], ["Qty", r => KB.num(r.qty, 6)], ["Stop", r => KB.num(r.stop, 6)]] : [
-    ["Symbol", r => KB.esc(r.symbol)], ["Qty", r => KB.num(r.qty, 8)], ["Cost", r => KB.num(r.cost)],
-    ["Entry price", r => KB.num(r.entry_price, 6)], ["Entry time", r => KB.time(r.entry_time)]], "No open positions.");
+    ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Side", r => KB.esc(r.side), r => r.side],
+    ["Entry time", r => KB.time(r.entry_time), r => r.entry_time],
+    ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price], ["Qty", r => KB.num(r.qty, 6), r => r.qty],
+    ["Stop", r => KB.num(r.stop, 6), r => r.stop]] : [
+    ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Qty", r => KB.num(r.qty, 8), r => r.qty],
+    ["Cost", r => KB.num(r.cost), r => r.cost], ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price],
+    ["Entry time", r => KB.time(r.entry_time), r => r.entry_time]],
+    "No open positions.", paper ? [2, "desc"] : [4, "desc"]);
   KB.table(document.getElementById("trades"), trades, paper ? [
-    ["Symbol", r => KB.esc(r.symbol)], ["Entry", r => KB.time(r.entry_time)], ["Exit", r => KB.time(r.exit_time)],
-    ["Entry price", r => KB.num(r.entry_price, 6)], ["Exit price", r => KB.num(r.exit_price, 6)],
-    ["Return", r => `<span class="${KB.sign(r.return_pct)}">${KB.pct(r.return_pct)}</span>`],
-    ["PnL", r => KB.num(r.pnl)], ["Reason", r => KB.esc(r.reason ?? "open")]] : [
-    ["Time", r => KB.time(r.created_at)], ["Symbol", r => KB.esc(r.symbol)], ["Side", r => KB.esc(r.side)],
-    ["Status", r => KB.esc(r.status)], ["Filled", r => KB.num(r.filled, 8)], ["Avg price", r => KB.num(r.average, 6)],
-    ["Ref price", r => KB.num(r.ref_price, 6)], ["Cost", r => KB.num(r.cost)], ["PnL", r => KB.num(r.pnl)],
-    ["Error", r => KB.esc(r.error ?? "")]], paper ? "No trades yet." : "No orders yet.");
+    ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Entry", r => KB.time(r.entry_time), r => r.entry_time],
+    ["Exit", r => KB.time(r.exit_time), r => r.exit_time ?? "9999"],          // open trades count as newest
+    ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price],
+    ["Exit price", r => KB.num(r.exit_price, 6), r => r.exit_price],
+    ["Return", r => `<span class="${KB.sign(r.return_pct)}">${KB.pct(r.return_pct)}</span>`, r => r.return_pct],
+    ["PnL", r => KB.num(r.pnl), r => r.pnl], ["Reason", r => KB.esc(r.reason ?? "open"), r => r.reason ?? "open"]] : [
+    ["Time", r => KB.time(r.created_at), r => r.created_at], ["Symbol", r => KB.esc(r.symbol), r => r.symbol],
+    ["Side", r => KB.esc(r.side), r => r.side], ["Status", r => KB.esc(r.status), r => r.status],
+    ["Filled", r => KB.num(r.filled, 8), r => r.filled], ["Avg price", r => KB.num(r.average, 6), r => r.average],
+    ["Ref price", r => KB.num(r.ref_price, 6), r => r.ref_price], ["Cost", r => KB.num(r.cost), r => r.cost],
+    ["PnL", r => KB.num(r.pnl), r => r.pnl], ["Error", r => KB.esc(r.error ?? ""), r => r.error]],
+    paper ? "No trades yet." : "No orders yet.", paper ? [2, "desc"] : [0, "desc"]);
   KB.table(document.getElementById("signals"), signals, paper ? [
-    ["Candle", r => KB.time(r.candle_time)], ["Symbol", r => KB.esc(r.symbol)], ["Signal", r => KB.esc(r.signal)],
-    ["RSI", r => KB.num(r.rsi)], ["Close", r => KB.num(r.close, 6)], ["Position", r => KB.esc(r.position)],
-    ["Action", r => KB.esc(r.action)]] : [
-    ["Time", r => KB.time(r.time)], ["Level", r => KB.esc(r.level)], ["Symbol", r => KB.esc(r.symbol ?? "")],
-    ["Message", r => KB.esc(r.message)]], paper ? "No signals yet." : "No events yet.");
-  const logEl = document.getElementById("log"), atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
-  logEl.textContent = log.length ? log.join("\n") : "No log yet (logs are written when the instance runs under run_all.py).";
-  if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+    ["Candle", r => KB.time(r.candle_time), r => r.candle_time], ["Symbol", r => KB.esc(r.symbol), r => r.symbol],
+    ["Signal", r => KB.esc(r.signal), r => r.signal], ["RSI", r => KB.num(r.rsi), r => r.rsi],
+    ["Close", r => KB.num(r.close, 6), r => r.close], ["Position", r => KB.esc(r.position), r => r.position],
+    ["Action", r => KB.esc(r.action), r => r.action]] : [
+    ["Time", r => KB.time(r.time), r => r.time], ["Level", r => KB.esc(r.level), r => r.level],
+    ["Symbol", r => KB.esc(r.symbol ?? ""), r => r.symbol], ["Message", r => KB.esc(r.message), r => r.message]],
+    paper ? "No signals yet." : "No events yet.", [0, "desc"]);
+  const logEl = document.getElementById("log");
+  logEl.textContent = log.length ? [...log].reverse().join("\n")     // newest line on top
+    : "No log yet (logs are written when the instance runs under run_all.py).";
 }
 async function refresh() { try { await loadInstance(); await Promise.all([loadChart(), loadTables()]); } catch (e) { KB.toast(e.message, "danger"); } }
 async function act(action) {
