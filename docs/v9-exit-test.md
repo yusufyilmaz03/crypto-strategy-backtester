@@ -103,3 +103,47 @@ code change must leave their behavior identical, which is checked by replaying
 - The two variants are two more trials on the same data. With two candidates and five
   criteria each, a pass by luck is less likely than with one criterion, but not
   ruled out.
+
+## Result (run once, 2026-10-25)
+
+396 assets were in a universe at some point. Output: `results/exit_results.csv`. The
+baseline rows match the survivorship test exactly. The paper instances `v9-trail-1d` and
+`v9-band-1d` had been started before the run (first traded candle: 2026-10-25).
+
+| | Period B baseline | B: T, trail 3×ATR | B: H, band 2% | Period A baseline | A: T, trail 3×ATR | A: H, band 2% |
+|---|---|---|---|---|---|---|
+| Return | +676.0% | +713.4% | +768.0% | −9.2% | +0.5% | −5.3% |
+| CAGR | 53.9% | 55.5% | 57.6% | −2.4% | 0.1% | −1.3% |
+| Sharpe | 1.09 | **1.14** | **1.14** | 0.14 | **0.19** | **0.16** |
+| Max drawdown | 55.1% | **52.4%** | **50.6%** | 64.0% | **60.0%** | **63.3%** |
+| Exposure | 43.0% | 39.7% | 41.3% | 41.2% | 37.2% | 38.9% |
+| Entries | 1954 | 1982 | 1489 | 2242 | 2280 | 1611 |
+| Sharpe, costs × 1.5 | 1.05 | **1.11** | **1.12** | 0.09 | **0.14** | **0.12** |
+
+All six criteria hold for both variants: **T PASS, H PASS.**
+
+- Bootstrap 90% CI of Sharpe(variant) − Sharpe(baseline): T: B [−0.02, 0.14]
+  (P(diff ≤ 0) = 12.1%), A [−0.05, 0.15] (21.9%). H: B [0.01, 0.11] (3.1%), A [−0.03, 0.07]
+  (25.2%).
+- Neighborhood, Sharpe B / A (baseline 1.09 / 0.14): trail 2×ATR 1.16 / 0.22, 3× 1.14 / 0.19,
+  4× 1.11 / 0.17, 5× 1.10 / 0.16; band 1% 1.11 / 0.17, 2% 1.14 / 0.16, 3% 1.14 / 0.18,
+  5% 1.14 / 0.15. Every value beats the baseline in both periods; a tighter trail gives a
+  higher Sharpe and lower drawdown but less exposure (2×ATR: B return +557%, below the
+  baseline's). Not used to change the multiple or the band.
+- Combined (3×ATR + 2%), descriptive: B +798.7%, Sharpe 1.20, max DD 47.8%; A +4.8%,
+  Sharpe 0.21, max DD 59.5%.
+
+Interpretation:
+
+- Both rules help in the same direction in both periods, with every neighbor too: v9 sits
+  in the market a little less and gives back a little less. The direction is consistent;
+  the size is small. Sharpe rises by 0.02–0.05 and only H in period B has a bootstrap
+  interval above zero. This is a modest refinement, not a different strategy.
+- The forward test's first 25 days suggested much more. The archive says that a trailing
+  exit does lock in some gains, but over full cycles it changes v9's results by a few
+  points, and in 2022–2026 even the best row stayed near zero in absolute return with a
+  drawdown above 50%. v9's edge is still the same: losing much less than buy-and-hold in
+  long declines.
+- Both periods had been seen before, so this is supporting evidence. Per the commitments,
+  both paper instances keep running and are compared with `forward-v9` at its 180-day
+  evaluation; the combination would need its own test.
