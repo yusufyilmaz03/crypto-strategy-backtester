@@ -57,7 +57,7 @@ def curves(inst, paper_db=None):
     if closes.empty or closes.isna().all().all():
         bh = pd.Series(index=strat.index, dtype=float)
     else:
-        # forward-fill explicitly: the same as pct_change's old default, without its FutureWarning
+        # forward-fill explicitly: pandas < 3 padded by default (with a FutureWarning), pandas 3 doesn't
         bh = ((1 + closes.ffill().pct_change(fill_method=None).mean(axis=1, skipna=True).fillna(0)).cumprod() - 1) * 100
     return strat, bh.reindex(strat.index)
 

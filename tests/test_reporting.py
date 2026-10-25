@@ -63,13 +63,22 @@ def test_log_tail_reads_from_the_end_across_blocks(tmp_path):
     assert reporting.log_tail("short", 5, str(tmp_path)) == ["a", "b"]
 
 
-def test_buy_and_hold_with_gaps_matches_the_old_padding_without_warning():
+def test_buy_and_hold_carries_a_missing_close_forward(tmp_path):
+    """A symbol without a candle on a day counts as unchanged that day (the same on pandas 2 and 3)."""
     import warnings
-    closes = pd.DataFrame({"a": [10, None, 12, 11], "b": [5, 6, None, 7.0]})
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", FutureWarning)
-        old = closes.pct_change()
+    i = instances.create({"name": "gap", "symbols": ["A/USDT", "B/USDT"], "equity": 100},
+                         str(tmp_path / "instances.json"))
+    db = str(tmp_path / "paper.db")
+    s = PaperStore(db)
+    idx = pd.date_range("2026-01-01", periods=4, freq="1D")
+    with s.candle():
+        for t, ca, cb in zip(idx, [10, 11, 9.9, 12], [5, 5, None, 5.5]):
+            s.log_equity(i.run_key, "1d", "A/USDT", t, 100, ca)
+            if cb is not None:                                    # B has no row on day 3
+                s.log_equity(i.run_key, "1d", "B/USDT", t, 100, cb)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        new = closes.ffill().pct_change(fill_method=None)
-    pd.testing.assert_frame_equal(old, new)
+        _, bh = reporting.curves(i, db)
+    # A: +10%, -10%, +21.21%; B: 0%, 0% (day 3 carried forward), +10%
+    expected = (1.05 * 0.95 * (1 + (12 / 9.9 - 1 + 0.1) / 2) - 1) * 100
+    assert bh.iloc[-1] == pytest.approx(expected)

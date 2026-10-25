@@ -47,7 +47,8 @@ def report(label=None, timeframe=None, db=None, closes=None):
         closes = pd.concat({s: load_ohlcv(s, timeframe, days).set_index("timestamp")["close"]
                             for s in wide.columns}, axis=1)
     closes = closes.loc[start:end]
-    bh = (1 + closes.pct_change().mean(axis=1, skipna=True).fillna(0)).cumprod()
+    # forward-fill explicitly: pandas 3 no longer pads in pct_change, so results stay version-independent
+    bh = (1 + closes.ffill().pct_change(fill_method=None).mean(axis=1, skipna=True).fillna(0)).cumprod()
 
     days = (end - start).days
     r = {

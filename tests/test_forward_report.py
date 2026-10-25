@@ -23,6 +23,6 @@ def test_report(tmp_path, monkeypatch):
     closes = pd.DataFrame({"A": [10, 11, 10, 12, 13], "B": [10, 9, 8, 7, 6]}, index=idx, dtype=float)
     r = forward_report.report("run", "1d", db, closes)
     assert r["return_pct"] == pytest.approx(15.0)          # (130 + 100) / 200 - 1
-    bh = (1 + closes.pct_change().mean(axis=1).fillna(0)).cumprod()
+    bh = (1 + closes.ffill().pct_change(fill_method=None).mean(axis=1).fillna(0)).cumprod()
     assert r["buy_hold_pct"] == pytest.approx((bh.iloc[-1] - 1) * 100)
     assert r["closed_trades"] == 1 and not r["pass"]        # too short, too few trades

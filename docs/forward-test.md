@@ -49,3 +49,9 @@ continuous, every symbol has at most one open trade), but the restarts of 2026-1
 overwrote the saved states. The fix loads under the run key; the states were rebuilt by
 replaying the recorded candles (`--rebuild-state`), which reproduced the recorded equity,
 closed trades and all 33 open positions exactly before anything was saved.
+
+**Note (2026-10-25, report code, no change to the rules or the numbers):** the benchmark in
+`forward-report` computed daily returns with `pct_change()`, whose default forward-filled a
+missing close on pandas 2 but no longer does on pandas 3. It now forward-fills explicitly,
+which is what it always did on the pandas version the bot runs (2.3), so the benchmark stays
+the same whichever pandas version produces the report.
