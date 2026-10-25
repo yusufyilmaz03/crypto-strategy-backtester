@@ -155,14 +155,15 @@ def generate_signals_v8_tsmom(df, lookback=60):
 
 # ====================================================
 # v9: Moving-average regime
-# - BUY while SMA(fast) > SMA(slow); fast=1 means the close itself
-# - SELL (exit) when it drops below
+# - BUY while SMA(fast) > SMA(slow) * (1 + entry_band); fast=1 means the close itself
+# - SELL (exit) when it drops below SMA(slow)
+# (Between the two levels nothing happens: a band against whipsaw entries, docs/v9-exit-test.md)
 # ====================================================
-def generate_signals_v9_sma_regime(df, fast=1, slow=200):
+def generate_signals_v9_sma_regime(df, fast=1, slow=200, entry_band=0.0):
     close = df["close"]
     sma_f = close if fast == 1 else close.rolling(fast).mean()
     sma_s = close.rolling(slow).mean()
-    return _to_signals(df, sma_f > sma_s, sma_f < sma_s, warmup=slow - 1)
+    return _to_signals(df, sma_f > sma_s * (1 + entry_band), sma_f < sma_s, warmup=slow - 1)
 
 
 # ====================================================
@@ -203,7 +204,8 @@ STRATEGY_INFO = {
     "v6": "Donchian channel breakout with an ATR threshold against false breakouts.",
     "v7": "Trend filter (EMA fast vs slow) plus an RSI pullback-and-cross entry.",
     "v8": "Time-series momentum: long while the return over `lookback` candles is positive.",
-    "v9": "Moving-average regime: long while SMA(fast) is above SMA(slow); fast=1 is the close.",
+    "v9": "Moving-average regime: long while SMA(fast) is above SMA(slow); fast=1 is the close. "
+          "entry_band (e.g. 0.02) asks for that much above SMA(slow) to enter.",
     "v10": "Turtle-style breakout: enter above the prior `entry`-bar high, exit below the `exit_len`-bar low.",
 }
 

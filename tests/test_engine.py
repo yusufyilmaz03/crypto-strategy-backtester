@@ -180,3 +180,79 @@ def test_resize_scales_a_position_and_charges_the_traded_difference():
     assert e.marked_equity(121) - e.marked_equity(110) == pytest.approx(e.position.qty * 11)
     flat = Engine(cfg)
     assert flat.resize(500, 100) == 0 and flat.equity == 500              # cash moves for free
+
+
+TRAIL = EngineConfig(fee_rate=0.0, slippage_bps=0.0, atr_multiplier=None, trail_atr=2.0)
+
+
+def test_trailing_exit_sells_at_next_open_below_highest_close_minus_atr():
+    # ATR 5 x 2 = 10 below the highest close (130): 119 closes below 120
+    df, sig = frame([(100, 100, 100, 100), (100, 110, 100, 110), (110, 130, 110, 130),
+                     (130, 130, 121, 121), (121, 121, 119, 119), (118, 118, 118, 118)],
+                    ["BUY"] * 6)
+    trades, _ = run_backtest(df, sig, TRAIL)
+    t = trades.iloc[0]
+    assert t.reason == "TRAIL" and t.exit_price == 118 and t.exit_time == df.timestamp[5]
+
+
+def test_trailing_exit_waits_for_reset_or_new_high_before_buying_back():
+    bars = [(100, 100, 100, 100), (100, 120, 100, 120), (120, 120, 105, 105),   # trail exit queued
+            (106, 106, 106, 106), (110, 110, 110, 110),                        # BUY on, but blocked
+            (115, 125, 115, 121), (122, 122, 122, 122)]                        # 121 > 120: re-enter
+    df, sig = frame(bars, ["BUY"] * 7)
+    trades, _ = run_backtest(df, sig, TRAIL)
+    assert trades.reason.tolist() == ["TRAIL", "END"]
+    assert trades.entry_time.tolist()[1] == df.timestamp[6]
+
+    df, sig = frame(bars[:5] + [(108, 108, 108, 108), (109, 109, 109, 109)],
+                    ["BUY"] * 5 + ["-", "BUY"])                                 # regime reset
+    trades, _ = run_backtest(df, sig, TRAIL)
+    assert trades.reason.tolist() == ["TRAIL"]
+    eng = Engine(TRAIL)
+    for r in zip(df.timestamp, df.open, df.high, df.low, df.close, sig, df.ATR, df.RSI):
+        eng.on_bar(*r)
+    assert eng.pending[0] == "ENTER" and eng.reentry_above is None
+
+
+def test_signal_exit_does_not_block_reentry():
+    df, sig = frame([(100, 100, 100, 100), (100, 100, 100, 100), (100, 100, 100, 100),
+                     (100, 100, 100, 100), (100, 100, 100, 100)], ["BUY", "SELL", "BUY", "-", "-"])
+    trades, _ = run_backtest(df, sig, TRAIL)
+    assert trades.reason.tolist() == ["SIGNAL", "END"]
+
+
+def test_trailing_state_roundtrip_continues_identically():
+    import json
+
+    from conftest import make_ohlcv
+    from kripto_bot.core.indicators import add_indicators
+    from kripto_bot.core import strategy
+
+    df = add_indicators(make_ohlcv(800, seed=21))
+    sig = strategy.get_strategy("v9")(df, fast=1, slow=50)
+    rows = list(zip(df.timestamp, df.open, df.high, df.low, df.close, sig, df.ATR, df.RSI))
+    cfg = EngineConfig(atr_multiplier=None, trail_atr=1.5)
+    ref = Engine(cfg)
+    for r in rows:
+        ref.on_bar(*r)
+    assert "TRAIL" in {t.reason for t in ref.trades}
+    for cut in range(100, 800, 37):
+        a = Engine(cfg)
+        for r in rows[:cut]:
+            a.on_bar(*r)
+        b = Engine(cfg)
+        b.load_state(json.loads(json.dumps(a.to_state())))
+        for r in rows[cut:]:
+            b.on_bar(*r)
+        assert [t.pnl for t in a.trades + b.trades] == pytest.approx([t.pnl for t in ref.trades])
+
+
+def test_old_states_without_trailing_fields_load():
+    e = Engine(EngineConfig())
+    e.load_state({"equity": 900.0, "position": {
+        "trade_id": "x", "side": "LONG", "qty": 1.0, "entry_time": "2025-01-01T00:00:00",
+        "entry_price": 100.0, "entry_fee": 0.1, "equity_before": 900.0, "stop": None, "signal_rsi": None},
+        "pending": ["EXIT"]})
+    assert e.position.high is None and e.reentry_above is None
+    e.on_bar(pd.Timestamp("2025-01-02"), 101, 101, 101, 101, "-")
+    assert e.trades[0].reason == "SIGNAL"

@@ -33,9 +33,13 @@ def _fmt_time(t):
 def describe_action(engine, signal):
     """What the engine did with this candle's signal."""
     if engine.pending is None:
-        return "ignored (already in position)" if engine.position else "ignored (long-only)"
+        if engine.position:
+            return "ignored (already in position)"
+        if signal == "BUY" and engine.reentry_above is not None:
+            return "ignored (waiting after a trailing exit)"
+        return "ignored (long-only)"
     if engine.pending[0] == "EXIT":
-        return "exit at next open"
+        return "trailing exit at next open" if engine.pending[1:] == ("TRAIL",) else "exit at next open"
     return f"enter {engine.pending[1]} at next open"
 
 

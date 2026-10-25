@@ -77,7 +77,7 @@ def _inst(name):
 
 
 def _instance_view(inst):
-    d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop", "sizing",
+    d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop", "trail", "sizing",
                                        "equity", "enabled", "description", "created_at", "run_key")}
     d["symbols"] = inst.symbol_list
     d["custom_symbols"] = bool(inst.symbols)

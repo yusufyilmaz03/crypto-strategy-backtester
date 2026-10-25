@@ -19,6 +19,7 @@ COMMANDS = {
     "research": ("kripto_bot.analysis.research", "walk-forward research → results/research_*.csv"),
     "survivorship": ("kripto_bot.analysis.survivorship", "v9 on a point-in-time universe incl. delisted coins"),
     "sizing": ("kripto_bot.analysis.sizing", "v9 inverse-volatility sizing vs equal weight"),
+    "exits": ("kripto_bot.analysis.exits", "v9 exit variants (trailing exit, entry band) vs the baseline"),
     "forward-report": ("kripto_bot.analysis.forward_report", "forward-test metrics vs buy-and-hold"),
     "holdout-test": ("kripto_bot.analysis.holdout_test", "the one-off v9 holdout test (already run)"),
     "telegram-setup": ("kripto_bot.tools.telegram_setup", "find the Telegram chat id and send a test message"),

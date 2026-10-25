@@ -84,3 +84,15 @@ def test_unknown_fields_from_a_newer_version_are_ignored(tmp_path):
     path = tmp_path / "instances.json"
     path.write_text(json.dumps([{"name": "abc", "mode": "paper", "future_field": 1}]))
     assert instances.load_all(str(path))["abc"].sizing == "equal"
+
+
+def test_trailing_exit_is_a_locked_paper_setting(path):
+    inst = instances.create({"name": "v9-trail", "strategy": "v9", "params": {"slow": 50}, "trail": "3"}, path)
+    assert inst.trail == 3.0 and inst.engine_config().trail_atr == 3.0
+    assert instances.create({"name": "v9-plain", "strategy": "v9", "trail": ""}, path).engine_config().trail_atr is None
+    with pytest.raises(instances.InstanceError, match="can't be changed"):
+        instances.update("v9-trail", path, trail=None)
+    for data, message in [({"trail": "x"}, "must be a number"), ({"trail": 0.1}, "between"),
+                          ({"trail": 3, "mode": "testnet"}, "only paper")]:
+        with pytest.raises(instances.InstanceError, match=message):
+            instances.create({"name": "bad-trail", "strategy": "v9", **data}, path)

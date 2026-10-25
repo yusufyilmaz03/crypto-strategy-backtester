@@ -28,6 +28,9 @@
         <input class="form-control" name="equity" type="number" min="10" step="any" id="equity"></div>
       <div class="col-md-6"><label class="form-label">Sizing</label><select class="form-select" id="sizing"></select>
         <div class="form-text" id="sizing-help"></div></div>
+      <div class="col-md-6"><label class="form-label">Trailing exit (ATR ×)</label>
+        <input class="form-control" type="number" min="0.5" max="20" step="any" id="trail" placeholder="off">
+        <div class="form-text">Exit when the close falls this many ATRs below the highest close since entry. Empty = off.</div></div>
       <div class="col-md-6"><label class="form-label">Symbols</label>
         <select class="form-select" id="symbol-mode"><option value="all">All default symbols</option><option value="custom">Custom list</option></select></div>
       <div class="col-12 d-none" id="symbols-box"><textarea class="form-control font-monospace" name="symbols" rows="2" placeholder="BTC/USDT, ETH/USDT"></textarea></div>
@@ -109,6 +112,8 @@ function modeChanged() {
   document.getElementById("stop").disabled = testnet;
   if (testnet) document.getElementById("sizing").value = "equal";
   document.getElementById("sizing").disabled = testnet;
+  if (testnet) document.getElementById("trail").value = "";
+  document.getElementById("trail").disabled = testnet;
   sizingChanged();
 }
 document.getElementById("strategy").addEventListener("change", renderParams);
@@ -123,6 +128,7 @@ document.getElementById("form").addEventListener("submit", async e => {
   document.querySelectorAll("[data-param]").forEach(el => { if (el.value !== "") params[el.dataset.param] = el.value; });
   const body = { name: f.get("name"), mode: f.get("mode"), strategy: f.get("strategy"), timeframe: f.get("timeframe"),
     stop: document.getElementById("stop").value, sizing: document.getElementById("sizing").value,
+    trail: document.getElementById("trail").value || null,
     equity: f.get("equity"), description: f.get("description"), params,
     symbols: document.getElementById("symbol-mode").value === "custom"
       ? f.get("symbols").split(/[\s,]+/).filter(Boolean) : null };

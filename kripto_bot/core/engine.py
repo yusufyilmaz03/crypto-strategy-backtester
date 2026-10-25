@@ -5,7 +5,8 @@ The engine only ever sees closed candles. For each candle it:
   1. fills the order queued on the previous candle at this candle's open,
   2. checks the stop-loss against this candle's high/low (gaps fill at the open),
   3. marks equity to this candle's close,
-  4. queues an order for the next candle's open based on this candle's signal.
+  4. queues an order for the next candle's open based on this candle's signal
+     (or on the trailing exit, when enabled).
 
 Sizing: the whole equity goes into each position (no leverage, compounding).
 Fees are charged on notional on both legs; slippage always works against us.
@@ -24,6 +25,8 @@ class EngineConfig:
     fee_rate: float = 0.001        # taker fee per leg (0.1%)
     slippage_bps: float = 5.0      # adverse slippage per fill
     atr_multiplier: float | None = 2.0  # stop distance = ATR * multiplier; None or NaN ATR -> no stop
+    trail_atr: float | None = None  # trailing exit: a long closing below its highest close since
+                                    # entry - ATR * this exits at the next open; None -> off
     allow_short: bool = False      # spot trading: long-only
     initial_equity: float = 1000.0
 
@@ -39,6 +42,7 @@ class Position:
     equity_before: float
     stop: float | None
     signal_rsi: float | None = None
+    high: float | None = None      # highest close since entry (trailing exit)
 
 
 @dataclass
@@ -54,7 +58,7 @@ class Trade:
     fees: float
     pnl: float
     return_pct: float
-    reason: str                    # "SIGNAL" | "STOP" | "END"
+    reason: str                    # "SIGNAL" | "STOP" | "TRAIL" | "END"
     entry_rsi: float | None = None
 
 
@@ -72,7 +76,8 @@ class Engine:
         self.symbol = symbol
         self.equity = self.config.initial_equity   # realized equity (cash when flat)
         self.position: Position | None = None
-        self.pending = None                         # ("ENTER", side, atr, rsi) | ("EXIT",)
+        self.pending = None                         # ("ENTER", side, atr, rsi) | ("EXIT", reason)
+        self.reentry_above = None                   # after a trailing exit: see on_bar step 4
         self.trades: list[Trade] = []
         self.equity_curve: list[tuple] = []         # (time, marked-to-market equity)
         self.on_open = on_open
@@ -154,7 +159,11 @@ class Engine:
         if self.pending is not None:
             order, self.pending = self.pending, None
             if order[0] == "EXIT" and self.position is not None:
-                self._close(open_, time, "SIGNAL")
+                reason = order[1] if len(order) > 1 else "SIGNAL"
+                peak = self.position.high
+                self._close(open_, time, reason)
+                if reason == "TRAIL":
+                    self.reentry_above = peak
             elif order[0] == "ENTER" and self.position is None:
                 _, side, sig_atr, sig_rsi = order
                 self._open(side, open_, time, sig_atr, sig_rsi)
@@ -169,17 +178,26 @@ class Engine:
 
         # 3) Mark to market at the close.
         self.equity_curve.append((time, self.marked_equity(close)))
-
-        # 4) Queue an order for the next open.
-        atr, rsi = _num(atr), _num(rsi)
         p = self.position
+        if p is not None and p.side == "LONG":
+            p.high = close if p.high is None else max(p.high, close)
+
+        # 4) Queue an order for the next open. After a trailing exit the signal that was
+        # still on doesn't buy back at once: entries wait for a candle without a BUY
+        # signal (the regime reset) or a close above the exited trade's highest close.
+        atr, rsi = _num(atr), _num(rsi)
+        if self.reentry_above is not None and (signal != "BUY" or close > self.reentry_above):
+            self.reentry_above = None
+        trail = self.config.trail_atr
         if p is None:
-            if signal == "BUY":
+            if signal == "BUY" and self.reentry_above is None:
                 self.pending = ("ENTER", "LONG", atr, rsi)
             elif signal == "SELL" and self.config.allow_short:
                 self.pending = ("ENTER", "SHORT", atr, rsi)
         elif (p.side == "LONG" and signal == "SELL") or (p.side == "SHORT" and signal == "BUY"):
-            self.pending = ("EXIT",)
+            self.pending = ("EXIT", "SIGNAL")
+        elif trail and atr is not None and p.side == "LONG" and close < p.high - trail * atr:
+            self.pending = ("EXIT", "TRAIL")
 
     # ---------- persistence ----------
     def to_state(self):
@@ -189,7 +207,8 @@ class Engine:
             pos = asdict(self.position)
             pos["entry_time"] = pd.Timestamp(pos["entry_time"]).isoformat()
         return {"equity": self.equity, "position": pos,
-                "pending": list(self.pending) if self.pending else None}
+                "pending": list(self.pending) if self.pending else None,
+                "reentry_above": self.reentry_above}
 
     def load_state(self, state):
         self.equity = state["equity"]
@@ -200,6 +219,7 @@ class Engine:
             self.position = None
         pending = state.get("pending")
         self.pending = tuple(pending) if pending else None
+        self.reentry_above = state.get("reentry_above")
 
     def finish(self, time, close):
         """Close any open position at the final close (end of backtest data)."""

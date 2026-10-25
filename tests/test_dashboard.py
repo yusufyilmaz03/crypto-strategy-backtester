@@ -130,7 +130,7 @@ def test_strategies_api(client):
     keys = [s["key"] for s in d["strategies"]]
     assert "v9" in keys and d["stops"]["none"] is None
     v9 = next(s for s in d["strategies"] if s["key"] == "v9")
-    assert {p["name"] for p in v9["params"]} == {"fast", "slow"} and v9["description"]
+    assert {p["name"] for p in v9["params"]} == {"fast", "slow", "entry_band"} and v9["description"]
 
 
 def test_password_protects_every_request(client, monkeypatch):

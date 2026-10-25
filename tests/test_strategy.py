@@ -75,3 +75,16 @@ def test_trend_strategies_follow_their_rules():
     s = strategy.get_strategy("v10")(df, entry=3, exit_len=2)
     assert s.iloc[5] == "BUY"          # 11 breaks the prior 3-bar high of 10.1
     assert s.iloc[11] == "SELL"        # 12 breaks below the prior 2-bar low of 13.9
+
+
+def test_v9_entry_band_enters_above_the_band_and_exits_below_the_sma():
+    import pandas as pd
+    close = pd.Series([100.0] * 4 + [101, 104, 102, 99])
+    df = pd.DataFrame({"open": close, "high": close, "low": close, "close": close})
+    s = strategy.get_strategy("v9")(df, fast=1, slow=4, entry_band=0.02)
+    assert s.iloc[4] == "-"        # SMA 100.25: 101 is above it but below the band (102.255)
+    assert s.iloc[5] == "BUY"      # SMA 101.25: 104 clears the band (103.275)
+    assert s.iloc[6] == "-"        # SMA 101.75: 102 is between the SMA and the band (103.785)
+    assert s.iloc[7] == "SELL"     # SMA 101.5: 99 is below it
+    assert strategy.get_strategy("v9")(df, fast=1, slow=4).equals(
+        strategy.get_strategy("v9")(df, fast=1, slow=4, entry_band=0.0))

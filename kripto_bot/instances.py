@@ -5,7 +5,7 @@ Instances live in instances.json (gitignored). The dashboard creates, starts, st
 and deletes them; run_all.py starts a process for every enabled instance. A paper
 instance stores its results in paper.db under its run key; a testnet instance has
 its own database file. An instance's trading setup (strategy, parameters, timeframe,
-symbols, stop) can't be changed after creation, so its results always describe one
+symbols, stop, trailing exit) can't be changed after creation, so its results always describe one
 setup; to try something else, create another instance.
 """
 import inspect
@@ -27,7 +27,7 @@ SIZINGS = {"equal": "Equal capital per symbol, never rebalanced",
            "inverse_vol": "Monthly rebalanced to 1/volatility weights (docs/v9-sizing-test.md)"}
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
-SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "symbols", "equity", "sizing"]
+SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing"]
 
 
 class InstanceError(ValueError):
@@ -42,6 +42,7 @@ class Instance:
     params: dict = field(default_factory=dict)
     timeframe: str = "1d"
     stop: str = "none"                 # key of config.STOPLOSS_CONFIG
+    trail: float | None = None         # trailing exit at the highest close - ATR * trail; None = off
     symbols: list | None = None        # None = config.SYMBOLS
     equity: float = 1000.0             # paper: per symbol; testnet: total capital
     sizing: str = "equal"              # key of SIZINGS
@@ -58,7 +59,7 @@ class Instance:
     def engine_config(self):
         from dataclasses import replace
         return replace(config.engine_config(), atr_multiplier=config.STOPLOSS_CONFIG[self.stop],
-                       initial_equity=self.equity)
+                       trail_atr=self.trail, initial_equity=self.equity)
 
     @property
     def db_path(self):
@@ -114,6 +115,17 @@ def validate(inst, existing):
         raise InstanceError(f"stop must be one of {', '.join(config.STOPLOSS_CONFIG)}")
     if inst.mode == "testnet" and config.STOPLOSS_CONFIG[inst.stop] is not None:
         raise InstanceError("testnet instances can't use a stop yet (exchange-side stop orders aren't implemented)")
+    if inst.trail in ("", None):
+        inst.trail = None
+    else:
+        try:
+            inst.trail = float(inst.trail)
+        except (TypeError, ValueError):
+            raise InstanceError("trailing exit must be a number (ATR multiple) or empty")
+        if not 0.5 <= inst.trail <= 20:
+            raise InstanceError("trailing exit must be between 0.5 and 20 ATR")
+        if inst.mode != "paper":
+            raise InstanceError("only paper instances can use a trailing exit for now")
     if inst.sizing not in SIZINGS:
         raise InstanceError(f"sizing must be one of {', '.join(SIZINGS)}")
     if inst.sizing != "equal" and inst.mode != "paper":
