@@ -109,3 +109,28 @@ def test_single_instance_lock(tmp_path):
     assert subprocess.run([sys.executable, "-c", code, "b"]).returncode == 0   # other instance fine
     held.close()
     assert subprocess.run([sys.executable, "-c", code, "a"]).returncode == 0
+
+
+def test_quiet_service_logs_output_but_shows_only_events(tmp_path, capsys):
+    s = Service("demo", [sys.executable, "-u", "-c", "print('hello')"], log_dir=str(tmp_path), echo=False)
+    s.start()
+    s.proc.wait(5)
+    time.sleep(0.2)
+    s.check()
+    out = capsys.readouterr().out
+    assert "hello" not in out and "[demo] started" in out and "[demo] exited with code 0" in out
+    assert "hello" in (tmp_path / "demo.log").read_text()
+
+
+def test_log_rotates_and_keeps_three_old_files(tmp_path, capsys):
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "demo.log").write_text("old\n" * 40)                   # 160 bytes, already over the limit
+    s = Service("demo", SLEEP, log_dir=str(logs), max_bytes=100, backups=3)
+    for k in range(30):
+        s.emit(f"line {k:02d} " + "x" * 20)                        # 41 bytes each with the stamp
+    files = sorted(p.name for p in logs.iterdir())
+    assert files == ["demo.log", "demo.log.1", "demo.log.2", "demo.log.3"]
+    assert all((logs / f).stat().st_size <= 100 + 60 for f in files)
+    assert "line 29" in (logs / "demo.log").read_text()
+    assert "old" not in "".join((logs / f).read_text() for f in files)  # dropped after 3 rotations

@@ -5,13 +5,15 @@ The supervisor follows runtime/instances.json: an instance that is enabled (from
 the dashboard or the file) gets its own process (kripto_bot.trading.run_realtime or
 run_testnet --instance NAME), a disabled or deleted one is stopped, and a restart
 requested from the dashboard restarts it. Output is shown with a [name] prefix and
-written to runtime/logs/<name>.log. A process that exits is restarted after a pause
-(doubling up to 5 minutes while it keeps failing). Current states go to
-runtime/status.json for the dashboard. Ctrl+C stops everything.
+written to runtime/logs/<name>.log, which is rotated at 10 MB (<name>.log.1 to .3 are
+kept). A process that exits is restarted after a pause (doubling up to 5 minutes while
+it keeps failing). Current states go to runtime/status.json for the dashboard. Ctrl+C
+stops everything.
 
     python -m kripto_bot run                  # dashboard + enabled instances
     python -m kripto_bot run --no-dashboard   # instances only
     python -m kripto_bot run --keep-awake     # macOS: no idle sleep while running
+    python -m kripto_bot run --quiet          # only start/stop/exit events on screen
 """
 import argparse
 import json
@@ -36,15 +38,23 @@ RESET = "\033[0m"
 MIN_BACKOFF_S, MAX_BACKOFF_S = 5, 300
 STABLE_AFTER_S = 600       # a run this long resets the backoff
 RELOAD_EVERY_S = 2.0
+LOG_MAX_BYTES = 10 * 1024 * 1024   # rotate a service's log beyond this size
+LOG_BACKUPS = 3                    # rotated files kept: <name>.log.1 (newest) to .3
 
 
 class Service:
-    def __init__(self, name, cmd, log_dir=None, color="", on_exit=None):
+    def __init__(self, name, cmd, log_dir=None, color="", on_exit=None, echo=True,
+                 max_bytes=LOG_MAX_BYTES, backups=LOG_BACKUPS):
         log_dir = log_dir or LOG_DIR
         self.name, self.cmd = name, cmd
         self.prefix = f"{color}[{name}]{RESET if color else ''}"
+        self.echo = echo            # False: the process's output goes to its log file only
         os.makedirs(log_dir, exist_ok=True)
-        self.log = open(os.path.join(log_dir, f"{name}.log"), "a", buffering=1)
+        self.log_path = os.path.join(log_dir, f"{name}.log")
+        self.max_bytes, self.backups = max_bytes, backups
+        self.log_lock = threading.Lock()   # the output thread and the main loop both write
+        self.log = open(self.log_path, "a", buffering=1)
+        self.log_size = os.path.getsize(self.log_path)
         self.proc = None
         self.started = 0.0
         self.backoff = MIN_BACKOFF_S
@@ -61,17 +71,32 @@ class Service:
                                      start_new_session=True)  # Ctrl+C goes to the supervisor only
         self.started = time.time()
         self.note = ""
-        self.emit(f"started (pid {self.proc.pid})")
+        self.emit(f"started (pid {self.proc.pid})", event=True)
         threading.Thread(target=self._pump, args=(self.proc,), daemon=True).start()
 
     def _pump(self, proc):
         for line in proc.stdout:
             self.emit(line.rstrip("\n"))
 
-    def emit(self, line):
-        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"{self.prefix} {line}", flush=True)
-        self.log.write(f"{stamp} {line}\n")
+    def emit(self, line, event=False):
+        """Log a line of the process's output, or a supervisor event about it (always shown)."""
+        if self.echo or event:
+            print(f"{self.prefix} {line}", flush=True)
+        text = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n"
+        with self.log_lock:
+            if self.log_size >= self.max_bytes:
+                self._rotate()
+            self.log.write(text)
+            self.log_size += len(text.encode())
+
+    def _rotate(self):
+        self.log.close()
+        for k in range(self.backups - 1, 0, -1):
+            if os.path.exists(f"{self.log_path}.{k}"):
+                os.replace(f"{self.log_path}.{k}", f"{self.log_path}.{k + 1}")
+        os.replace(self.log_path, f"{self.log_path}.1")
+        self.log = open(self.log_path, "a", buffering=1)
+        self.log_size = 0
 
     @property
     def running(self):
@@ -89,7 +114,7 @@ class Service:
             return
         ran = now - self.started
         self.backoff = MIN_BACKOFF_S if ran >= STABLE_AFTER_S else min(self.backoff * 2, MAX_BACKOFF_S)
-        self.emit(f"exited with code {code} after {ran:.0f}s; restarting in {self.backoff}s")
+        self.emit(f"exited with code {code} after {ran:.0f}s; restarting in {self.backoff}s", event=True)
         self.last_exit = code
         self.proc = None
         self.restarts += 1
@@ -104,7 +129,7 @@ class Service:
                 self.proc.wait(timeout)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
-            self.emit("stopped")
+            self.emit("stopped", event=True)
         self.proc = None
 
     def status(self):
@@ -120,8 +145,10 @@ def instance_command(inst):
 
 
 class Supervisor:
-    def __init__(self, with_dashboard=True, instances_path=None, log_dir=None, status_file=None, watcher=None):
+    def __init__(self, with_dashboard=True, instances_path=None, log_dir=None, status_file=None, watcher=None,
+                 echo=True):
         log_dir = log_dir or LOG_DIR
+        self.echo = echo
         status_file = status_file or STATUS_FILE
         self.instances_path = instances_path
         self.log_dir = log_dir
@@ -134,7 +161,7 @@ class Supervisor:
         self.on_exit = on_exit
         if with_dashboard:
             self.services["dashboard"] = Service("dashboard", [sys.executable, "-u", "-m", "kripto_bot.app.dashboard"],
-                                                 log_dir, DASHBOARD_COLOR, on_exit)
+                                                 log_dir, DASHBOARD_COLOR, on_exit, echo)
 
     def _desired(self):
         try:
@@ -157,10 +184,11 @@ class Supervisor:
             svc = self.services.get(name)
             if svc is None:
                 color = PALETTE[len(self.services) % len(PALETTE)]
-                self.services[name] = Service(name, instance_command(inst), self.log_dir, color, self.on_exit)
+                self.services[name] = Service(name, instance_command(inst), self.log_dir, color, self.on_exit,
+                                              self.echo)
             elif inst.restart_requested_at and svc.started and \
                     pd.Timestamp(inst.restart_requested_at).timestamp() > svc.started:
-                svc.emit("restart requested from the dashboard")
+                svc.emit("restart requested from the dashboard", event=True)
                 svc.stop()
                 svc.next_start = 0.0
         for name in [n for n in self.services if n != "dashboard" and n not in desired]:
@@ -213,6 +241,9 @@ def main():
     ap.add_argument("--no-dashboard", action="store_true")
     ap.add_argument("--keep-awake", action="store_true",
                     help="macOS: keep the computer from idle sleeping while the supervisor runs (on power)")
+    ap.add_argument("--quiet", action="store_true",
+                    help="don't repeat the services' output on screen, only their start/stop/exit events "
+                         "(the output is in runtime/logs/<name>.log; the background service uses this)")
     a = ap.parse_args()
     try:
         lock = single_instance(paths.runtime("supervisor"))  # noqa: F841 (held until exit)
@@ -224,7 +255,7 @@ def main():
         subprocess.Popen(["caffeinate", "-i", "-s", "-w", str(os.getpid())])
     sender = notify.from_config()
     watcher = notify.Watcher(sender) if sender.enabled else None
-    sup = Supervisor(with_dashboard=not a.no_dashboard, watcher=watcher)
+    sup = Supervisor(with_dashboard=not a.no_dashboard, watcher=watcher, echo=not a.quiet)
     print(f"▶️  Supervisor started (logs in {LOG_DIR}). Instances follow runtime/instances.json; "
           "Ctrl+C stops everything.")
     print("🔔 Telegram notifications on.\n" if watcher else

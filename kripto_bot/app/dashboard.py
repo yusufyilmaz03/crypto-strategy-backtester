@@ -12,6 +12,7 @@ beyond 127.0.0.1 without a password.
 import hmac
 import importlib
 import json
+import logging
 import os
 
 import pandas as pd
@@ -326,6 +327,19 @@ def api_backtest():
     return jsonify({"results": json.loads(df.to_json(orient="records"))})
 
 
+class _SkipSuccessfulRequests(logging.Filter):
+    """Drops werkzeug's access-log lines for 2xx/3xx responses: the open panel polls every
+    few seconds, so they were nearly all of the log. Errors and 4xx/5xx lines stay."""
+
+    def filter(self, record):
+        args = record.args if isinstance(record.args, tuple) else ()
+        return not (len(args) == 3 and str(args[1])[:1] in ("2", "3"))
+
+
+def quiet_access_log():
+    logging.getLogger("werkzeug").addFilter(_SkipSuccessfulRequests())
+
+
 def bind_host():
     host = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
     if host not in ("127.0.0.1", "localhost") and not _password():
@@ -335,6 +349,7 @@ def bind_host():
 
 if __name__ == "__main__":
     host = bind_host()
+    quiet_access_log()
     print(f"Starting dashboard on http://{host}:5002 ...")
     # Debug mode reloads on code changes; run_all.py turns it off (DASHBOARD_DEBUG=0)
     # because the reloader runs the app in a child process the supervisor can't see.

@@ -52,3 +52,24 @@ def test_service_status(tmp_path):
 def test_log_tail(tmp_path):
     (tmp_path / "demo.log").write_text("\n".join(f"line {k}" for k in range(10)) + "\n")
     assert reporting.log_tail("demo", 3, str(tmp_path)) == ["line 7", "line 8", "line 9"]
+
+
+def test_log_tail_reads_from_the_end_across_blocks(tmp_path):
+    (tmp_path / "big.log").write_text("".join(f"line {k}\n" for k in range(5000)))
+    tail = reporting.log_tail("big", 300, str(tmp_path), block=100)
+    assert tail == [f"line {k}" for k in range(4700, 5000)]
+    assert reporting.log_tail("big", 10000, str(tmp_path), block=100) == [f"line {k}" for k in range(5000)]
+    (tmp_path / "short.log").write_text("a\nb")
+    assert reporting.log_tail("short", 5, str(tmp_path)) == ["a", "b"]
+
+
+def test_buy_and_hold_with_gaps_matches_the_old_padding_without_warning():
+    import warnings
+    closes = pd.DataFrame({"a": [10, None, 12, 11], "b": [5, 6, None, 7.0]})
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        old = closes.pct_change()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        new = closes.ffill().pct_change(fill_method=None)
+    pd.testing.assert_frame_equal(old, new)

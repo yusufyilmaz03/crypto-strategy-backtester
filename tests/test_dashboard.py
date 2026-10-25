@@ -154,3 +154,19 @@ def test_network_bind_requires_password(monkeypatch):
     assert dashboard.bind_host() == "0.0.0.0"
     monkeypatch.delenv("DASHBOARD_HOST")
     assert dashboard.bind_host() == "127.0.0.1"
+
+
+def test_access_log_drops_successful_requests_only():
+    import logging
+    from kripto_bot.app.dashboard import _SkipSuccessfulRequests
+    f = _SkipSuccessfulRequests()
+
+    def rec(msg, args):
+        return logging.LogRecord("werkzeug", logging.INFO, "", 0, msg, args, None)
+    fmt = '127.0.0.1 - - [x] "%s" %s %s\n'
+    assert not f.filter(rec(fmt, ("GET /api/overview HTTP/1.1", "200", "-")))
+    assert not f.filter(rec(fmt, ("GET /static/app.js HTTP/1.1", "304", "-")))
+    assert f.filter(rec(fmt, ("GET /nope HTTP/1.1", "404", "-")))
+    assert f.filter(rec(fmt, ("POST /api/x HTTP/1.1", "500", "-")))
+    assert f.filter(rec(" * Running on %s", ("http://127.0.0.1:5002",)))
+    assert f.filter(rec("plain message", None))

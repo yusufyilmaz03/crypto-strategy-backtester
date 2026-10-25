@@ -6,7 +6,7 @@ from kripto_bot.tools import service
 
 def test_plist_runs_the_supervisor_and_restarts_after_crashes(tmp_path):
     p = service.plist(python="/venv/bin/python", root="/proj")
-    assert p["ProgramArguments"] == ["/venv/bin/python", "-u", "-m", "kripto_bot", "run", "--keep-awake"]
+    assert p["ProgramArguments"] == ["/venv/bin/python", "-u", "-m", "kripto_bot", "run", "--keep-awake", "--quiet"]
     assert p["WorkingDirectory"] == "/proj" and p["KeepAlive"] == {"SuccessfulExit": False}
     assert p["StandardOutPath"] == "/proj/runtime/logs/supervisor.log"
     plistlib.dumps(p)                                   # serializable

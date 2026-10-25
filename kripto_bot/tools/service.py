@@ -6,11 +6,13 @@
     python -m kripto_bot service restart     # after a code update
     python -m kripto_bot service uninstall   # stop and remove
 
-The service runs `python -m kripto_bot run --keep-awake`: the supervisor keeps
-the Mac from idle sleeping while it is on power (closing a laptop's lid still
-sleeps it). launchd restarts the supervisor if it crashes. Output goes to
-runtime/logs/supervisor.log. Stop a manually started supervisor first: only one
-can run at a time.
+The service runs `python -m kripto_bot run --keep-awake --quiet`: the supervisor
+keeps the Mac from idle sleeping while it is on power (closing a laptop's lid still
+sleeps it). launchd restarts the supervisor if it crashes. The supervisor's own
+messages and the services' start/stop/exit events go to runtime/logs/supervisor.log;
+each service's output is in runtime/logs/<name>.log. Stop a manually started
+supervisor first: only one can run at a time. After an update that changes this
+file, run `install` again to rewrite the service definition.
 """
 import argparse
 import os
@@ -30,7 +32,7 @@ def plist(python=None, root=None):
     log = os.path.join(root, "runtime", "logs", "supervisor.log")
     return {
         "Label": LABEL,
-        "ProgramArguments": [python, "-u", "-m", "kripto_bot", "run", "--keep-awake"],
+        "ProgramArguments": [python, "-u", "-m", "kripto_bot", "run", "--keep-awake", "--quiet"],
         "WorkingDirectory": root,
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},     # restart after a crash, not after a clean stop

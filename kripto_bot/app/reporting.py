@@ -57,7 +57,8 @@ def curves(inst, paper_db=None):
     if closes.empty or closes.isna().all().all():
         bh = pd.Series(index=strat.index, dtype=float)
     else:
-        bh = ((1 + closes.pct_change().mean(axis=1, skipna=True).fillna(0)).cumprod() - 1) * 100
+        # forward-fill explicitly: the same as pct_change's old default, without its FutureWarning
+        bh = ((1 + closes.ffill().pct_change(fill_method=None).mean(axis=1, skipna=True).fillna(0)).cumprod() - 1) * 100
     return strat, bh.reindex(strat.index)
 
 
@@ -136,10 +137,18 @@ def service_status(name, status_file=None, max_age_s=15):
     return st["services"].get(name, {"state": "stopped"})
 
 
-def log_tail(name, lines=200, log_dir=None):
+def log_tail(name, lines=200, log_dir=None, block=65536):
+    """Last `lines` lines of a service's log, read from the end of the file."""
     log_dir = log_dir or LOG_DIR
     path = os.path.join(log_dir, f"{name}.log")
     if not os.path.exists(path):
         return []
-    with open(path, errors="replace") as f:
-        return [line.rstrip("\n") for line in f.readlines()[-lines:]]
+    with open(path, "rb") as f:
+        end = f.seek(0, os.SEEK_END)
+        data = b""
+        while end > 0 and data.count(b"\n") <= lines:
+            step = min(block, end)
+            end -= step
+            f.seek(end)
+            data = f.read(step) + data
+    return data.decode(errors="replace").splitlines()[-lines:]

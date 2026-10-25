@@ -184,7 +184,7 @@ The bots act on candle closes (daily candles close at 00:00 UTC), so the supervi
 python -m kripto_bot service install     # status | restart | uninstall
 ```
 
-Only one supervisor runs at a time, so stop a manually started one first. Its output goes to `runtime/logs/supervisor.log`.
+Only one supervisor runs at a time, so stop a manually started one first. The supervisor's own messages and the start/stop/exit events of its services go to `runtime/logs/supervisor.log`; each service's output is in `runtime/logs/<name>.log`, rotated at 10 MB with three older files kept. After an update that changes the service definition, run `service install` again.
 
 **On a server (Docker):** copy the project, create `.env` (API keys, Telegram, and `DASHBOARD_PASSWORD`) and run:
 
