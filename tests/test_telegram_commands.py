@@ -125,12 +125,12 @@ def test_instance_views(bot):
     _press(bot, "i|fwd")
     assert bot.api.sent("answerCallbackQuery")
     text, buttons = bot.api.last()
-    assert text.startswith("<b>fwd ⭐</b> - (paper) - (supervisor not running)\n"
+    assert text.startswith("<b>fwd ⭐</b> - paper - supervisor not running\n"
                            "v9 · 1d · stop none · manual close · 2 symbols\n")
     assert buttons[:3] == ["p|fwd", "s|fwd", "t|fwd"]
     instances.update("fwd", description="SMA <50> & more")
     _press(bot, "i|fwd")
-    assert "\n<i>SMA &lt;50&gt; &amp; more</i>\nv9 · 1d" in bot.api.last()[0]
+    assert "\nv9 · 1d · stop none · manual close · 2 symbols\n<i>SMA &lt;50&gt; &amp; more</i>\n" in bot.api.last()[0]
     _press(bot, "p|fwd")
     text, buttons = bot.api.last()
     assert re.search(r"\nX +100 110 \+10\.0</pre>", text)

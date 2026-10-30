@@ -307,10 +307,9 @@ class CommandBot:
         s = reporting.summary(inst, self.paper_db)
         state = reporting.service_status(inst.name)
         status = state["state"] + (f": {state['note']}" if state.get("note") else "")
-        lines = [f"<b>{_e(_name(inst))}</b> - ({inst.mode}) - ({_e(status)})"]
+        lines = [f"<b>{_e(_name(inst))}</b> - {inst.mode} - {_e(status)}", _e(_settings(inst))]
         if inst.description:
             lines.append(f"<i>{_e(inst.description)}</i>")
-        lines.append(_e(_settings(inst)))
         if s["return_pct"] is None:
             lines.append("No data yet.")
         else:
