@@ -138,7 +138,10 @@ class CommandBot:
             return
         kind, _, arg = (query.get("data") or "").partition("|")
         text, keyboard = self.view(kind, arg, msg)
-        self.call(self.token, "answerCallbackQuery", {"callback_query_id": query["id"]})
+        try:        # only stops the button's spinner; Telegram refuses it for a press answered late
+            self.call(self.token, "answerCallbackQuery", {"callback_query_id": query["id"]})
+        except notify.TelegramError:
+            pass
         try:
             self.call(self.token, "editMessageText",
                       {"chat_id": self.chat_id, "message_id": msg["message_id"], "text": text[:notify.MAX_LEN],

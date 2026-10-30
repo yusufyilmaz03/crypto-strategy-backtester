@@ -179,6 +179,21 @@ def test_refresh_without_changes_is_not_an_error(bot):
     _press(bot, "i|fwd")                                          # no exception
 
 
+def test_a_late_press_still_updates_the_message(bot):
+    _instance()
+    edits = []
+
+    def call(token, method, params=None, timeout=15):
+        if method == "answerCallbackQuery":
+            raise notify.TelegramError("Bad Request: query is too old and response timeout expired")
+        edits.append(method)
+        return True
+
+    bot.call = call
+    _press(bot, "i|fwd")
+    assert edits == ["editMessageText"]
+
+
 def test_poll_confirms_updates_and_survives_bad_ones(bot):
     logged = []
     bot.log = logged.append
