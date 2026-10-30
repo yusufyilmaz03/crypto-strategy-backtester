@@ -14,12 +14,14 @@ With the instance setting lower_tf_exit it also runs rule X live (EarlyExitWatch
 each close of the finest lower timeframe it sells the position if every lower timeframe
 says SELL. This one does change the position, with the same decision SymbolRunner.step
 makes for candles the watcher missed, so a restart can't change the trades.
+
+ManualClose sells a position when the panel asks for it (close_requests in paper.db).
 """
 import pandas as pd
 
 from kripto_bot import config
 from kripto_bot.core import lower_timeframes
-from kripto_bot.core.data import now_ms, timeframe_ms
+from kripto_bot.core.data import get_exchange, now_ms, timeframe_ms
 from kripto_bot.core.lower_timeframes import WATCH_TIMEFRAME, closed_candles, has_lower_timeframes
 
 
@@ -174,6 +176,63 @@ class EarlyExitWatch:
               f"all say SELL at {_fmt(t)} UTC: sold at the {self.fine_tf} open")
 
 
+def last_price(symbol):
+    return float(get_exchange().fetch_ticker(symbol)["last"])
+
+
+class ManualClose:
+    """Sells positions the panel asked to close, at the last traded price (with the usual
+    slippage and fee), recorded with reason MANUAL. Afterwards entries wait as after a
+    trailing exit, so the next close doesn't simply buy back."""
+
+    def __init__(self, runners, store, key, timeframe, price=last_price, fetch=closed_candles,
+                 clock=lambda: pd.Timestamp(now_ms(), unit="ms")):
+        self.by_symbol = {r.symbol: r for r in runners}
+        self.store, self.key, self.timeframe = store, key, timeframe
+        self.step = pd.Timedelta(milliseconds=timeframe_ms(timeframe))
+        self.price, self.fetch, self.clock = price, fetch, clock
+
+    def check(self):
+        for request_id, symbol in self.store.close_requests(self.key, self.timeframe):
+            try:
+                self._close(request_id, symbol)
+            except Exception as e:     # tried again next minute
+                print(f"[CLOSE ERROR] {symbol}: {type(e).__name__}: {e}")
+
+    def _finish(self, request_id, symbol, result):
+        with self.store.candle():
+            self.store.finish_close_request(request_id, result)
+        print(f"✋ [{symbol}] close request: {result}")
+
+    def _close(self, request_id, symbol):
+        r = self.by_symbol.get(symbol)
+        if r is None or r.last_time is None:
+            return self._finish(request_id, symbol, "not traded by this instance")
+        e = r.engine
+        if e.pending is not None and e.pending[0] == "EXIT" and e.position is not None:
+            return self._finish(request_id, symbol, f"already sold at the {self.timeframe} open")
+        if not r.exit_watchable():
+            return self._finish(request_id, symbol, "no position")
+        period = pd.Timestamp(r.last_time) + self.step
+        now = self.clock().floor("s")
+        if now >= period + self.step:
+            return                                        # the candle closed and isn't processed yet: next minute
+        open_ = None
+        if e.position is None:                            # bought at this candle's open: need that price
+            first = self.fetch(symbol, "1m", period)
+            first = first.loc[first["timestamp"] == period, "open"]
+            if first.empty:
+                return
+            open_ = float(first.iloc[0])
+        price = self.price(symbol)
+        with self.store.candle():
+            trade = e.exit_inside(period, open_, now, price, reason="MANUAL")
+            self.store.log_signal(r.key, r.timeframe, symbol, now, "SELL", None, price, None, "manual close from the panel")
+            self.store.save_state(symbol, r.key, r.timeframe, e.to_state(), r.last_time)
+            self.store.finish_close_request(request_id, f"sold at {trade.exit_price:.8g}")
+        print(f"✋ [{symbol}] closed from the panel at {trade.exit_price:.8g}")
+
+
 class Watches:
     def __init__(self, watches):
         self.watches = watches
@@ -185,7 +244,9 @@ class Watches:
 
 def for_instance(inst, runners, store):
     """The intraday watches an instance needs, or None."""
-    watches = []
+    if inst.mode != "paper":
+        return None
+    watches = [ManualClose(runners, store, inst.run_key, inst.timeframe)]
     if eligible(inst):
         watches.append(StopWatch(runners, store, inst.run_key, inst.timeframe))
         print("👀 Shadow stop on: open positions are checked against their stop every minute "
@@ -194,4 +255,4 @@ def for_instance(inst, runners, store):
         watches.append(EarlyExitWatch(runners, store, inst.timeframe))
         print(f"👀 Lower-timeframe exit on: {' + '.join(lower_timeframes.LOWER_TIMEFRAMES[inst.timeframe])} "
               "checked after each of their closes\n")
-    return Watches(watches) if watches else None
+    return Watches(watches)

@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS stop_events (
     est_fill REAL, detected_at TEXT,
     UNIQUE (strategy, timeframe, symbol, entry_time)
 );
+CREATE TABLE IF NOT EXISTS close_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, strategy TEXT, timeframe TEXT, symbol TEXT,
+    requested_at TEXT, done_at TEXT, result TEXT
+);
 """
 
 
@@ -172,6 +176,27 @@ class PaperStore:
     def stop_event_recorded(self, strategy, timeframe, symbol, entry_time):
         return self.conn.execute("SELECT 1 FROM stop_events WHERE strategy=? AND timeframe=? AND symbol=?"
                                  " AND entry_time=?", (strategy, timeframe, symbol, _t(entry_time))).fetchone() is not None
+
+    # ---------- manual closes (panel -> instance process) ----------
+    def request_close(self, strategy, timeframe, symbol):
+        """Ask the instance's process to sell `symbol` at the market. Returns False if a
+        request for it is already waiting."""
+        if self.conn.execute("SELECT 1 FROM close_requests WHERE strategy=? AND timeframe=? AND symbol=?"
+                             " AND done_at IS NULL", (strategy, timeframe, symbol)).fetchone():
+            return False
+        self.conn.execute("INSERT INTO close_requests (strategy, timeframe, symbol, requested_at) VALUES (?, ?, ?, ?)",
+                          (strategy, timeframe, symbol, pd.Timestamp.now(tz="UTC").isoformat()))
+        self.conn.commit()
+        return True
+
+    def close_requests(self, strategy, timeframe):
+        """Waiting requests: [(id, symbol)]."""
+        return self.conn.execute("SELECT id, symbol FROM close_requests WHERE strategy=? AND timeframe=?"
+                                 " AND done_at IS NULL ORDER BY id", (strategy, timeframe)).fetchall()
+
+    def finish_close_request(self, request_id, result):
+        self.conn.execute("UPDATE close_requests SET done_at=?, result=? WHERE id=?",
+                          (pd.Timestamp.now(tz="UTC").isoformat(), result, request_id))
 
     def last_rebalance(self, strategy, timeframe):
         row = self.conn.execute("SELECT MAX(time) FROM weights WHERE strategy=? AND timeframe=?",

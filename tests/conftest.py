@@ -51,6 +51,18 @@ def make_ohlcv(n=500, seed=0, start="2025-01-01", freq="5min"):
 
 
 @pytest.fixture(autouse=True)
+def no_live_prices(monkeypatch):
+    """The panel's current prices come from Binance; tests never ask it."""
+    from kripto_bot.app import reporting
+
+    def offline(symbols):
+        raise ConnectionError("no network in tests")
+
+    monkeypatch.setattr(reporting, "_fetch_tickers", offline)
+    monkeypatch.setattr(reporting, "_prices", {"at": 0.0, "symbols": frozenset(), "prices": {}})
+
+
+@pytest.fixture(autouse=True)
 def isolated_paths(tmp_path, monkeypatch):
     """Every file the app would write lands in tmp_path, never in runtime/ or results/."""
     from kripto_bot import config, instances, settings

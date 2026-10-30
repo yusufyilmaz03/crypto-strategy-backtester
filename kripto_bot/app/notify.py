@@ -294,10 +294,10 @@ class Watcher:
 
     # ----- supervisor hooks
     def started(self, names):
-        self.sender.send(f"▶️ kripto-bot supervisor started. Running: {', '.join(names) or 'no instances'}")
+        self.sender.send(f"▶️ Crypto Tester Bot supervisor started. Running: {', '.join(names) or 'no instances'}")
 
     def stopped(self):
-        self.sender.send("⏹ kripto-bot supervisor stopped. Bots are not running.")
+        self.sender.send("⏹ Crypto Tester Bot supervisor stopped. Bots are not running.")
 
     def service_exited(self, name, code, ran_s, stable_after_s):
         n = 1 if ran_s >= stable_after_s else self.failures.get(name, 0) + 1

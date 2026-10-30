@@ -4,10 +4,12 @@ import json
 import math
 import os
 import sqlite3
+import time
 
 import pandas as pd
 
 from kripto_bot import config, paths
+from kripto_bot.core import data
 from kripto_bot.core.metrics import max_drawdown_pct
 from kripto_bot.trading import store
 
@@ -80,9 +82,16 @@ def trades(inst, paper_db=None):
 
 def positions(inst, paper_db=None):
     if inst.mode == "paper":
-        return _query(paper_db or store.DB_FILE, "SELECT symbol, side, entry_time, entry_price, stop, qty FROM trades "
-                                "WHERE strategy=? AND timeframe=? AND exit_time IS NULL ORDER BY symbol",
-                      (inst.run_key, inst.timeframe))
+        db = paper_db or store.DB_FILE
+        pos = _query(db, "SELECT symbol, side, entry_time, entry_price, stop, qty FROM trades "
+                         "WHERE strategy=? AND timeframe=? AND exit_time IS NULL ORDER BY symbol",
+                     (inst.run_key, inst.timeframe))
+        # separate query: databases from before close_requests existed must still show positions
+        asked = _query(db, "SELECT symbol FROM close_requests WHERE strategy=? AND timeframe=? AND done_at IS NULL",
+                       (inst.run_key, inst.timeframe))
+        if not pos.empty:
+            pos["close_requested"] = pos["symbol"].isin(set(asked["symbol"]) if not asked.empty else set())
+        return pos
     return _query(inst.db_path, "SELECT * FROM positions ORDER BY symbol")
 
 
@@ -112,7 +121,7 @@ def summary(inst, paper_db=None):
     tr = trades(inst, paper_db)
     out = {"days": 0, "return_pct": None, "buy_hold_pct": None, "sharpe": None, "buy_hold_sharpe": None,
            "max_dd_pct": None, "buy_hold_max_dd_pct": None, "closed_trades": 0, "win_rate_pct": None,
-           "open_positions": int(len(positions(inst, paper_db))), "last_candle": None}
+           "open_positions": int(len(positions(inst, paper_db))), "last_candle": None, "realized_pnl": 0.0}
     if len(strat):
         out.update(days=int((strat.index[-1] - strat.index[0]).days), return_pct=float(strat.iloc[-1]),
                    sharpe=_sharpe(strat), max_dd_pct=max_drawdown_pct(1 + strat / 100),
@@ -129,7 +138,33 @@ def summary(inst, paper_db=None):
         out["closed_trades"] = int(len(closed))
         if len(closed):
             out["win_rate_pct"] = float((closed["pnl"] > 0).mean() * 100)
+            out["realized_pnl"] = float(closed["pnl"].sum())
     return out
+
+
+PRICE_TTL_S = 15
+_prices = {"at": 0.0, "symbols": frozenset(), "prices": {}}
+
+
+def _fetch_tickers(symbols):
+    return data.get_exchange().fetch_tickers(symbols)
+
+
+def current_prices(symbols, fetch=None, clock=time.time):
+    """Last traded price per symbol from Binance (one request for all, cached for
+    PRICE_TTL_S seconds). {} if Binance can't be reached: prices are a convenience."""
+    symbols = frozenset(symbols)
+    if not symbols:
+        return {}
+    if clock() - _prices["at"] < PRICE_TTL_S and symbols <= _prices["symbols"]:
+        return {s: _prices["prices"].get(s) for s in symbols}
+    try:
+        tickers = (fetch or _fetch_tickers)(sorted(symbols))
+    except Exception:
+        return {}
+    prices = {s: (tickers.get(s) or {}).get("last") for s in symbols}
+    _prices.update(at=clock(), symbols=symbols, prices=prices)
+    return prices
 
 
 def service_status(name, status_file=None, max_age_s=15):

@@ -56,6 +56,8 @@ async function load() {
           <div class="col metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
           <div class="col metric"><div class="label">Buy &amp; hold</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
           <div class="col metric"><div class="label">Max DD</div><div class="value">${KB.num(s.max_dd_pct, 1)}%</div></div>
+          <div class="col metric"><div class="label">Realized PnL</div><div class="value ${KB.sign(s.realized_pnl)}"
+            title="from closed trades, USDT">${KB.num(s.realized_pnl)}</div></div>
         </div>
         <div class="small text-secondary mt-2">${s.days} days · ${s.closed_trades} closed trades · ${s.open_positions} open · last candle ${KB.time(s.last_candle)}</div>
       </div></div></a></div>`;

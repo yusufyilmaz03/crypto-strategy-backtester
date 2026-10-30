@@ -66,6 +66,7 @@ async function load() {
     ["Return", i => `<span class="${KB.sign(i.summary.return_pct)}">${KB.pct(i.summary.return_pct)}</span>`],
     ["B&amp;H", i => `<span class="${KB.sign(i.summary.buy_hold_pct)}">${KB.pct(i.summary.buy_hold_pct)}</span>`],
     ["Max DD", i => KB.num(i.summary.max_dd_pct, 1) + "%"],
+    ["Realized PnL", i => `<span class="${KB.sign(i.summary.realized_pnl)}">${KB.num(i.summary.realized_pnl)}</span>`],
     ["Trades", i => i.summary.closed_trades],
     ["", i => actions(i)],
   ], "No instances yet.");

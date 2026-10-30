@@ -70,6 +70,7 @@ async function loadInstance() {
     metric("Sharpe", KB.num(s.sharpe), `buy &amp; hold ${KB.num(s.buy_hold_sharpe)}`) +
     metric("Max drawdown", KB.num(s.max_dd_pct, 1) + "%", `buy &amp; hold ${KB.num(s.buy_hold_max_dd_pct, 1)}%`) +
     metric("Closed trades", s.closed_trades, `win rate ${KB.num(s.win_rate_pct, 1)}%`) +
+    metric("Realized PnL", KB.num(s.realized_pnl) + " USDT", "from closed trades", KB.sign(s.realized_pnl)) +
     metric("Open positions", s.open_positions, `${s.days} days · last ${KB.time(s.last_candle)}`);
   document.getElementById("trades-tab").textContent = paper ? "Trades" : "Orders";
   document.getElementById("signals-tab").textContent = paper ? "Signals" : "Events";
@@ -92,22 +93,32 @@ async function loadTables() {
   const [pos, trades, signals, log, stops] = await Promise.all(["positions", "trades", "signals", "log", ...(paper ? ["stops"] : [])]
     .map(t => KB.api(`/api/instances/${N}/${t}`)));
   // Columns: [header, cell html, sort value]. Newest first by default; click a header to re-sort.
+  const change = r => r.price == null ? null : (r.price / r.entry_price - 1) * 100;
+  const unrealized = r => r.price == null ? null : r.qty * (r.price - r.entry_price);
+  const priceCols = [
+    ["Price", r => KB.num(r.price, 6), r => r.price],
+    ["Change", r => `<span class="${KB.sign(change(r))}">${KB.pct(change(r))}</span>`, change],
+    ["Unrealized", r => `<span class="${KB.sign(unrealized(r))}" title="before exit fee and slippage">${KB.num(unrealized(r))}</span>`, unrealized]];
   KB.table(document.getElementById("positions"), pos, paper ? [
     ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Side", r => KB.esc(r.side), r => r.side],
     ["Entry time", r => KB.time(r.entry_time), r => r.entry_time],
-    ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price], ["Qty", r => KB.num(r.qty, 6), r => r.qty],
-    ["Stop", r => KB.num(r.stop, 6), r => r.stop]] : [
+    ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price], ...priceCols,
+    ["Qty", r => KB.num(r.qty, 6), r => r.qty], ["Stop", r => KB.num(r.stop, 6), r => r.stop], ["", closeButton]] : [
     ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Qty", r => KB.num(r.qty, 8), r => r.qty],
     ["Cost", r => KB.num(r.cost), r => r.cost], ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price],
-    ["Entry time", r => KB.time(r.entry_time), r => r.entry_time]],
-    "No open positions.", paper ? [2, "desc"] : [4, "desc"]);
+    ...priceCols, ["Entry time", r => KB.time(r.entry_time), r => r.entry_time]],
+    "No open positions.", paper ? [2, "desc"] : [7, "desc"]);
   KB.table(document.getElementById("trades"), trades, paper ? [
     ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Entry", r => KB.time(r.entry_time), r => r.entry_time],
     ["Exit", r => KB.time(r.exit_time), r => r.exit_time ?? "9999"],          // open trades count as newest
     ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price],
     ["Exit price", r => KB.num(r.exit_price, 6), r => r.exit_price],
-    ["Return", r => `<span class="${KB.sign(r.return_pct)}">${KB.pct(r.return_pct)}</span>`, r => r.return_pct],
-    ["PnL", r => KB.num(r.pnl), r => r.pnl], ["Reason", r => KB.esc(r.reason ?? "open"), r => r.reason ?? "open"]] : [
+    ["Price", r => KB.num(r.price, 6), r => r.price],
+    ["Return", r => r.exit_time ? `<span class="${KB.sign(r.return_pct)}">${KB.pct(r.return_pct)}</span>`
+                                : `<span class="${KB.sign(change(r))}" title="open: change since entry">${KB.pct(change(r))}</span>`,
+     r => r.exit_time ? r.return_pct : change(r)],
+    ["PnL", r => KB.num(r.pnl), r => r.pnl], ["Reason", r => KB.esc(r.reason ?? "open"), r => r.reason ?? "open"],
+    ["", r => r.exit_time ? "" : closeButton({ ...r, close_requested: pos.some(p => p.symbol === r.symbol && p.close_requested) })]] : [
     ["Time", r => KB.time(r.created_at), r => r.created_at], ["Symbol", r => KB.esc(r.symbol), r => r.symbol],
     ["Side", r => KB.esc(r.side), r => r.side], ["Status", r => KB.esc(r.status), r => r.status],
     ["Filled", r => KB.num(r.filled, 8), r => r.filled], ["Avg price", r => KB.num(r.average, 6), r => r.average],
@@ -141,6 +152,23 @@ async function loadTables() {
   const logEl = document.getElementById("log");
   logEl.textContent = log.length ? [...log].reverse().join("\n")     // newest line on top
     : "No log yet (logs are written when the instance runs under run_all.py).";
+}
+function closeButton(r) {
+  if (r.close_requested) return '<span class="badge text-bg-warning" title="the instance sells within a minute">closing…</span>';
+  return `<button class="btn btn-sm btn-outline-danger py-0" onclick='closePosition(${JSON.stringify(r.symbol)})'
+    title="Sell at the market price now"><i class="bi bi-x-lg"></i> Close</button>`;
+}
+let armedClose = {};
+async function closePosition(symbol) {
+  if (Date.now() - (armedClose[symbol] || 0) > 5000) {
+    armedClose[symbol] = Date.now();
+    KB.toast(`Click Close again within 5 seconds to sell ${symbol} at the market price. ` +
+      "A manual close is recorded as MANUAL and counts in this instance's results.", "warning");
+    return;
+  }
+  try { await KB.api(`/api/instances/${N}/close`, { method: "POST", body: { symbol } });
+        KB.toast(`${symbol}: close requested; the instance sells within a minute`); refresh(); }
+  catch (e) { KB.toast(e.message, "danger"); }
 }
 async function refresh() { try { await loadInstance(); await Promise.all([loadChart(), loadTables()]); } catch (e) { KB.toast(e.message, "danger"); } }
 async function act(action) {

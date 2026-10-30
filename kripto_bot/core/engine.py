@@ -58,7 +58,7 @@ class Trade:
     fees: float
     pnl: float
     return_pct: float
-    reason: str                    # "SIGNAL" | "STOP" | "TRAIL" | "LTF" | "END"
+    reason: str                    # "SIGNAL" | "STOP" | "TRAIL" | "LTF" | "MANUAL" | "END"
     entry_rsi: float | None = None
 
 

@@ -25,6 +25,7 @@ from kripto_bot.app import reporting
 from kripto_bot import settings
 from kripto_bot.core import strategy
 from kripto_bot.core.lower_timeframes import LOWER_TIMEFRAMES
+from kripto_bot.trading import store
 
 app = Flask(__name__)
 
@@ -48,7 +49,7 @@ def _auth_guard():
     auth = request.authorization
     if auth and auth.password and hmac.compare_digest(auth.password.encode(), pw.encode()):
         return None
-    return Response("Login required", 401, {"WWW-Authenticate": 'Basic realm="kripto-bot"'})
+    return Response("Login required", 401, {"WWW-Authenticate": 'Basic realm="Crypto Tester Bot"'})
 
 
 @app.before_request
@@ -226,13 +227,42 @@ def api_instance_curves(name):
                     "buy_hold": [None if pd.isna(v) else round(float(v), 4) for v in bh]})
 
 
+def _with_prices(rows, open_row):
+    """Add the current price to the rows that are open positions."""
+    prices = reporting.current_prices({r["symbol"] for r in rows if open_row(r)})
+    for r in rows:
+        r["price"] = prices.get(r["symbol"]) if open_row(r) else None
+    return rows
+
+
+@app.route("/api/instances/<name>/close", methods=["POST"])
+def api_instance_close(name):
+    """Ask a paper instance's process to sell one position at the market."""
+    inst = _inst(name)
+    symbol = (request.get_json(silent=True) or {}).get("symbol")
+    if inst.mode != "paper":
+        raise ApiError("only paper positions can be closed from the panel (testnet: use the kill switch)")
+    if not inst.enabled:
+        raise ApiError("start the instance first: its process does the closing")
+    if symbol not in set(reporting.positions(inst).get("symbol", [])):
+        raise ApiError(f"{inst.name} has no open {symbol} position")
+    paper = store.PaperStore()
+    try:
+        if not paper.request_close(inst.run_key, inst.timeframe, symbol):
+            raise ApiError(f"closing {symbol} was already requested")
+    finally:
+        paper.close()
+    return jsonify({"requested": symbol})
+
+
 @app.route("/api/instances/<name>/<table>")
 def api_instance_table(name, table):
     inst = _inst(name)
     if table == "positions":
-        return jsonify(records(reporting.positions(inst)))
+        return jsonify(_with_prices(records(reporting.positions(inst)), lambda r: True))
     if table == "trades":
-        return jsonify(records(reporting.trades(inst).iloc[::-1]))
+        rows = records(reporting.trades(inst).iloc[::-1])
+        return jsonify(_with_prices(rows, lambda r: "exit_time" in r and r["exit_time"] is None) if inst.mode == "paper" else rows)
     if table == "signals":
         return jsonify(records(reporting.signals(inst)))
     if table == "stops":
@@ -312,7 +342,7 @@ def api_notify_test():
     if not sender.enabled:
         raise ApiError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not set in .env")
     try:
-        sender.send_now("✅ Test message from the kripto-bot panel.")
+        sender.send_now("✅ Test message from the Crypto Tester Bot panel.")
     except notify.TelegramError as e:
         raise ApiError(f"Telegram: {e}")
     return jsonify({"sent": True})
