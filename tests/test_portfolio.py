@@ -102,6 +102,21 @@ def test_only_held_symbols_pay_rebalance_costs(tmp_path, clock):
     assert any(held_at.values())
 
 
+def test_update_reports_failed_symbols(tmp_path, clock, monkeypatch):
+    inst, store, pf = _portfolio(tmp_path)
+    assert pf.update() == []
+    good = run_realtime.fetch_recent
+
+    def fetch(s, tf, limit=200, **kw):
+        if s == "WILD/USDT":
+            raise ConnectionError("network down")
+        return good(s, tf, limit)
+
+    monkeypatch.setattr(run_realtime, "fetch_recent", fetch)
+    clock["n"] += 1
+    assert pf.update() == ["WILD/USDT"]
+
+
 def test_sizing_is_paper_only(tmp_path):
     with pytest.raises(instances.InstanceError, match="paper"):
         instances.create({"name": "tn", "mode": "testnet", "sizing": "inverse_vol"}, str(tmp_path / "i.json"))

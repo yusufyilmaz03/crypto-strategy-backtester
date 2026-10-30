@@ -195,3 +195,75 @@ def test_rebuild_state_refuses_on_mismatch(tmp_path, feed, monkeypatch):
     with pytest.raises(run_realtime.RebuildError, match="equity differs"):
         run_realtime.rebuild_state(inst, store, log=lambda *a: None)
     assert store.load_state("X/USDT", inst.run_key, "5m") == before
+
+
+class FlakyRunner:
+    """update() fails the first `fails` times (no network after the computer wakes up)."""
+
+    def __init__(self, symbol, fails=0):
+        self.symbol, self.fails, self.calls = symbol, fails, 0
+
+    def update(self):
+        self.calls += 1
+        if self.calls <= self.fails:
+            raise ConnectionError("network down")
+
+
+class StopLoop(Exception):
+    pass
+
+
+def run_loop_until_sleep(monkeypatch, runners, start_ms, timeframe="1d", portfolio=None):
+    """Run run_loop until it goes to sleep for the next close; returns the retry waits (s)."""
+    clock = {"now": start_ms}
+    waits = []
+    monkeypatch.setattr(run_realtime, "now_ms", lambda: clock["now"])
+
+    def wait_until(target, on_minute=None):
+        waits.append((target - clock["now"]) / 1000)
+        clock["now"] = target
+
+    def sleep_until_next_close(tf, on_minute=None):
+        raise StopLoop
+
+    monkeypatch.setattr(run_realtime, "wait_until", wait_until)
+    monkeypatch.setattr(run_realtime, "sleep_until_next_close", sleep_until_next_close)
+    with pytest.raises(StopLoop):
+        run_realtime.run_loop(type("Inst", (), {"timeframe": timeframe}), runners, portfolio)
+    return waits
+
+
+DAY_MS = 86_400_000
+AFTER_CLOSE = 20_000 * DAY_MS + 5_000          # a few seconds after a daily close
+
+
+def test_failed_symbols_are_retried_soon_with_backoff(monkeypatch):
+    ok, flaky = FlakyRunner("OK/USDT"), FlakyRunner("BAD/USDT", fails=3)
+    waits = run_loop_until_sleep(monkeypatch, [ok, flaky], AFTER_CLOSE)
+    assert waits == [60, 120, 240]                 # then it worked and the loop went to sleep
+    assert flaky.calls == 4 and ok.calls == 1      # only the failed symbol is retried
+
+
+def test_no_retry_when_the_next_close_comes_first(monkeypatch):
+    flaky = FlakyRunner("BAD/USDT", fails=99)
+    waits = run_loop_until_sleep(monkeypatch, [flaky], AFTER_CLOSE + DAY_MS - 30_000)
+    assert waits == [] and flaky.calls == 1
+
+
+def test_retry_backoff_is_capped(monkeypatch):
+    flaky = FlakyRunner("BAD/USDT", fails=8)
+    waits = run_loop_until_sleep(monkeypatch, [flaky], AFTER_CLOSE)
+    assert waits == [60, 120, 240, 480, 960, 1800, 1800, 1800]
+
+
+def test_portfolio_failures_retry_the_whole_portfolio(monkeypatch):
+    class Portfolio:
+        calls = 0
+
+        def update(self):
+            self.calls += 1
+            return ["BAD/USDT"] if self.calls == 1 else []
+
+    p = Portfolio()
+    waits = run_loop_until_sleep(monkeypatch, [FlakyRunner("BAD/USDT")], AFTER_CLOSE, portfolio=p)
+    assert waits == [60] and p.calls == 2

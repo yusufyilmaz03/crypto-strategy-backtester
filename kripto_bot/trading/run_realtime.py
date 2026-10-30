@@ -24,6 +24,8 @@ from kripto_bot.trading.store import PaperStore, single_instance
 HISTORY = 300          # closed candles needed for indicator warm-up
 MAX_FETCH = 1000       # Binance kline limit per request
 CLOSE_DELAY_S = 3      # wait a few seconds after a candle closes before fetching
+RETRY_S = 60           # after a failed update, try again this soon (doubling up to MAX_RETRY_S)
+MAX_RETRY_S = 1800     # instead of waiting for the next close
 
 
 def _fmt_time(t):
@@ -169,12 +171,14 @@ class PortfolioRunner:
               + ", ".join(f"{s} {w * 100:.1f}%" for s, w in top))
 
     def update(self):
-        pending = {}
+        """Process the new candles of all symbols; returns the symbols that failed."""
+        pending, failed = {}, []
         for r in self.runners:
             try:
                 pending[r] = r.prepare()
             except Exception as e:
                 print(f"[ERROR] {r.symbol}: {e}")
+                failed.append(r.symbol)
         ready = [r for r in pending if r.history is not None and not r.history.empty]
         if self.store.last_rebalance(self.key, self.timeframe) is None and ready:
             # Start: split the capital by weight before the first candle is traded.
@@ -196,6 +200,26 @@ class PortfolioRunner:
                     self.rebalance(t, {r.symbol: r.history.set_index("timestamp")["close"].loc[:t] for r in have})
         for r in self.runners:
             r.report()
+        return failed
+
+
+def update_runners(runners, portfolio=None):
+    """Process new candles; returns the symbols whose update failed."""
+    if portfolio:
+        return portfolio.update()
+    failed = []
+    for r in runners:
+        try:
+            r.update()
+        except Exception as e:
+            print(f"[ERROR] {r.symbol}: {e}")
+            failed.append(r.symbol)
+    return failed
+
+
+def next_close_ms(timeframe):
+    step = timeframe_ms(timeframe)
+    return (now_ms() // step + 1) * step + CLOSE_DELAY_S * 1000
 
 
 def _next_minute():
@@ -206,10 +230,14 @@ def sleep_until_next_close(timeframe, check_every_s=30, on_minute=None):
     """Wait until the next candle close (+ CLOSE_DELAY_S), checking the wall clock in short
     steps: on macOS a single long sleep doesn't count time the computer spends asleep.
     on_minute, if given, is called a few seconds after each 1m close while waiting."""
-    step = timeframe_ms(timeframe)
-    target = (now_ms() // step + 1) * step + CLOSE_DELAY_S * 1000
+    target = next_close_ms(timeframe)
     print(f"\n⏳ Next {timeframe} candle closes in {(target - now_ms()) / 1000:.0f}s "
           f"({pd.Timestamp(target, unit='ms'):%Y-%m-%d %H:%M:%S} UTC)...\n")
+    wait_until(target, check_every_s, on_minute)
+
+
+def wait_until(target, check_every_s=30, on_minute=None):
+    """Wait until wall-clock time `target` (ms); see sleep_until_next_close."""
     minute = _next_minute()
     while (remaining := target - now_ms()) > 0:
         if on_minute is not None:
@@ -314,18 +342,29 @@ def main(instance_name="forward-v9", rebuild=False):
     if watch:
         print("👀 Shadow stop on: open positions are checked against their stop every minute "
               "(recorded only, docs/intrabar-watch.md)\n")
+    run_loop(inst, runners, portfolio, watch)
+
+
+def run_loop(inst, runners, portfolio=None, watch=None):
+    """Update at every close. When an update fails (e.g. no network right after the
+    computer wakes up), retry the failed symbols soon instead of a whole candle later."""
+    todo, retry_s = runners, RETRY_S
+    on_minute = watch.check if watch else None
     while True:
         if watch:
             watch.check()          # the last minutes of the candle that just closed
-        if portfolio:
-            portfolio.update()
-        else:
-            for r in runners:
-                try:
-                    r.update()
-                except Exception as e:
-                    print(f"[ERROR] {r.symbol}: {e}")
-        sleep_until_next_close(inst.timeframe, on_minute=watch.check if watch else None)
+        failed = update_runners(todo, portfolio)
+        retry_at = now_ms() + retry_s * 1000
+        if failed and retry_at < next_close_ms(inst.timeframe):
+            if not portfolio:
+                todo = [r for r in runners if r.symbol in failed]
+            print(f"🔁 {len(failed)} symbol(s) failed ({', '.join(failed[:5])}{', …' if len(failed) > 5 else ''}); "
+                  f"retrying in {retry_s}s")
+            wait_until(retry_at, on_minute=on_minute)
+            retry_s = min(retry_s * 2, MAX_RETRY_S)
+            continue
+        todo, retry_s = runners, RETRY_S
+        sleep_until_next_close(inst.timeframe, on_minute=on_minute)
 
 
 if __name__ == "__main__":
