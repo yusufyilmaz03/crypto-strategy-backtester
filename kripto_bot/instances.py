@@ -30,7 +30,8 @@ SIZINGS = {"equal": "Equal capital per symbol, never rebalanced",
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,59}$")
 SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing",
-                "lower_tf_entry", "lower_tf_exit", "manual_close"]
+                "lower_tf_entry", "lower_tf_exit", "lower_tf_sma", "trend_sma", "manual_close"]
+SMA_LENGTHS = (10, 250)    # trend filter and SMA mode; the paper bot fetches 300 candles
 
 
 class InstanceError(ValueError):
@@ -51,6 +52,8 @@ class Instance:
     sizing: str = "equal"              # key of SIZINGS
     lower_tf_entry: bool = False       # rule E: enter only if the lower timeframes say BUY too
     lower_tf_exit: bool = False        # rule X: exit inside the candle when they all say SELL
+    lower_tf_sma: int | None = None    # E and X read close vs SMA(n) on the lower timeframes; None: the strategy's signal
+    trend_sma: int | None = None       # trend filter: enter only above SMA(n) of the closes; None = off
     manual_close: bool = False         # positions can be closed from the panel (reason MANUAL)
     enabled: bool = False              # should run_all.py keep it running?
     run_key: str = ""                  # paper: key in paper.db; testnet: database file in runtime/
@@ -145,6 +148,22 @@ def validate(inst, existing):
             raise InstanceError("only paper instances can use lower-timeframe rules for now")
         if inst.timeframe not in LOWER_TIMEFRAMES:
             raise InstanceError(f"lower-timeframe rules need a {' or '.join(LOWER_TIMEFRAMES)} timeframe")
+    for f in ("lower_tf_sma", "trend_sma"):
+        value = getattr(inst, f)
+        if value in ("", None):
+            setattr(inst, f, None)
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise InstanceError(f"{f} must be a whole number or empty")
+        if value != int(value) or not SMA_LENGTHS[0] <= value <= SMA_LENGTHS[1]:
+            raise InstanceError(f"{f} must be a whole number from {SMA_LENGTHS[0]} to {SMA_LENGTHS[1]}")
+        setattr(inst, f, int(value))
+    if inst.lower_tf_sma and not (inst.lower_tf_entry or inst.lower_tf_exit):
+        raise InstanceError("the lower-timeframe SMA needs lower-timeframe entry or exit")
+    if inst.trend_sma and inst.mode != "paper":
+        raise InstanceError("only paper instances can use the trend filter for now")
     if inst.manual_close and inst.mode != "paper":
         raise InstanceError("only paper positions can be closed from the panel (testnet: use the kill switch)")
     if inst.sizing not in SIZINGS:

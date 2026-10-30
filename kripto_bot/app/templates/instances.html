@@ -37,7 +37,12 @@
         <div class="form-check"><input class="form-check-input" type="checkbox" id="ltf-entry">
           <label class="form-check-label" for="ltf-entry">Entry confirmation (E)</label></div>
         <div class="form-check"><input class="form-check-input" type="checkbox" id="ltf-exit">
-          <label class="form-check-label" for="ltf-exit">Early exit (X)</label></div></div>
+          <label class="form-check-label" for="ltf-exit">Early exit (X)</label></div>
+        <div class="input-group input-group-sm mt-1"><span class="input-group-text">SMA</span>
+          <input class="form-control" type="number" min="10" max="250" step="1" id="ltf-sma" placeholder="strategy signal">
+          <span class="input-group-text">{{ tip("Empty: E and X read the strategy's own signal on the lower timeframes. A length N: they read whether the close is above (BUY) or below (SELL) SMA(N) of those candles. With v9 fast=1, slow=50, N=50 is the same as empty.") }}</span></div></div>
+      <div class="col-md-6"><label class="form-label">Trend filter (SMA){{ tip("A BUY at the close enters only if that close is above SMA(N) of the closes, e.g. 200. Exits are not affected. Empty = off. Paper only.") }}</label>
+        <input class="form-control" type="number" min="10" max="250" step="1" id="trend-sma" placeholder="off"></div>
       <div class="col-md-6"><label class="form-label">Manual close{{ tip("Adds a Close button to open positions: the instance sells at the market within a minute. A manual close counts in this instance's results (reason MANUAL) and the next entry waits as after a trailing exit. Paper only.") }}</label>
         <div class="form-check"><input class="form-check-input" type="checkbox" id="manual-close">
           <label class="form-check-label" for="manual-close">Allow closing positions from the panel</label></div></div>
@@ -74,8 +79,9 @@ async function load() {
 }
 function setupText(i) {
   return [KB.params(i.params), `stop ${i.stop}`, i.trail && `trail ${i.trail}×ATR`,
-          i.sizing !== "equal" && `${i.sizing} sizing`, i.lower_tf_entry && "lower-TF entry",
-          i.lower_tf_exit && "lower-TF exit", i.manual_close && "manual close"].filter(Boolean).join(" · ");
+          i.sizing !== "equal" && `${i.sizing} sizing`, i.trend_sma && `trend SMA${i.trend_sma}`,
+          i.lower_tf_entry && "lower-TF entry", i.lower_tf_exit && "lower-TF exit",
+          i.lower_tf_sma && `lower-TF SMA${i.lower_tf_sma}`, i.manual_close && "manual close"].filter(Boolean).join(" · ");
 }
 function actions(i) {
   const n = encodeURIComponent(i.name);
@@ -126,6 +132,8 @@ function cloneInstance(encodedName) {
   renderParams(); modeChanged();                       // sets the mode's defaults first
   Object.entries(i.params).forEach(([k, v]) => { const el = form.querySelector(`[data-param="${k}"]`); if (el) el.value = v; });
   set("equity", i.equity); set("trail", i.trail ?? "");
+  if (!document.getElementById("ltf-sma").disabled) set("ltf-sma", i.lower_tf_sma ?? "");
+  if (!document.getElementById("trend-sma").disabled) set("trend-sma", i.trend_sma ?? "");
   if (!document.getElementById("stop").disabled) set("stop", i.stop);
   if (!document.getElementById("sizing").disabled) { set("sizing", i.sizing); sizingChanged(); }
   for (const [id, on] of [["ltf-entry", i.lower_tf_entry], ["ltf-exit", i.lower_tf_exit], ["manual-close", i.manual_close]]) {
@@ -169,6 +177,8 @@ function modeChanged() {
     (testnet ? "Testnet instances exit on signals only: exchange-side stops aren't implemented." : "none: exit on signals only."));
   if (testnet) document.getElementById("manual-close").checked = false;
   document.getElementById("manual-close").disabled = testnet;
+  if (testnet) document.getElementById("trend-sma").value = "";
+  document.getElementById("trend-sma").disabled = testnet;
   if (testnet) document.getElementById("stop").value = "none";
   document.getElementById("stop").disabled = testnet;
   if (testnet) document.getElementById("sizing").value = "equal";
@@ -185,6 +195,9 @@ function lowerChanged() {
     if (!ok) el.checked = false;
     el.disabled = !ok;
   }
+  const sma = document.getElementById("ltf-sma");
+  if (!ok) sma.value = "";
+  sma.disabled = !ok;
   KB.setTip("tip-ltf", ok
     ? `Uses ${lower.join(" + ")} with the same strategy. E: a BUY at the ${tf} close enters only if both say BUY too. ` +
       `X: sells inside the candle as soon as both say SELL (docs/intrabar-watch.md).`
@@ -206,6 +219,7 @@ document.getElementById("form").addEventListener("submit", async e => {
     trail: document.getElementById("trail").value || null,
     lower_tf_entry: document.getElementById("ltf-entry").checked, lower_tf_exit: document.getElementById("ltf-exit").checked,
     manual_close: document.getElementById("manual-close").checked,
+    lower_tf_sma: document.getElementById("ltf-sma").value || null, trend_sma: document.getElementById("trend-sma").value || null,
     equity: f.get("equity"), description: f.get("description"), params,
     symbols: document.getElementById("symbol-mode").value === "custom"
       ? f.get("symbols").split(/[\s,]+/).filter(Boolean) : null };

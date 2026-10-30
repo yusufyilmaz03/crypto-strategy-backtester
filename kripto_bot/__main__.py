@@ -21,6 +21,7 @@ COMMANDS = {
     "sizing": ("kripto_bot.analysis.sizing", "v9 inverse-volatility sizing vs equal weight"),
     "exits": ("kripto_bot.analysis.exits", "v9 exit variants (trailing exit, entry band) vs the baseline"),
     "lower-tf-test": ("kripto_bot.analysis.lower_tf", "v9 lower-timeframe rules E and X vs the baseline (--download first)"),
+    "filters-test": ("kripto_bot.analysis.filters", "v9 reliability filters (trend SMA, SMA mode, combinations) by their trades"),
     "forward-report": ("kripto_bot.analysis.forward_report", "forward-test metrics vs buy-and-hold"),
     "holdout-test": ("kripto_bot.analysis.holdout_test", "the one-off v9 holdout test (already run)"),
     "telegram-setup": ("kripto_bot.tools.telegram_setup", "find the Telegram chat id and send a test message"),

@@ -153,7 +153,7 @@ class EarlyExitWatch:
             self.decided.pop(r.symbol, None)
             if self.checked.get(r.symbol) == (period, latest):
                 return
-            frames = lower_timeframes.load_signals(r.symbol, self.timeframe, r.signal_fn, period, fetch=self.fetch)
+            frames = lower_timeframes.load_signals(r.symbol, self.timeframe, r.lower_signal_fn, period, fetch=self.fetch)
             self.checked[r.symbol] = (period, latest)
             first = frames[self.fine_tf]["open"].get(period)
             if first is None:

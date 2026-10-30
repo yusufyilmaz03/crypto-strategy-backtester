@@ -50,8 +50,10 @@ async function load() {
   cards.innerHTML = d.instances.map(i => {
     const s = i.summary;
     const setup = [i.strategy, KB.params(i.params), i.timeframe, `stop ${i.stop}`, i.trail && `trail ${i.trail}×ATR`,
-                   i.sizing !== "equal" && `${i.sizing} sizing`, i.lower_tf_entry && "lower-TF entry",
-                   i.lower_tf_exit && "lower-TF exit", i.manual_close && "manual close", `${i.symbols.length} symbols`]
+                   i.sizing !== "equal" && `${i.sizing} sizing`, i.trend_sma && `trend SMA${i.trend_sma}`,
+                   i.lower_tf_entry && "lower-TF entry", i.lower_tf_exit && "lower-TF exit",
+                   i.lower_tf_sma && `lower-TF SMA${i.lower_tf_sma}`, i.manual_close && "manual close",
+                   `${i.symbols.length} symbols`]
       .filter(Boolean).join(" · ");
     const about = KB.esc(setup) + (i.description ? `<br>${KB.esc(i.description)}` : "");
     return `<div class="col-md-6 col-xl-4"><a class="text-decoration-none" href="/instances/${encodeURIComponent(i.name)}">

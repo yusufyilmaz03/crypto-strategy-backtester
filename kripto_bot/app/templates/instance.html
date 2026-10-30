@@ -57,7 +57,7 @@ async function loadInstance() {
   const s = INST.summary, paper = INST.mode === "paper";
   document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}`;
   document.getElementById("setup-line").textContent =
-    `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.trail ? `trail ${INST.trail}×ATR · ` : ""}${INST.lower_tf_entry ? "lower-TF entry · " : ""}${INST.lower_tf_exit ? "lower-TF exit · " : ""}${INST.manual_close ? "manual close · " : ""}${INST.sizing === "equal" ? "" : `${INST.sizing} sizing · `}${INST.symbols.length} symbols · ` +
+    `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.trail ? `trail ${INST.trail}×ATR · ` : ""}${INST.trend_sma ? `trend SMA${INST.trend_sma} · ` : ""}${INST.lower_tf_entry ? "lower-TF entry · " : ""}${INST.lower_tf_exit ? "lower-TF exit · " : ""}${INST.lower_tf_sma ? `lower-TF SMA${INST.lower_tf_sma} · ` : ""}${INST.manual_close ? "manual close · " : ""}${INST.sizing === "equal" ? "" : `${INST.sizing} sizing · `}${INST.symbols.length} symbols · ` +
     (paper ? `${INST.equity} USDT per symbol` : `${INST.equity} USDT capital`);
   if (document.activeElement.id !== "description") document.getElementById("description").value = INST.description || "";
   document.getElementById("actions").innerHTML = INST.enabled

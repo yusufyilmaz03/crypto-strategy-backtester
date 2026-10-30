@@ -7,11 +7,13 @@ exit rules (E and X) read the timeframes in LOWER_TIMEFRAMES. Only closed candle
 returned, so a candle that is still forming can't leak into a decision.
 
 The paper bot (SymbolRunner.step) and the backtest (run_backtest below) take their
-decisions through the same functions: early_exit for X and entry_ok for E.
+decisions through the same functions: early_exit for X and entry_block for E and the
+trend filter (docs/v9-filters-test.md).
 Lower-timeframe frames are indexed by candle open time, with a 'signal' column.
 """
 import pandas as pd
 
+from kripto_bot.core import strategy
 from kripto_bot.core.data import drop_unclosed, fetch_range, timeframe_ms, to_datetime_index
 from kripto_bot.core.engine import Engine, Trade
 from kripto_bot.core.indicators import add_indicators
@@ -37,6 +39,23 @@ def closed_candles(symbol, timeframe, since, now=None, exchange=None):
 
 def _delta(timeframe):
     return pd.Timedelta(milliseconds=timeframe_ms(timeframe))
+
+
+def sma_signal(length):
+    """Signal function of the SMA mode: BUY while the close is above SMA(length) of the
+    closes, SELL while below. With length 50 it is v9's own signal (fast=1, slow=50)."""
+    def signals(df):
+        close = df["close"]
+        sma = close.rolling(length).mean()
+        return strategy._to_signals(df, close > sma, close < sma, warmup=length - 1)
+    return signals
+
+
+def trend_filter(df, length):
+    """Trend filter: True where the close is above SMA(length) of the closes, that close
+    included (False while there are fewer than `length` closes)."""
+    close = df["close"]
+    return close > close.rolling(length).mean()
 
 
 def with_signals(df, signal_fn):
@@ -115,27 +134,38 @@ def early_exit(engine, frames, period, open_, main_timeframe):
     return None if price is None else (t, float(price))
 
 
-def entry_ok(frames, signal, close_time):
-    """Rule E: may a BUY at the main close at `close_time` queue an entry?"""
-    return signal != "BUY" or all_say(frames, close_time, "BUY")
+def entry_block(signal, close_time, frames=None, above_trend=None):
+    """Why a BUY at the main close at `close_time` may not queue an entry, or None if it
+    may. frames: rule E's lower timeframes (None: E off); above_trend: the trend filter's
+    verdict for this close (None: filter off)."""
+    if signal != "BUY":
+        return None
+    if above_trend is not None and not above_trend:
+        return "below the trend SMA"
+    if frames is not None and not all_say(frames, close_time, "BUY"):
+        return "lower timeframes don't confirm"
+    return None
 
 
-def run_backtest(df, signals, frames, config=None, timeframe="1d", entry=False, exit=False, symbol=""):
-    """engine.run_backtest with rules E and/or X, taking each main candle the way the paper
-    bot does (SymbolRunner.step). frames: {lower timeframe: with_signals(...)}.
+def run_backtest(df, signals, frames, config=None, timeframe="1d", entry=False, exit=False, symbol="",
+                 trend=None):
+    """engine.run_backtest with rules E and/or X and the trend filter, taking each main
+    candle the way the paper bot does (SymbolRunner.step). frames: {lower timeframe:
+    with_signals(...)}; trend: trend_filter(df, n) or None.
     Returns (trades DataFrame, equity Series indexed by candle time)."""
     engine = Engine(config, symbol)
     step = _delta(timeframe)
     atr = df["ATR"] if "ATR" in df.columns else pd.Series(float("nan"), index=df.index)
     rsi = df["RSI"] if "RSI" in df.columns else pd.Series(float("nan"), index=df.index)
-    for t, o, h, lo, c, sig, a, r in zip(df["timestamp"], df["open"], df["high"], df["low"], df["close"],
-                                         signals, atr, rsi):
+    above = trend if trend is not None else pd.Series(None, index=df.index, dtype=object)
+    for t, o, h, lo, c, sig, a, r, up in zip(df["timestamp"], df["open"], df["high"], df["low"], df["close"],
+                                             signals, atr, rsi, above):
         if exit:
             x = early_exit(engine, frames, t, o, timeframe)
             if x is not None:
                 engine.exit_inside(t, o, *x)
-        ok = entry_ok(frames, sig, t + step) if entry else True
-        engine.on_bar(t, o, h, lo, c, sig, a, r, entry_ok=ok)
+        block = entry_block(sig, t + step, frames if entry else None, None if trend is None else bool(up))
+        engine.on_bar(t, o, h, lo, c, sig, a, r, entry_ok=block is None)
     if len(df):
         engine.finish(df["timestamp"].iloc[-1], float(df["close"].iloc[-1]))
     trades = pd.DataFrame([t.__dict__ for t in engine.trades], columns=list(Trade.__dataclass_fields__))

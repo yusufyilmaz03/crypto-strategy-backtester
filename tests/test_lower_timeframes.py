@@ -66,10 +66,11 @@ def market(monkeypatch):
     return m
 
 
-def _runner(store, entry=False, exit=False, stop=None):
+def _runner(store, entry=False, exit=False, stop=None, lower_sma=None, trend=None):
     cfg = EngineConfig(atr_multiplier=stop)
     return run_realtime.SymbolRunner("X/USDT", "1d", "v9", cfg, store, params={"fast": 1, "slow": 50},
-                                     label="run", lower_tf_entry=entry, lower_tf_exit=exit)
+                                     label="run", lower_tf_entry=entry, lower_tf_exit=exit,
+                                     lower_tf_sma=lower_sma, trend_sma=trend)
 
 
 def _trades(runner):
@@ -222,6 +223,47 @@ def test_backtest_makes_the_paper_bots_trades(market, tmp_path, entry, exit):
     assert len(equity) == DAYS - 1 - FIRST_DAY
 
 
+@pytest.mark.parametrize("kw", [{"trend": 100}, {"entry": True, "exit": True, "lower_sma": 120},
+                                {"trend": 100, "exit": True}])
+def test_backtest_makes_the_paper_bots_trades_with_sma_settings(market, tmp_path, kw):
+    """The trend filter and the SMA mode: live watcher, daily updates and the backtest agree."""
+    live, store, _ = _simulate(market, tmp_path, "live-sma", live=kw.get("exit", False), **kw)   # watcher only with X
+    daily, _, _ = _simulate(market, tmp_path, "daily-sma", **kw)
+    assert _trades(live) == _trades(daily)
+    v9 = lambda d: strategy.get_strategy("v9")(d, fast=1, slow=50)
+    lower_fn = ltf.sma_signal(kw["lower_sma"]) if kw.get("lower_sma") else v9
+    d = add_indicators(market.frames["1d"].iloc[:DAYS - 1].copy())
+    frames = {tf: ltf.with_signals(market.frames[tf].copy(), lower_fn) for tf in ("4h", "1h")}
+    trend = ltf.trend_filter(d, kw["trend"]) if kw.get("trend") else None
+    trades, _ = ltf.run_backtest(d.iloc[FIRST_DAY:], v9(d).iloc[FIRST_DAY:], frames, EngineConfig(atr_multiplier=None),
+                                 entry=kw.get("entry", False), exit=kw.get("exit", False),
+                                 trend=None if trend is None else trend.iloc[FIRST_DAY:])
+    closed = trades[trades.reason != "END"]
+    assert list(zip(closed.entry_time, closed.exit_time, closed.exit_price.round(8), closed.reason)) == _trades(daily)
+    if kw.get("trend"):
+        assert (store.read("signals").action == "ignored (below the trend SMA)").any()
+        sma = market.frames["1d"].close.rolling(kw["trend"]).mean()
+        closes = market.frames["1d"].set_index("timestamp").close
+        for t in live.engine.trades:          # every entry was decided at a close above the SMA
+            prev = t.entry_time - D
+            assert closes[prev] > sma[market.frames["1d"].timestamp == prev].iloc[0]
+
+
+def test_sma_mode_50_is_v9s_own_signal(market):
+    v9 = lambda d: strategy.get_strategy("v9")(d, fast=1, slow=50)
+    for tf in ("4h", "1h"):
+        f = market.frames[tf].copy()
+        assert ltf.with_signals(f, ltf.sma_signal(50)).signal.equals(ltf.with_signals(f, v9).signal)
+
+
+def test_entry_block_reasons():
+    frames, day = _frames(["SELL"] * 10, ["BUY"] * 25)
+    assert ltf.entry_block("SELL", day, frames, False) is None
+    assert ltf.entry_block("BUY", day, None, None) is None
+    assert ltf.entry_block("BUY", day, None, False) == "below the trend SMA"
+    assert ltf.entry_block("BUY", day, frames, True) == "lower timeframes don't confirm"
+
+
 def test_backtest_without_rules_is_the_engines(market):
     v9 = lambda d: strategy.get_strategy("v9")(d, fast=1, slow=50)
     daily = add_indicators(market.frames["1d"].copy())
@@ -248,6 +290,18 @@ def test_watcher_never_guesses_the_fill(market, tmp_path):
 
 
 # ---------------------------------------------------------------- settings
+def test_sma_settings_are_validated(tmp_path):
+    path = str(tmp_path / "i.json")
+    inst = instances.create({"name": "s200", "trend_sma": "200", "lower_tf_exit": True, "lower_tf_sma": 100}, path)
+    assert (inst.trend_sma, inst.lower_tf_sma) == (200, 100)
+    assert instances.create({"name": "plain", "trend_sma": ""}, path).trend_sma is None
+    for bad, match in [({"trend_sma": 5}, "10 to 250"), ({"trend_sma": 300}, "10 to 250"), ({"trend_sma": 20.5}, "whole"),
+                       ({"lower_tf_sma": 100}, "needs lower-timeframe"),
+                       ({"mode": "testnet", "trend_sma": 200}, "paper")]:
+        with pytest.raises(instances.InstanceError, match=match):
+            instances.create({"name": "bad", **bad}, path)
+
+
 def test_settings_are_validated(tmp_path):
     path = str(tmp_path / "i.json")
     inst = instances.create({"name": "e-x", "timeframe": "4h", "lower_tf_entry": True, "lower_tf_exit": "true"}, path)
