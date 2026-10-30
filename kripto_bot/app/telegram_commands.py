@@ -23,6 +23,7 @@ printed only when the supervisor runs in a terminal, so they don't fill the log.
 Only one program may read a bot's updates at a time: while the supervisor runs,
 `telegram-setup` gets a conflict error (and vice versa).
 """
+import html
 import json
 import sys
 import threading
@@ -41,7 +42,7 @@ MAX_POSITIONS = 40
 COMMANDS = [("status", "All instances at a glance"),
             ("instance", "Positions, signals and trades of one instance"),
             ("help", "What this bot can do")]
-HELP = ("Crypto Tester Bot\n"
+HELP = ("<b>Crypto Tester Bot</b>\n"
         "/status: all instances at a glance\n"
         "/instance: pick an instance for its positions, signals and trades\n"
         "/instance NAME: open one directly\n"
@@ -58,6 +59,47 @@ def _name(inst):
 
 def _date(t):
     return pd.Timestamp(t).strftime("%Y-%m-%d %H:%M") if t is not None and not pd.isna(t) else "?"
+
+
+def _e(text):
+    """Text for a message sent with parse_mode HTML."""
+    return html.escape(str(text), quote=False)
+
+
+def _missing(x):
+    return x is None or pd.isna(x)
+
+
+def _p1(x):
+    return "–" if _missing(x) else "0.0" if abs(x) < 0.05 else f"{x:+.1f}"
+
+
+def _price(x):
+    return "–" if _missing(x) else f"{x:.5g}"
+
+
+def _money(x):
+    return "–" if _missing(x) else f"{x:+.0f}" if abs(x) >= 100 else f"{x:+.2f}"
+
+
+def _base(symbol):
+    return symbol.removesuffix("/USDT")
+
+
+def _short(text, n):
+    return text if len(text) <= n else text[:n - 1] + "…"
+
+
+def _table(headers, rows, align=None):
+    """Rows of strings as a monospace table. align: "l" or "r" per column (default: the
+    first left, the others right). Phones show about 34 characters per line before
+    wrapping, so keep it narrow."""
+    align = align or "l" + "r" * (len(headers) - 1)
+    cells = [headers] + rows
+    widths = [max(len(r[k]) for r in cells) for k in range(len(headers))]
+    lines = [" ".join(c.ljust(w) if a == "l" else c.rjust(w) for c, w, a in zip(r, widths, align)).rstrip()
+             for r in cells]
+    return f"<pre>{_e(chr(10).join(lines))}</pre>"
 
 
 class CommandBot:
@@ -174,19 +216,19 @@ class CommandBot:
             pass
         try:
             self.call(self.token, "editMessageText",
-                      {"chat_id": self.chat_id, "message_id": msg["message_id"], "text": text[:notify.MAX_LEN],
+                      {"chat_id": self.chat_id, "message_id": msg["message_id"], "text": text, "parse_mode": "HTML",
                        "reply_markup": json.dumps({"inline_keyboard": keyboard})})
         except notify.TelegramError as e:
             if "not modified" not in str(e):     # Refresh with nothing new
                 raise
 
     def _send(self, text, keyboard=None):
-        params = {"chat_id": self.chat_id, "text": text[:notify.MAX_LEN], "disable_web_page_preview": "true"}
+        params = {"chat_id": self.chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": "true"}
         if keyboard:
             params["reply_markup"] = json.dumps({"inline_keyboard": keyboard})
         self.call(self.token, "sendMessage", params)
 
-    # ----- views: (text, inline keyboard)
+    # ----- views: (HTML text, inline keyboard)
     def view(self, kind, arg, msg=None):
         if kind == "l":
             return self._list()
@@ -199,7 +241,7 @@ class CommandBot:
         try:
             inst = instances.get(arg, self.instances_path)
         except instances.InstanceError:
-            return f"There is no instance named {arg}.", self._back()
+            return f"There is no instance named {_e(arg)}.", self._back()
         views = {"i": self._instance, "p": self._positions, "s": self._signals, "t": self._trades}
         return views[kind](inst) if kind in views else self._list()
 
@@ -219,16 +261,16 @@ class CommandBot:
     def _instance(self, inst):
         s = reporting.summary(inst, self.paper_db)
         state = reporting.service_status(inst.name)
-        lines = [f"{_name(inst)} ({notify._setup(inst)})",
-                 f"Process: {state['state']}{' (' + state['note'] + ')' if state.get('note') else ''}"]
+        lines = [f"<b>{_e(_name(inst))}</b>", _e(notify._setup(inst)),
+                 f"Process: {_e(state['state'])}{' (' + _e(state['note']) + ')' if state.get('note') else ''}"]
         if s["return_pct"] is None:
             lines.append("No data yet.")
         else:
             dd = f"max DD {s['max_dd_pct']:.1f}%" if s["max_dd_pct"] is not None else ""
             if s["buy_hold_max_dd_pct"] is not None:
-                dd += f" (B&H {s['buy_hold_max_dd_pct']:.1f}%)"
+                dd += f" (B&amp;H {s['buy_hold_max_dd_pct']:.1f}%)"
             win = f", win {s['win_rate_pct']:.0f}%" if s["win_rate_pct"] is not None else ""
-            lines += [f"{notify._pct(s['return_pct'])} vs B&H {notify._pct(s['buy_hold_pct'])} · {dd}",
+            lines += [f"<b>{notify._pct(s['return_pct'])}</b> vs B&amp;H {notify._pct(s['buy_hold_pct'])} · {dd}",
                       f"{s['days']} days · {s['open_positions']} open · {s['closed_trades']} closed{win}",
                       f"Realized PnL {s['realized_pnl']:+.2f} USDT"]
         if inst.manual_close:
@@ -241,29 +283,33 @@ class CommandBot:
     def _positions(self, inst):
         pos = reporting.positions(inst, self.paper_db)
         if pos.empty:
-            return f"{inst.name}: no open positions.", self._back(inst)
+            return f"<b>{_e(inst.name)}</b>: no open positions.", self._back(inst)
         prices = self.prices(set(pos["symbol"]))
-        lines = [f"{inst.name}: {len(pos)} open position(s)"]
-        closable = []
+        rows, stops, closable, requested = [], [], [], False
         for _, p in pos.head(MAX_POSITIONS).iterrows():
             now = prices.get(p["symbol"])
-            change = f" ({notify._pct((now / p['entry_price'] - 1) * 100)})" if now and p["entry_price"] else ""
-            line = (f"{p['symbol']}: entry {notify._num(p['entry_price'])} on {_date(p['entry_time'])}"
-                    f" · now {notify._num(now)}{change}")
-            if p.get("stop") is not None and not pd.isna(p.get("stop")):
-                line += f" · stop {notify._num(p['stop'])}"
+            change = (now / p["entry_price"] - 1) * 100 if now and p["entry_price"] else None
+            base = _base(p["symbol"])
             if p.get("close_requested"):
-                line += " · close requested"
+                requested = True
+                base += "*"
             elif inst.mode == "paper" and inst.manual_close:
                 closable.append(p["symbol"])
-            lines.append(line)
+            rows.append([base, _price(p["entry_price"]), _price(now), _p1(change)])
+            if p.get("stop") is not None and not pd.isna(p.get("stop")):
+                stops.append(f"{_base(p['symbol'])} {_price(p['stop'])}")
+        parts = [f"<b>{_e(inst.name)}</b> · {len(pos)} open", _table(["Symbol", "Entry", "Now", "Δ%"], rows)]
         if len(pos) > MAX_POSITIONS:
-            lines.append(f"… and {len(pos) - MAX_POSITIONS} more on the panel")
-        lines.append("Change: last price vs entry, before fees.")
-        buttons = [_button(f"Close {s.split('/')[0]}", f"c|{self._target(inst.name, s)}") for s in closable]
+            parts.append(f"… and {len(pos) - MAX_POSITIONS} more on the panel")
+        if stops:
+            parts.append("Stops: " + _e(", ".join(stops)))
+        if requested:
+            parts.append("* close requested")
+        parts.append("Δ%: last price vs entry, before fees.")
+        buttons = [_button(f"Close {_base(s)}", f"c|{self._target(inst.name, s)}") for s in closable]
         keyboard = [buttons[k:k + 3] for k in range(0, len(buttons), 3)]
         keyboard.append([_button("↻ Refresh", f"p|{inst.name}")] + self._back(inst)[0])
-        return "\n".join(lines), keyboard
+        return "\n".join(parts), keyboard
 
     def _target(self, name, symbol):
         key = (name, symbol)
@@ -275,7 +321,7 @@ class CommandBot:
     def _signals(self, inst):
         df = reporting.signals(inst, ROWS, self.paper_db)
         if df.empty:
-            return f"{inst.name}: no signals yet.", self._back(inst)
+            return f"<b>{_e(inst.name)}</b>: no signals yet.", self._back(inst)
         if inst.mode == "paper":
             rows = [f"{_date(r.candle_time)} {r.symbol} {r.signal} @ {notify._num(r.close)}: {r.action}"
                     for r in df.itertuples()]
@@ -283,27 +329,29 @@ class CommandBot:
             rows = [f"{_date(r.time)} {r.level}{' ' + r.symbol if r.symbol else ''}: {r.message}"
                     for r in df.itertuples()]
         title = "last signals" if inst.mode == "paper" else "last events"
-        return "\n".join([f"{inst.name}: {title} (newest first)"] + rows), self._back(inst)
+        return "\n".join([f"<b>{_e(inst.name)}</b> · {title} (newest first)"] + [_e(r) for r in rows]), self._back(inst)
 
     def _trades(self, inst):
         df = reporting.trades(inst, self.paper_db)
         if inst.mode == "paper" and not df.empty:
             df = df[df["exit_time"].notna()].sort_values("exit_time")
         if df.empty:
-            return f"{inst.name}: no closed trades yet.", self._back(inst)
+            return f"<b>{_e(inst.name)}</b>: no closed trades yet.", self._back(inst)
         df = df.tail(ROWS).iloc[::-1]
         if inst.mode == "paper":
-            rows = [f"{_date(r.exit_time)} {r.symbol} {notify._pct(r.return_pct)} "
-                    f"({r.reason or 'signal'}), PnL {r.pnl:+.2f}" for r in df.itertuples()]
-        else:
-            rows = [f"{_date(r.created_at)} {str(r.side).upper()} {r.symbol} {notify._num(r.filled)} "
-                    f"@ {notify._num(r.average)} [{r.status}]" for r in df.itertuples()]
-        title = "last closed trades" if inst.mode == "paper" else "last orders"
-        return "\n".join([f"{inst.name}: {title} (newest first)"] + rows), self._back(inst)
+            when = "%m-%d" if inst.timeframe == "1d" else "%d %H:%M"
+            rows = [[pd.Timestamp(r.exit_time).strftime(when), _base(r.symbol), _p1(r.return_pct), _money(r.pnl),
+                     r.reason or "SIGNAL"] for r in df.itertuples()]
+            body = _table(["Closed", "Symbol", "Ret%", "PnL", "Exit"], rows, "llrrl")
+            return f"<b>{_e(inst.name)}</b> · last closed trades (newest first)\n{body}", self._back(inst)
+        rows = [f"{_date(r.created_at)} {str(r.side).upper()} {r.symbol} {notify._num(r.filled)} "
+                f"@ {notify._num(r.average)} [{r.status}]" for r in df.itertuples()]
+        return "\n".join([f"<b>{_e(inst.name)}</b> · last orders (newest first)"] + [_e(r) for r in rows]), \
+            self._back(inst)
 
     def _confirm(self, target_id, name, symbol):
         self.audit(f"close {symbol} on {name}: asked for confirmation")
-        text = (f"Close {symbol} on {name} at the market now?\n"
+        text = (f"<b>Close {_e(symbol)} on {_e(name)} at the market now?</b>\n"
                 "The instance sells at the last price within about a minute; "
                 "the trade is recorded with reason MANUAL.")
         return text, [[_button("Yes, close", f"y|{target_id}"), _button("Cancel", f"p|{name}")]]
@@ -313,33 +361,40 @@ class CommandBot:
         asked = (msg or {}).get("edit_date") or (msg or {}).get("date", 0)
         if self.clock() - asked > CONFIRM_TTL_S:
             self.audit(f"close {symbol} on {name}: confirmed too late, not closed")
-            return f"Too late: {symbol} was not closed. Press Close again.", back
+            return f"Too late: {_e(symbol)} was not closed. Press Close again.", back
         try:
             manual_close.request(instances.get(name, self.instances_path), symbol, self.paper_db)
         except (manual_close.CloseRefused, instances.InstanceError) as e:
             self.audit(f"close {symbol} on {name}: refused ({e})")
-            return f"{symbol} not closed: {e}", back
+            return f"{_e(symbol)} not closed: {_e(e)}", back
         self.audit(f"close {symbol} on {name}: confirmed, request filed")
-        return (f"✋ Close of {symbol} requested. {name} sells it within about a minute; "
+        return (f"✋ Close of {_e(symbol)} requested. {_e(name)} sells it within about a minute; "
                 "the trade message follows."), back
 
     # ----- /status
     def status_text(self):
-        lines = [f"📊 Status {pd.Timestamp(self.clock(), unit='s', tz='UTC'):%Y-%m-%d %H:%M} UTC"]
-        for inst in instances.load_all(self.instances_path).values():
-            state = reporting.service_status(inst.name)["state"]
+        rows, down, stopped = [], [], []
+        items = instances.load_all(self.instances_path).values()
+        for inst in items:
             if not inst.enabled:
-                lines.append(f"⚪️ {_name(inst)}: stopped")
+                stopped.append(_name(inst))
                 continue
+            state = reporting.service_status(inst.name)["state"]
+            if state != "running":
+                down.append(f"{inst.name} ({state})")
             s = reporting.summary(inst, self.paper_db)
-            perf = ("no data yet" if s["return_pct"] is None else
-                    f"{notify._pct(s['return_pct'])} vs B&H {notify._pct(s['buy_hold_pct'])}")
-            lines.append(f"🟢 {_name(inst)} ({notify._setup(inst)}): {state}\n"
-                         f"  {perf} · {s['open_positions']} open")
-        if len(lines) == 1:
-            lines.append("No instances yet.")
-        lines.append(f"Kill switch: {notify.kill_state()}")
-        return "\n".join(lines)
+            rows.append([_short(inst.name, 15) + ("*" if inst.favorite else ""), _p1(s["return_pct"]),
+                         _p1(s["buy_hold_pct"]), str(s["open_positions"])])
+        parts = [f"<b>📊 Status {pd.Timestamp(self.clock(), unit='s', tz='UTC'):%Y-%m-%d %H:%M} UTC</b>"]
+        parts.append(_table(["Instance", "Ret%", "B&H%", "Open"], rows) if rows else "No running instances.")
+        if any(i.favorite for i in items if i.enabled):
+            parts.append("* favorite")
+        if down:
+            parts.append("Not running: " + _e(", ".join(down)))
+        if stopped:
+            parts.append("Stopped: " + _e(", ".join(stopped)))
+        parts.append(f"Kill switch: {notify.kill_state()}")
+        return "\n".join(parts)
 
 
 def from_config(log=print):

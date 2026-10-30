@@ -1,4 +1,5 @@
 import json
+import re
 
 import pandas as pd
 import pytest
@@ -103,8 +104,10 @@ def test_status(bot):
     open(notify.config.KILL_SWITCH_FILE, "w").close()
     _say(bot, "/status@CryptoTesterBot")
     text = bot.api.last()[0]
-    assert "🟢 fwd (paper · v9 · 1d): supervisor not running\n  no data yet · 1 open" in text
-    assert "⚪️ idle ⭐: stopped" in text and "Kill switch: block" in text
+    assert bot.api.sent("sendMessage")[-1]["parse_mode"] == "HTML"
+    assert re.search(r"<pre>Instance +Ret% +B&amp;H% +Open\n(.*\n)*fwd +– +– +1(\n|</pre>)", text)
+    assert "Not running: forward-v9 (supervisor not running), fwd (supervisor not running)" in text
+    assert "Stopped: testnet-v9, idle ⭐" in text and "Kill switch: block" in text
 
 
 def test_instance_views(bot):
@@ -119,18 +122,34 @@ def test_instance_views(bot):
     _press(bot, "i|fwd")
     assert bot.api.sent("answerCallbackQuery")
     text, buttons = bot.api.last()
-    assert text.startswith("fwd ⭐ (paper · v9") and "Manual close: on" in text
+    assert text.startswith("<b>fwd ⭐</b>\npaper · v9") and "Manual close: on" in text
     assert buttons[:3] == ["p|fwd", "s|fwd", "t|fwd"]
     _press(bot, "p|fwd")
     text, buttons = bot.api.last()
-    assert "X/USDT: entry 100 on 2026-10-20 00:00 · now 110 (+10.00%)" in text
-    assert "Y/USDT" not in text and [b for b in buttons if b.startswith("c|")] == ["c|1"]
+    assert re.search(r"\nX +100 110 \+10\.0</pre>", text)
+    assert "Y" not in text.split("<pre>")[1] and [b for b in buttons if b.startswith("c|")] == ["c|1"]
     _press(bot, "s|fwd")
     assert "X/USDT BUY @ 100: buy at the next open" in bot.api.last()[0]
     _press(bot, "t|fwd")
-    assert "Y/USDT +20.00% (SIGNAL), PnL +2.00" in bot.api.last()[0]
+    assert re.search(r"\n10-05 +Y +\+20\.0 +\+2\.00 SIGNAL</pre>", bot.api.last()[0])
     _press(bot, "i|gone")
     assert "no instance named gone" in bot.api.last()[0]
+
+
+def test_table():
+    assert telegram_commands._table(["Name", "Ret%"], [["a", "+1.0"], ["long-name", "-12.5"]]) == \
+        "<pre>Name       Ret%\na          +1.0\nlong-name -12.5</pre>"
+    assert telegram_commands._table(["A", "B"], [["x", "y"]], "ll") == "<pre>A B\nx y</pre>"
+
+
+def test_text_from_the_databases_is_escaped(bot):
+    inst = _instance()
+    store = PaperStore()
+    store.log_signal(inst.run_key, inst.timeframe, "X/USDT", pd.Timestamp("2026-10-30"), "SELL", 40.0, 90.0,
+                     "LONG", "close < SMA & exit")
+    store.conn.commit()
+    _press(bot, "s|fwd")
+    assert "close &lt; SMA &amp; exit" in bot.api.last()[0]
 
 
 def test_no_close_buttons_without_manual_close(bot):
