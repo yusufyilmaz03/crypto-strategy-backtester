@@ -155,14 +155,13 @@ class EarlyExitWatch:
                 return
             frames = lower_timeframes.load_signals(r.symbol, self.timeframe, r.signal_fn, period, fetch=self.fetch)
             self.checked[r.symbol] = (period, latest)
-            first = frames[self.fine_tf]
-            first = first.loc[first["timestamp"] == period, "open"]
-            if first.empty:
+            first = frames[self.fine_tf]["open"].get(period)
+            if first is None:
                 return
-            t = r.early_exit_time(period, float(first.iloc[0]), frames)
+            t = lower_timeframes.exit_time(r.engine, frames, period, float(first), self.timeframe)
             if t is None:
                 return
-            decided = self.decided[r.symbol] = (period, float(first.iloc[0]), t)
+            decided = self.decided[r.symbol] = (period, float(first), t)
         _, open_, t = decided
         minute = self.fetch(r.symbol, WATCH_TIMEFRAME, t)
         minute = minute.loc[minute["timestamp"] == t, "open"]

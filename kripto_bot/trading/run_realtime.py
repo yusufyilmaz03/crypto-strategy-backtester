@@ -110,23 +110,7 @@ class SymbolRunner:
         return df[new]
 
     def exit_watchable(self):
-        """Is there something rule X could sell in the forming main candle: a long position
-        (unless it is sold at the open anyway) or a long entry pending at the open?"""
-        e = self.engine
-        if e.pending is not None and e.pending[0] == "EXIT":
-            return False
-        if e.position is not None:
-            return e.position.side == "LONG"
-        return e.pending is not None and e.pending[0] == "ENTER" and e.pending[1] == "LONG"
-
-    def early_exit_time(self, period, open_, frames):
-        """Rule X for the main candle that opened at `period` (open `open_`): the time to
-        exit at, or None."""
-        if not self.exit_watchable():
-            return None
-        e = self.engine
-        stop = e.position.stop if e.position is not None else e.entry_stop(open_)
-        return lower_timeframes.early_exit_time(frames, period, self.timeframe, stop)
+        return lower_timeframes.watchable(self.engine)
 
     def exit_early(self, period, open_, time, price):
         """Sell at `price` at `time` inside the main candle that opened at `period`. Call
@@ -139,19 +123,15 @@ class SymbolRunner:
     def step(self, row):
         """Process one closed candle. Call inside the store's candle() transaction."""
         sig, period = row["signal"], row["timestamp"]
+        # the same decisions as lower_timeframes.run_backtest (the backtest of E and X)
         if self.lower_tf_exit:
             # the watcher normally exits during the candle; this covers what it missed
-            t = self.early_exit_time(period, row["open"], self.lower)
-            if t is not None:
-                fine = self.lower[lower_timeframes.LOWER_TIMEFRAMES[self.timeframe][-1]]
-                opens = fine.loc[fine["timestamp"] == t, "open"]
-                if len(opens):
-                    self.exit_early(period, row["open"], t, float(opens.iloc[0]))
-                else:
-                    print(f"⚠️ [{self.symbol}] lower-timeframe exit at {_fmt_time(t)} skipped: no candle at that time")
+            x = lower_timeframes.early_exit(self.engine, self.lower, period, row["open"], self.timeframe)
+            if x is not None:
+                self.exit_early(period, row["open"], *x)
         entry_ok = True
-        if self.lower_tf_entry and sig == "BUY":
-            entry_ok = lower_timeframes.all_say(self.lower, period + self.step_delta, "BUY")
+        if self.lower_tf_entry:
+            entry_ok = lower_timeframes.entry_ok(self.lower, sig, period + self.step_delta)
         self.engine.on_bar(period, row["open"], row["high"], row["low"],
                            row["close"], sig, row["ATR"], row["RSI"], entry_ok=entry_ok)
         if sig in ("BUY", "SELL"):

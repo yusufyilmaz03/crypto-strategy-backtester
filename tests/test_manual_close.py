@@ -21,8 +21,8 @@ class Runner:
         self.symbol, self.engine, self.last_time, self.key, self.timeframe = symbol, engine, last_time, key, timeframe
 
     def exit_watchable(self):
-        from kripto_bot.trading.run_realtime import SymbolRunner
-        return SymbolRunner.exit_watchable(self)
+        from kripto_bot.core.lower_timeframes import watchable
+        return watchable(self.engine)
 
 
 def _engine(position=True, pending=None, store=None):

@@ -102,7 +102,7 @@ def _simulate(market, tmp_path, name, every_days=1, live=False, live_fetch=None,
 # ---------------------------------------------------------------- pieces
 def test_signal_at_uses_the_last_closed_candle_only():
     frame = pd.DataFrame({"timestamp": pd.date_range("2026-01-01", periods=6, freq="4h"),
-                          "signal": ["-", "BUY", "SELL", "BUY", "SELL", "BUY"]})
+                          "signal": ["-", "BUY", "SELL", "BUY", "SELL", "BUY"]}).set_index("timestamp", drop=False)
     at = pd.Timestamp("2026-01-01 13:00")              # the 12:00 candle (BUY) is still forming
     assert ltf.signal_at(frame, "4h", at) == "SELL"    # 08:00-12:00
     assert ltf.signal_at(frame, "4h", pd.Timestamp("2026-01-01 12:00")) == "SELL"
@@ -115,7 +115,7 @@ def _frames(sig4, sig1, lows=None, day="2026-01-02"):
     f4 = pd.DataFrame({"timestamp": pd.date_range(d - 4 * pd.Timedelta(hours=4), periods=10, freq="4h"), "signal": sig4})
     f1 = pd.DataFrame({"timestamp": pd.date_range(d - H, periods=25, freq="1h"), "signal": sig1,
                        "open": 100.0, "low": lows if lows is not None else 99.0})
-    return {"4h": f4, "1h": f1}, d
+    return {"4h": f4.set_index("timestamp", drop=False), "1h": f1.set_index("timestamp", drop=False)}, d
 
 
 def test_early_exit_time_needs_both_timeframes():
@@ -197,15 +197,45 @@ def test_without_the_settings_nothing_changes(market, tmp_path):
 def test_entry_confirmation(market, tmp_path):
     plain, _, _ = _simulate(market, tmp_path, "plain")
     confirmed, store, _ = _simulate(market, tmp_path, "confirmed", entry=True)
-    frames = {}
-    for tf in ("4h", "1h"):
-        d = add_indicators(market.frames[tf].copy())
-        frames[tf] = d.assign(signal=strategy.get_strategy("v9")(d, fast=1, slow=50).values)
+    v9 = lambda d: strategy.get_strategy("v9")(d, fast=1, slow=50)
+    frames = {tf: ltf.with_signals(market.frames[tf].copy(), v9) for tf in ("4h", "1h")}
     for t in confirmed.engine.trades:
         assert ltf.all_say(frames, t.entry_time, "BUY")     # decided at the previous daily close
     assert _trades(confirmed) != _trades(plain)
     actions = store.read("signals").action
     assert (actions == "ignored (lower timeframes don't confirm)").any()
+
+
+@pytest.mark.parametrize("entry,exit", [(True, False), (False, True), (True, True)])
+def test_backtest_makes_the_paper_bots_trades(market, tmp_path, entry, exit):
+    """lower_timeframes.run_backtest (the archive test of E and X) takes the same
+    decisions as the paper bot, so the test measures what the bot does."""
+    paper, _, _ = _simulate(market, tmp_path, f"paper-{entry}-{exit}", entry=entry, exit=exit)
+    v9 = lambda d: strategy.get_strategy("v9")(d, fast=1, slow=50)
+    daily = add_indicators(market.frames["1d"].iloc[:DAYS - 1].copy())
+    frames = {tf: ltf.with_signals(market.frames[tf].copy(), v9) for tf in ("4h", "1h")}
+    sig = v9(daily)
+    trades, equity = ltf.run_backtest(daily.iloc[FIRST_DAY:], sig.iloc[FIRST_DAY:], frames,
+                                      EngineConfig(atr_multiplier=None), entry=entry, exit=exit)
+    closed = trades[trades.reason != "END"]
+    assert list(zip(closed.entry_time, closed.exit_time, closed.exit_price.round(8), closed.reason)) == _trades(paper)
+    assert len(equity) == DAYS - 1 - FIRST_DAY
+
+
+def test_backtest_without_rules_is_the_engines(market):
+    v9 = lambda d: strategy.get_strategy("v9")(d, fast=1, slow=50)
+    daily = add_indicators(market.frames["1d"].copy())
+    frames = {tf: ltf.with_signals(market.frames[tf].copy(), v9) for tf in ("4h", "1h")}
+    plain, eq1 = run_backtest(daily, v9(daily), EngineConfig(atr_multiplier=None))
+    same, eq2 = ltf.run_backtest(daily, v9(daily), frames, EngineConfig(atr_multiplier=None))
+    assert plain.drop(columns="trade_id").equals(same.drop(columns="trade_id")) and eq1.equals(eq2)
+
+
+def test_single_timeframe_exit_decides_at_its_own_closes():
+    frames, day = _frames(["BUY"] * 4 + ["BUY", "SELL", "SELL", "SELL", "SELL", "SELL"], ["BUY"] * 25)
+    only4h = {"4h": frames["4h"].assign(low=99.0, open=100.0)}
+    assert ltf.early_exit_time(only4h, day, "1d") == day + 8 * H      # the 04:00-08:00 candle says SELL
+    assert ltf.early_exit_time(frames, day, "1d") is None             # 1h never agrees
 
 
 def test_watcher_never_guesses_the_fill(market, tmp_path):

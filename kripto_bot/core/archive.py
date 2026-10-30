@@ -4,8 +4,9 @@
 
 The exchange API only serves pairs that trade today, so a backtest on today's
 symbols silently drops every coin that failed (survivorship bias). The archive
-keeps them. Candles are cached per symbol in data/archive/<interval>/; a symbol is
-downloaded again only when a newer month is available. Monthly files only cover
+keeps them. Candles are cached per symbol in data/archive/<interval>/ (gzipped below
+1d: a 1h history is 24 times larger); a symbol is downloaded again only when a newer
+month is available. Monthly files only cover
 finished months, so every candle is closed.
 """
 import io
@@ -75,7 +76,7 @@ def parse_klines(raw):
 
 
 def _cache_path(symbol, interval):
-    return os.path.join(ARCHIVE_DIR, interval, f"{symbol}.csv")
+    return os.path.join(ARCHIVE_DIR, interval, f"{symbol}.csv" + ("" if interval == "1d" else ".gz"))
 
 
 def load_symbol(symbol, interval="1d", refresh=True, get=_get, mapper=map):
@@ -104,7 +105,7 @@ def load_symbol(symbol, interval="1d", refresh=True, get=_get, mapper=map):
         return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "quote_volume"])
     df = (pd.concat(frames).drop_duplicates("timestamp").sort_values("timestamp").reset_index(drop=True))
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    df.to_csv(f"{path}.tmp", index=False)
+    df.to_csv(f"{path}.tmp", index=False, compression="gzip" if path.endswith(".gz") else None)
     os.replace(f"{path}.tmp", path)       # a killed download never leaves half a file
     return df
 

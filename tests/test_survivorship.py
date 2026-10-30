@@ -53,6 +53,26 @@ def test_load_symbol_downloads_missing_months_only(tmp_path, monkeypatch):
     assert sum(u.endswith(".zip") for u in calls) == 1          # only the new month
 
 
+def test_intraday_archive_is_gzipped(tmp_path, monkeypatch):
+    monkeypatch.setattr(archive, "ARCHIVE_DIR", str(tmp_path))
+    t = int(pd.Timestamp("2024-01-01").value // 10**6)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("x.csv", "".join(f"{t + k * 3_600_000},1,2,0.5,1.5,1,0,1,1,0,0,0\n" for k in range(3)))
+
+    def get(url):
+        if "?" in url:
+            return (b"<ListBucketResult><Key>data/spot/monthly/klines/X/1h/X-1h-2024-01.zip</Key>"
+                    b"<IsTruncated>false</IsTruncated></ListBucketResult>")
+        return buf.getvalue()
+
+    df = archive.load_symbol("XUSDT", "1h", get=get)
+    path = tmp_path / "1h" / "XUSDT.csv.gz"
+    assert path.exists() and path.read_bytes()[:2] == b"\x1f\x8b"          # gzip magic
+    cached = archive.load_symbol("XUSDT", "1h", refresh=False)
+    assert len(df) == len(cached) == 3 and cached.timestamp.iloc[1] == pd.Timestamp("2024-01-01 01:00")
+
+
 def test_reused_ticker_is_split_and_stablecoins_dropped():
     old = frame("2022-01-01", 30)
     new = frame("2022-03-01", 30, price=5)
