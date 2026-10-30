@@ -59,7 +59,7 @@ def test_close_request_sells_at_the_market_and_waits_to_reenter(tmp_path):
     req = store.read("close_requests").iloc[0]
     assert req.done_at is not None and req.result == "sold at 110"
     assert store.load_state("X/USDT", "run", "1d")[0]["position"] is None
-    assert store.read("signals").action.tolist() == ["manual close from the panel"]
+    assert store.read("signals").action.tolist() == ["manual close (panel or Telegram)"]
 
 
 def test_pending_entry_is_filled_at_the_open_then_sold(tmp_path):

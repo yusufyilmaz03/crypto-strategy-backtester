@@ -20,12 +20,11 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from kripto_bot import config
 from kripto_bot import instances, paths
-from kripto_bot.app import notify, playground
+from kripto_bot.app import manual_close, notify, playground
 from kripto_bot.app import reporting
 from kripto_bot import settings
 from kripto_bot.core import strategy
 from kripto_bot.core.lower_timeframes import LOWER_TIMEFRAMES
-from kripto_bot.trading import store
 
 app = Flask(__name__)
 
@@ -63,6 +62,7 @@ def _csrf_guard():
 @app.errorhandler(instances.InstanceError)
 @app.errorhandler(settings.SettingsError)
 @app.errorhandler(playground.PlaygroundError)
+@app.errorhandler(manual_close.CloseRefused)
 @app.errorhandler(ApiError)
 def _bad_request(e):
     return jsonify({"error": str(e)}), 400
@@ -233,20 +233,8 @@ def api_instance_curves(name):
 @app.route("/api/instances/<name>/close", methods=["POST"])
 def api_instance_close(name):
     """Ask a paper instance's process to sell one position at the market."""
-    inst = _inst(name)
     symbol = (request.get_json(silent=True) or {}).get("symbol")
-    if not inst.manual_close:
-        raise ApiError(f"{inst.name} was created without manual close")
-    if not inst.enabled:
-        raise ApiError("start the instance first: its process does the closing")
-    if symbol not in set(reporting.positions(inst).get("symbol", [])):
-        raise ApiError(f"{inst.name} has no open {symbol} position")
-    paper = store.PaperStore()
-    try:
-        if not paper.request_close(inst.run_key, inst.timeframe, symbol):
-            raise ApiError(f"closing {symbol} was already requested")
-    finally:
-        paper.close()
+    manual_close.request(_inst(name), symbol)
     return jsonify({"requested": symbol})
 
 

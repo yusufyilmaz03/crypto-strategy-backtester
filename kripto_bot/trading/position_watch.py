@@ -15,7 +15,7 @@ each close of the finest lower timeframe it sells the position if every lower ti
 says SELL. This one does change the position, with the same decision SymbolRunner.step
 makes for candles the watcher missed, so a restart can't change the trades.
 
-ManualClose sells a position when the panel asks for it (close_requests in paper.db).
+ManualClose sells a position when the panel or Telegram asks for it (close_requests in paper.db).
 """
 import pandas as pd
 
@@ -180,7 +180,7 @@ def last_price(symbol):
 
 
 class ManualClose:
-    """Sells positions the panel asked to close, at the last traded price (with the usual
+    """Sells positions the panel or Telegram asked to close, at the last traded price (with the usual
     slippage and fee), recorded with reason MANUAL. Afterwards entries wait as after a
     trailing exit, so the next close doesn't simply buy back."""
 
@@ -226,10 +226,10 @@ class ManualClose:
         price = self.price(symbol)
         with self.store.candle():
             trade = e.exit_inside(period, open_, now, price, reason="MANUAL")
-            self.store.log_signal(r.key, r.timeframe, symbol, now, "SELL", None, price, None, "manual close from the panel")
+            self.store.log_signal(r.key, r.timeframe, symbol, now, "SELL", None, price, None, "manual close (panel or Telegram)")
             self.store.save_state(symbol, r.key, r.timeframe, e.to_state(), r.last_time)
             self.store.finish_close_request(request_id, f"sold at {trade.exit_price:.8g}")
-        print(f"✋ [{symbol}] closed from the panel at {trade.exit_price:.8g}")
+        print(f"✋ [{symbol}] closed on request at {trade.exit_price:.8g}")
 
 
 class Watches:
