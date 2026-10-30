@@ -13,6 +13,12 @@ const KB = {
     return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   },
   num(v, d = 2) { return v == null || v === "" || isNaN(v) ? "–" : Number(v).toFixed(d); },
+  // USDT amounts: thousands separators; whole numbers from 1,000 up so they fit narrow cells.
+  money(v) {
+    if (v == null || v === "" || isNaN(v)) return "–";
+    const big = Math.abs(v) >= 1000;
+    return Number(v).toLocaleString("en-US", { minimumFractionDigits: big ? 0 : 2, maximumFractionDigits: big ? 0 : 2 });
+  },
   pct(v, d = 2) { return v == null || isNaN(v) ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d) + "%"; },
   sign(v) { return v == null || isNaN(v) ? "" : v >= 0 ? "text-success" : "text-danger"; },
   time(t) { return t ? String(t).replace("T", " ").slice(0, 16) : "–"; },

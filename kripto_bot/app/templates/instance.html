@@ -70,7 +70,7 @@ async function loadInstance() {
     metric("Sharpe", KB.num(s.sharpe), `buy &amp; hold ${KB.num(s.buy_hold_sharpe)}`) +
     metric("Max drawdown", KB.num(s.max_dd_pct, 1) + "%", `buy &amp; hold ${KB.num(s.buy_hold_max_dd_pct, 1)}%`) +
     metric("Closed trades", s.closed_trades, `win rate ${KB.num(s.win_rate_pct, 1)}%`) +
-    metric("Realized PnL", KB.num(s.realized_pnl) + " USDT", "from closed trades", KB.sign(s.realized_pnl)) +
+    metric("Realized PnL", KB.money(s.realized_pnl) + " USDT", "from closed trades", KB.sign(s.realized_pnl)) +
     metric("Open positions", s.open_positions, `${s.days} days · last ${KB.time(s.last_candle)}`);
   document.getElementById("trades-tab").textContent = paper ? "Trades" : "Orders";
   document.getElementById("signals-tab").textContent = paper ? "Signals" : "Events";

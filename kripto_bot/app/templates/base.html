@@ -17,19 +17,28 @@
     .navbar-brand i { color: var(--bs-warning); }
     .card-instance:hover { border-color: var(--bs-primary); }
     .setup-tip { text-decoration: underline dotted; cursor: help; }
-    /* instance card metrics: spread edge to edge; on extra-large screens two rows of two,
-       each metric's label and value on one line, sharing a baseline */
-    .metrics-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; }
-    @media (min-width: 1200px) {
-      .metrics-row > .metric { flex: 0 0 calc(50% - .5rem); display: flex; align-items: baseline; gap: .5rem; }
-      .metrics-row > .metric:nth-child(even) { justify-content: flex-end; }
+    /* Instance card metrics. The layout follows the card's own width (a container query),
+       not the screen's: cards are narrowest at 3 columns on xl, wider at 2 columns on lg.
+       Narrow card: two rows of two, the right column right-aligned. Wide card: one row of
+       four, the first and last at the edges. A fixed grid, so a long value never leaves
+       one metric alone on a second line. */
+    .card-instance .card-body { container-type: inline-size; }
+    .card-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1rem; }
+    .card-metrics .metric:nth-child(even) { text-align: end; }
+    .card-metrics .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-metrics .value { font-size: 1.2rem; white-space: nowrap; }
+    @container (min-width: 420px) {
+      .card-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .card-metrics .metric:nth-child(n) { text-align: center; }
+      .card-metrics .metric:first-child { text-align: start; }
+      .card-metrics .metric:last-child { text-align: end; }
     }
     #toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 1100; max-width: 380px; }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
-<nav class="navbar navbar-expand-md border-bottom mb-4 sticky-top bg-body">
+<nav class="navbar navbar-expand-lg border-bottom mb-4 sticky-top bg-body">
   <div class="container-xl">
     <a class="navbar-brand fw-semibold" href="/"><i class="bi bi-lightning-charge-fill"></i> Crypto Tester Bot</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
