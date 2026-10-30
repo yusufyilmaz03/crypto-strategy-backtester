@@ -73,6 +73,17 @@ def test_intraday_archive_is_gzipped(tmp_path, monkeypatch):
     assert len(df) == len(cached) == 3 and cached.timestamp.iloc[1] == pd.Timestamp("2024-01-01 01:00")
 
 
+def test_cache_with_mixed_timestamp_formats(tmp_path, monkeypatch):
+    monkeypatch.setattr(archive, "ARCHIVE_DIR", str(tmp_path))
+    (tmp_path / "1h").mkdir()
+    pd.DataFrame({"timestamp": ["2018-02-08 23:00:00.000", "2018-02-09 09:28:14.789", "2019-05-01 00:00:00"],
+                  "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0, "quote_volume": 1.0}) \
+        .to_csv(tmp_path / "1h" / "XUSDT.csv.gz", index=False)
+    df = archive.load_symbol("XUSDT", "1h", refresh=False)
+    assert pd.api.types.is_datetime64_any_dtype(df.timestamp)
+    assert df.timestamp.iloc[1] == pd.Timestamp("2018-02-09 09:28:14.789")
+
+
 def test_reused_ticker_is_split_and_stablecoins_dropped():
     old = frame("2022-01-01", 30)
     new = frame("2022-03-01", 30, price=5)

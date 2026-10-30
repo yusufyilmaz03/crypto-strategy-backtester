@@ -111,6 +111,17 @@ their forward data is not chosen after the fact: `v9-ltf-entry-1d` (E) and
 - **FAIL:** the variant is not used. Its paper instance is stopped and its records are
   kept; it is not restarted because of later paper results.
 
+## Data note (2026-10-30, after the download, before the test ran)
+
+The 4h and 1h data of all 391 symbols downloaded. After Binance's outage of
+2018-02-08 the archive's candles opened at hh:28:14.789 instead of on the hour for
+about two days (2018-02-09 to 2018-02-11): 258 hourly candles in 6 files and 18
+four-hour candles in 2 files. They are kept as they are. The rules look up candles at
+the hour (or 4h) boundary, so in those hours they find no candle and take no decision,
+as for any missing candle. Reading the cache now parses timestamps as ISO8601 (the
+milliseconds made pandas leave a whole column as text); the 1d files read exactly as
+before.
+
 ## Known limits
 
 - Decisions are taken at 1h closes; the paper bot takes them a few minutes after each

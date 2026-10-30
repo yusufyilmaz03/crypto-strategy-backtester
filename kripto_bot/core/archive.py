@@ -79,11 +79,20 @@ def _cache_path(symbol, interval):
     return os.path.join(ARCHIVE_DIR, interval, f"{symbol}.csv" + ("" if interval == "1d" else ".gz"))
 
 
+def _read_cache(path):
+    """A cached file. ISO8601 parsing: after Binance's outage of 2018-02-08 the archive's
+    candles opened at hh:28:14.789 for two days, so a file can mix timestamps with and
+    without milliseconds, which parse_dates leaves as text."""
+    df = pd.read_csv(path)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
+    return df
+
+
 def load_symbol(symbol, interval="1d", refresh=True, get=_get, mapper=map):
     """All archived candles of one pair (cached). Empty frame if the archive has none.
     mapper fetches the monthly files (pass an executor's map to download them in parallel)."""
     path = _cache_path(symbol, interval)
-    cached = pd.read_csv(path, parse_dates=["timestamp"]) if os.path.exists(path) else None
+    cached = _read_cache(path) if os.path.exists(path) else None
     if cached is not None and not refresh:
         return cached
     keys = [k for k in _listing(f"data/spot/monthly/klines/{symbol}/{interval}/", get) if k.endswith(".zip")]
