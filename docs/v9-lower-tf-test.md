@@ -134,3 +134,58 @@ before.
 - Two primary variants on data that has been used: with five criteria each a pass by
   luck is less likely than with one, but not ruled out. The neighbors and combinations
   are more trials and are reported only.
+
+## Result (run once, 2026-10-30)
+
+396 assets were in a universe at some point. Output: `results/lower_tf_results.csv`.
+**Validity check passed:** the baseline, H and T rows reproduce `results/exit_results.csv`.
+The paper instances `v9-ltf-entry-1d` and `v9-ltf-exit-1d` had been started before the
+run (2026-10-30, first daily candle 2026-10-30).
+
+| | B baseline | B: E | B: X | B: H | B: T | A baseline | A: E | A: X | A: H | A: T |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Return | +676.0% | +833.7% | +376.1% | +768.0% | +713.4% | −9.2% | −3.6% | +27.4% | −5.3% | +0.5% |
+| CAGR | 53.9% | 60.0% | 38.9% | 57.6% | 55.5% | −2.4% | −0.9% | 6.2% | −1.3% | 0.1% |
+| Sharpe | 1.09 | **1.17** | **1.24** | 1.14 | 1.14 | 0.14 | **0.17** | **0.39** | 0.16 | 0.19 |
+| Max drawdown | 55.1% | **51.8%** | **35.7%** | 50.6% | 52.4% | 64.0% | 64.1% ❌ | **32.6%** | 63.3% | 60.0% |
+| Exposure | 43.0% | 41.6% | 18.0% | 41.3% | 39.7% | 41.2% | 40.1% | 16.7% | 38.9% | 37.2% |
+| Entries | 1954 | 1679 | 3200 | 1489 | 1982 | 2242 | 1964 | 3437 | 1611 | 2280 |
+| X exits | – | – | 2799 | – | – | – | – | 2970 | – | – |
+| Sharpe, costs × 1.5 | 1.05 | **1.14** | **1.16** | 1.12 | 1.11 | 0.09 | **0.13** | **0.27** | 0.12 | 0.14 |
+
+- **E: FAIL.** Five of six criteria hold; the max drawdown in period A is 64.07%
+  against the baseline's 63.98%, 0.09 points above it. Bootstrap 90% CI of
+  Sharpe(E) − Sharpe(baseline): B [0.04, 0.13] (P(diff ≤ 0) = 0.0%), A [−0.01, 0.08]
+  (8.5%). Against H: B [−0.03, 0.08] (21.7%), A [−0.03, 0.05] (28.0%), so E would not
+  have been preferred over H either.
+- **X: PASS, preferred over T** (Sharpe 1.24 vs 1.14 in B, 0.39 vs 0.19 in A). Bootstrap
+  90% CI of Sharpe(X) − Sharpe(baseline): B [−0.24, 0.57] (P(diff ≤ 0) = 27.4%), A
+  [−0.17, 0.67] (16.5%). Against T: B [−0.28, 0.48] (34.5%), A [−0.20, 0.60] (20.6%).
+- Neighbors, Sharpe B / A (baseline 1.09 / 0.14): E 4h only 1.17 / 0.16, E 1h only
+  1.09 / 0.15; X 4h only 1.26 / 0.40, X 1h only −0.27 / −0.29 (5,600 exits per period:
+  hourly v9 alone sells almost every trade at once).
+- Combinations, descriptive: E + X 1.37 / 0.47 (max DD 31.2% / 32.0%); H + E + X 1.39 /
+  0.57 (28.1% / 29.6%); T + E + X 1.37 / 0.48 (in B identical to E + X: X always sells
+  before the trailing exit would).
+- With costs × 1.5, X makes 3 fewer exits: after an X exit of a trade with no daily close
+  yet, the re-entry level is its entry fill price, which includes slippage.
+
+Interpretation:
+
+- **E** is a small, consistent refinement in period B (its bootstrap interval is above
+  zero there) and close to nothing in A, where it fails the drawdown criterion by a
+  hair. It does about what H does: not distinguishable from it in either period. Per the
+  commitments it is not used, and the fail is not argued away: it was the rule fixed in
+  advance.
+- **X** is a different strategy profile, not a refinement. It sells most trades within
+  hours (2,800–3,000 X exits; exposure falls from about 42% to 17%), which cuts the
+  drawdown roughly in half in both periods and raises Sharpe by the point estimate. The
+  price is absolute return in the bull period: +376% instead of +676% in B. In the
+  sideways-to-down period A it turns −9% into +27%. The Sharpe gain is not established:
+  the bootstrap intervals are wide and include zero (P(diff ≤ 0) 17–27%), unlike the
+  drawdown cut, which is large in both periods. Most of the effect comes from the 4h
+  candles (X 4h only ≈ X); 1h alone is noise, as expected.
+- Both periods had been seen before, so this is supporting evidence. Per the commitments:
+  `v9-ltf-entry-1d` (E) is stopped and its records kept; `v9-ltf-exit-1d` (X) keeps running
+  and is compared with `forward-v9` at its 180-day evaluation. The combinations would
+  need their own test.

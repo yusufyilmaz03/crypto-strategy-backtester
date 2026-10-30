@@ -170,6 +170,15 @@ These details decide the results, so the pre-registration must use them as they 
   ATR with Wilder smoothing) can give slightly different lower-timeframe signals for a
   different fetch window. v9 uses only SMAs, which don't.
 
+## Status (2026-10-30)
+
+Steps 1-3 are done. The archive test (`docs/v9-lower-tf-test.md`) ran once: **E FAIL**
+(max drawdown 0.09 points above the baseline's in period A; otherwise a small gain, not
+distinguishable from H), **X PASS and preferred over T** (drawdown roughly halved in
+both periods, Sharpe up by the point estimate but with wide bootstrap intervals; much
+lower exposure and, in the bull period, much lower return). `v9-ltf-exit-1d` runs
+forward; `v9-ltf-entry-1d` is stopped.
+
 ## Order of work
 
 1. `core/lower_timeframes.py` and the shadow stop (`trading/position_watch.py`, table,
