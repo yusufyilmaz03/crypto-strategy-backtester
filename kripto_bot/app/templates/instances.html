@@ -10,7 +10,7 @@
 <div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" id="list"></table></div></div>
 
 <div class="modal fade" id="newModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" id="form">
-  <div class="modal-header"><h5 class="modal-title">New instance</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-header"><h5 class="modal-title" id="form-title">New instance</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body">
 {% macro tip(text, id="") -%}
 <i class="bi bi-question-circle text-secondary ms-1" role="button" tabindex="0"{% if id %} id="{{ id }}"{% endif %} data-bs-toggle="tooltip" data-bs-title="{{ text }}"></i>
@@ -53,9 +53,9 @@
 {% endblock %}
 {% block scripts %}
 <script>
-let META;
+let META, ROWS = [];
 async function load() {
-  const rows = await KB.api("/api/instances");
+  const rows = ROWS = await KB.api("/api/instances");
   KB.table(document.getElementById("list"), rows, [
     ["Name", i => `<a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a> ${KB.modeBadge(i.mode)}`],
     ["Status", i => KB.statusBadge(i.status, i.enabled)],
@@ -79,10 +79,12 @@ function setupText(i) {
 }
 function actions(i) {
   const n = encodeURIComponent(i.name);
-  return i.enabled
+  const clone = `<button class="btn btn-sm btn-outline-secondary" onclick="cloneInstance('${n}')"
+    title="Clone: a new instance with this setup"><i class="bi bi-copy"></i></button>`;
+  return clone + " " + (i.enabled
     ? `<button class="btn btn-sm btn-outline-secondary" onclick="act('${n}','restart')" title="Restart"><i class="bi bi-arrow-repeat"></i></button>
        <button class="btn btn-sm btn-outline-danger" onclick="act('${n}','stop')" title="Stop"><i class="bi bi-stop-fill"></i></button>`
-    : `<button class="btn btn-sm btn-outline-success" onclick="act('${n}','start')" title="Start"><i class="bi bi-play-fill"></i></button>`;
+    : `<button class="btn btn-sm btn-outline-success" onclick="act('${n}','start')" title="Start"><i class="bi bi-play-fill"></i></button>`);
 }
 async function act(name, action) {
   try { await KB.api(`/api/instances/${name}/action`, { method: "POST", body: { action } });
@@ -101,9 +103,44 @@ async function initForm() {
   document.getElementById("stop").innerHTML = Object.entries(META.stops)
     .map(([k, v]) => opt(k, v == null ? `${k} (exit on signals only)` : `${k} (ATR × ${v})`)).join("");
   document.getElementById("sizing").innerHTML = Object.entries(META.sizings).map(([k, v]) => opt(k, k)).join("");
-  renderParams(); modeChanged();
-  KB.initTips(document.getElementById("form"));
+  resetForm();
 }
+function resetForm() {
+  const form = document.getElementById("form");
+  form.reset();
+  document.getElementById("form-title").textContent = "New instance";
+  document.getElementById("form-error").classList.add("d-none");
+  document.getElementById("timeframe").value = "1d";
+  document.getElementById("strategy").value = "v9";
+  document.getElementById("symbols-box").classList.add("d-none");
+  renderParams(); modeChanged();
+  KB.initTips(form);
+}
+// Open the form filled with an existing instance's setup, to create a variant of it.
+function cloneInstance(encodedName) {
+  const i = ROWS.find(r => r.name === decodeURIComponent(encodedName));
+  if (!i) return;
+  resetForm();
+  const form = document.getElementById("form"), set = (id, v) => document.getElementById(id).value = v;
+  set("mode", i.mode); set("timeframe", i.timeframe); set("strategy", i.strategy);
+  renderParams(); modeChanged();                       // sets the mode's defaults first
+  Object.entries(i.params).forEach(([k, v]) => { const el = form.querySelector(`[data-param="${k}"]`); if (el) el.value = v; });
+  set("equity", i.equity); set("trail", i.trail ?? "");
+  if (!document.getElementById("stop").disabled) set("stop", i.stop);
+  if (!document.getElementById("sizing").disabled) { set("sizing", i.sizing); sizingChanged(); }
+  for (const [id, on] of [["ltf-entry", i.lower_tf_entry], ["ltf-exit", i.lower_tf_exit], ["manual-close", i.manual_close]]) {
+    const el = document.getElementById(id);
+    el.checked = !el.disabled && !!on;
+  }
+  set("symbol-mode", i.custom_symbols ? "custom" : "all");
+  document.getElementById("symbols-box").classList.toggle("d-none", !i.custom_symbols);
+  form.querySelector('[name="symbols"]').value = i.custom_symbols ? i.symbols.join(", ") : "";
+  form.querySelector('[name="description"]').value = i.description || "";
+  form.querySelector('[name="name"]').value = `${i.name}-copy`.slice(0, 40);
+  document.getElementById("form-title").textContent = `New instance · copy of ${i.name}`;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("newModal")).show();
+}
+document.getElementById("newModal").addEventListener("hidden.bs.modal", resetForm);
 function sizingChanged() {
   KB.setTip("tip-sizing", META.sizings[document.getElementById("sizing").value] || "");
 }
@@ -177,7 +214,6 @@ document.getElementById("form").addEventListener("submit", async e => {
     if (document.getElementById("start-now").checked)
       await KB.api(`/api/instances/${encodeURIComponent(body.name)}/action`, { method: "POST", body: { action: "start" } });
     bootstrap.Modal.getInstance(document.getElementById("newModal")).hide();
-    e.target.reset(); err.classList.add("d-none"); initForm();
     KB.toast(`Instance ${body.name} created`); load();
   } catch (ex) { err.textContent = ex.message; err.classList.remove("d-none"); }
 });

@@ -150,10 +150,10 @@ def test_close_endpoint(client):
     assert client.post("/api/instances/off/close", json={"symbol": "X/USDT"}, headers=H).status_code == 400
     assert client.post("/api/instances/forward-v9/close", json={"symbol": "X/USDT"}).status_code == 403   # CSRF
     pos = client.get("/api/instances/pp/positions").get_json()
-    assert pos[0]["close_requested"] is True and pos[0]["price"] is None   # no network in tests
+    assert pos[0]["close_requested"] is True
 
 
-def test_tables_show_current_prices(client, monkeypatch):
+def test_prices_come_separately_from_the_tables(client, monkeypatch):
     inst = instances.create({"name": "pp", "symbols": ["X/USDT", "Y/USDT"], "enabled": True})
     store = _open_position(inst)
     store.trade_opened(inst.run_key, inst.timeframe, "Y/USDT",
@@ -163,13 +163,13 @@ def test_tables_show_current_prices(client, monkeypatch):
     store.conn.commit()
     calls = []
     monkeypatch.setattr(reporting, "_fetch_tickers",
-                        lambda symbols: calls.append(symbols) or {"X/USDT": {"last": 111.0}, "Y/USDT": {"last": 13.0}})
-    trades = {r["symbol"]: r for r in client.get("/api/instances/pp/trades").get_json()}
-    assert trades["X/USDT"]["price"] == 111.0 and trades["Y/USDT"]["price"] is None   # closed: no price
-    assert client.get("/api/instances/pp/positions").get_json()[0]["price"] == 111.0
-    assert len(calls) == 1                                                # cached for both tables
-    summary = client.get("/api/instances/pp").get_json()["summary"]
-    assert summary["realized_pnl"] == 2.0
+                        lambda symbols: calls.append(symbols) or {s: {"last": 111.0} for s in symbols})
+    assert len(client.get("/api/instances/pp/trades").get_json()) == 2
+    assert client.get("/api/instances/pp/positions").get_json()[0]["symbol"] == "X/USDT"
+    assert calls == []                                   # the tables never wait for Binance
+    assert client.get("/api/instances/pp/prices").get_json() == {"X/USDT": 111.0}   # open positions only
+    assert calls == [["X/USDT"]]
+    assert client.get("/api/instances/pp").get_json()["summary"]["realized_pnl"] == 2.0
 
 
 def test_positions_survive_a_database_without_close_requests(tmp_path):

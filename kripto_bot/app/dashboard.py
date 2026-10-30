@@ -227,14 +227,6 @@ def api_instance_curves(name):
                     "buy_hold": [None if pd.isna(v) else round(float(v), 4) for v in bh]})
 
 
-def _with_prices(rows, open_row):
-    """Add the current price to the rows that are open positions."""
-    prices = reporting.current_prices({r["symbol"] for r in rows if open_row(r)})
-    for r in rows:
-        r["price"] = prices.get(r["symbol"]) if open_row(r) else None
-    return rows
-
-
 @app.route("/api/instances/<name>/close", methods=["POST"])
 def api_instance_close(name):
     """Ask a paper instance's process to sell one position at the market."""
@@ -259,10 +251,12 @@ def api_instance_close(name):
 def api_instance_table(name, table):
     inst = _inst(name)
     if table == "positions":
-        return jsonify(_with_prices(records(reporting.positions(inst)), lambda r: True))
+        return jsonify(records(reporting.positions(inst)))
+    if table == "prices":
+        # separate from the tables, which mustn't wait for Binance
+        return jsonify(reporting.current_prices(set(reporting.positions(inst).get("symbol", []))))
     if table == "trades":
-        rows = records(reporting.trades(inst).iloc[::-1])
-        return jsonify(_with_prices(rows, lambda r: "exit_time" in r and r["exit_time"] is None) if inst.mode == "paper" else rows)
+        return jsonify(records(reporting.trades(inst).iloc[::-1]))
     if table == "signals":
         return jsonify(records(reporting.signals(inst)))
     if table == "stops":

@@ -45,23 +45,32 @@ async function load() {
       ? '<span class="badge text-bg-danger">ENABLED</span>' : '<span class="badge text-bg-secondary"><i class="bi bi-lock"></i> locked</span>'}
      <br><span class="text-secondary">Live trading can only be enabled in config.py.</span>`;
 
-  document.getElementById("cards").innerHTML = d.instances.map(i => {
+  const cards = document.getElementById("cards");
+  KB.disposeTips(cards);
+  cards.innerHTML = d.instances.map(i => {
     const s = i.summary;
+    const setup = [i.strategy, KB.params(i.params), i.timeframe, `stop ${i.stop}`, i.trail && `trail ${i.trail}×ATR`,
+                   i.sizing !== "equal" && `${i.sizing} sizing`, i.lower_tf_entry && "lower-TF entry",
+                   i.lower_tf_exit && "lower-TF exit", i.manual_close && "manual close", `${i.symbols.length} symbols`]
+      .filter(Boolean).join(" · ");
+    const about = KB.esc(setup) + (i.description ? `<br>${KB.esc(i.description)}` : "");
     return `<div class="col-md-6 col-xl-4"><a class="text-decoration-none" href="/instances/${encodeURIComponent(i.name)}">
       <div class="card card-instance h-100"><div class="card-body">
-        <div class="d-flex justify-content-between mb-1"><h6 class="mb-0 text-body">${KB.esc(i.name)}</h6>
+        <div class="d-flex justify-content-between mb-3"><h6 class="mb-0 text-body">${KB.esc(i.name)}
+          <i class="bi bi-exclamation-circle text-secondary small ms-1" data-bs-toggle="tooltip" data-bs-html="true"
+             data-bs-title="${KB.esc(about)}"></i></h6>
           <span>${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}</span></div>
-        <div class="small text-secondary mb-3">${KB.esc(i.strategy)} · ${KB.esc(KB.params(i.params))} · ${KB.esc(i.timeframe)} · stop ${KB.esc(i.stop)}${i.trail ? ` · trail ${KB.esc(i.trail)}×ATR` : ""}${i.sizing === "equal" ? "" : ` · ${KB.esc(i.sizing)} sizing`} · ${i.symbols.length} symbols</div>
-        <div class="row text-center g-2">
-          <div class="col-6 col-sm-3 col-xl-6 metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
-          <div class="col-6 col-sm-3 col-xl-6 metric"><div class="label">Buy &amp; hold</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
-          <div class="col-6 col-sm-3 col-xl-6 metric"><div class="label">Max DD</div><div class="value">${KB.num(s.max_dd_pct, 1)}%</div></div>
-          <div class="col-6 col-sm-3 col-xl-6 metric"><div class="label">Realized PnL</div><div class="value ${KB.sign(s.realized_pnl)}"
+        <div class="metrics-row">
+          <div class="metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
+          <div class="metric"><div class="label">Buy &amp; hold</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
+          <div class="metric"><div class="label">Realized PnL</div><div class="value ${KB.sign(s.realized_pnl)}"
             title="from closed trades, USDT">${KB.num(s.realized_pnl)}</div></div>
+          <div class="metric"><div class="label">Max DD</div><div class="value">${KB.num(s.max_dd_pct, 1)}%</div></div>
         </div>
-        <div class="small text-secondary mt-2">${s.days} days · ${s.closed_trades} closed trades · ${s.open_positions} open · last candle ${KB.time(s.last_candle)}</div>
+        <div class="small text-secondary mt-2">${s.days} days · ${s.closed_trades} closed trades · ${s.open_positions} open</div>
       </div></div></a></div>`;
   }).join("") || '<p class="text-secondary">No instances yet.</p>';
+  KB.initTips(cards);
 }
 async function kill(mode) {
   if (mode === "flatten" && !confirmFlatten()) return;

@@ -17,6 +17,12 @@
     .navbar-brand i { color: var(--bs-warning); }
     .card-instance:hover { border-color: var(--bs-primary); }
     .setup-tip { text-decoration: underline dotted; cursor: help; }
+    /* instance card metrics: spread edge to edge; two rows of two on extra-large screens */
+    .metrics-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; }
+    @media (min-width: 1200px) {
+      .metrics-row > .metric { flex: 0 0 calc(50% - .5rem); }
+      .metrics-row > .metric:nth-child(even) { text-align: end; }
+    }
     #toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 1100; max-width: 380px; }
   </style>
   {% block head %}{% endblock %}
