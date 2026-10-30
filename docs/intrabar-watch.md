@@ -138,6 +138,38 @@ The three pieces share data access but not their trigger, so:
 - **Out of scope:** the trailing exit (close-based by design; checking it intraday would
   change the strategy) and testnet (no stops).
 
+## E and X as implemented (step 2)
+
+These details decide the results, so the pre-registration must use them as they are.
+
+- **Signals.** Each lower timeframe gets the instance's strategy and parameters on its own
+  closed candles (`lower_timeframes.load_signals`, 300 candles of warm-up). A decision at
+  time t reads the last candle of each lower timeframe that closed by t; if that candle
+  is missing, there is no decision (E doesn't enter, X doesn't exit).
+- **E.** At the main close, a BUY queues an entry only if every lower timeframe says BUY
+  (`Engine.on_bar(entry_ok=...)`). Otherwise the BUY is logged as "ignored (lower
+  timeframes don't confirm)" and the next main close decides again.
+- **X.** Checked after each close of the finest lower timeframe (1h for 1d, 15m for 4h)
+  strictly inside the main candle: when every lower timeframe says SELL, the position is
+  sold at the next open of the finest timeframe, with slippage and fees as usual (reason
+  `LTF`). It also covers an entry that fills at this candle's open. If a finest candle's
+  low reaches the stop before that close, X doesn't act and the stop exits at the main
+  close, as before (`lower_timeframes.early_exit_time`).
+- **Re-entry after X:** as after variant T's trailing exit: the next entry needs a main
+  candle whose signal was not BUY, or a close above the exited trade's highest close (its
+  entry price if it had no close yet). Without this v9 would buy back at the next close.
+- **Paper sells at once.** `EarlyExitWatch` checks a few minutes after each finest close
+  and closes the position immediately (`Engine.exit_inside`), so the panel and Telegram
+  show the exit when it happens. The fill price is the open of the 1m candle starting at
+  the exit time, the same first trade as the finest candle's open; the watcher waits for
+  that 1m candle rather than guess. Candles the watcher missed (restart, sleep) are
+  handled by the same decision in `SymbolRunner.step` with the finest candle's open, so
+  a bot that runs live, one that updates once a day and one that wakes up every few days
+  make the same trades (tested on synthetic data).
+- **Known limit:** a strategy whose indicators depend on where the data starts (RSI, EMA,
+  ATR with Wilder smoothing) can give slightly different lower-timeframe signals for a
+  different fetch window. v9 uses only SMAs, which don't.
+
 ## Order of work
 
 1. `core/lower_timeframes.py` and the shadow stop (`trading/position_watch.py`, table,

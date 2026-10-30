@@ -5,7 +5,8 @@ Instances live in instances.json (gitignored). The dashboard creates, starts, st
 and deletes them; run_all.py starts a process for every enabled instance. A paper
 instance stores its results in paper.db under its run key; a testnet instance has
 its own database file. An instance's trading setup (strategy, parameters, timeframe,
-symbols, stop, trailing exit) can't be changed after creation, so its results always describe one
+symbols, stop, trailing exit,
+lower-timeframe rules) can't be changed after creation, so its results always describe one
 setup; to try something else, create another instance.
 """
 import inspect
@@ -18,6 +19,7 @@ import pandas as pd
 
 from kripto_bot import config, paths
 from kripto_bot.core import strategy
+from kripto_bot.core.lower_timeframes import LOWER_TIMEFRAMES
 from kripto_bot.settings import SYMBOL_RE
 
 INSTANCES_FILE = paths.runtime("instances.json")
@@ -27,7 +29,8 @@ SIZINGS = {"equal": "Equal capital per symbol, never rebalanced",
            "inverse_vol": "Monthly rebalanced to 1/volatility weights (docs/v9-sizing-test.md)"}
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
-SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing"]
+SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing",
+                "lower_tf_entry", "lower_tf_exit"]
 
 
 class InstanceError(ValueError):
@@ -46,6 +49,8 @@ class Instance:
     symbols: list | None = None        # None = config.SYMBOLS
     equity: float = 1000.0             # paper: per symbol; testnet: total capital
     sizing: str = "equal"              # key of SIZINGS
+    lower_tf_entry: bool = False       # rule E: enter only if the lower timeframes say BUY too
+    lower_tf_exit: bool = False        # rule X: exit inside the candle when they all say SELL
     enabled: bool = False              # should run_all.py keep it running?
     run_key: str = ""                  # paper: key in paper.db; testnet: database file in runtime/
     description: str = ""
@@ -126,6 +131,18 @@ def validate(inst, existing):
             raise InstanceError("trailing exit must be between 0.5 and 20 ATR")
         if inst.mode != "paper":
             raise InstanceError("only paper instances can use a trailing exit for now")
+    for f in ("lower_tf_entry", "lower_tf_exit"):
+        value = getattr(inst, f)
+        if value in ("true", "false"):
+            value = value == "true"
+        if not isinstance(value, bool):
+            raise InstanceError(f"{f} must be true or false")
+        setattr(inst, f, value)
+    if inst.lower_tf_entry or inst.lower_tf_exit:
+        if inst.mode != "paper":
+            raise InstanceError("only paper instances can use lower-timeframe rules for now")
+        if inst.timeframe not in LOWER_TIMEFRAMES:
+            raise InstanceError(f"lower-timeframe rules need a {' or '.join(LOWER_TIMEFRAMES)} timeframe")
     if inst.sizing not in SIZINGS:
         raise InstanceError(f"sizing must be one of {', '.join(SIZINGS)}")
     if inst.sizing != "equal" and inst.mode != "paper":

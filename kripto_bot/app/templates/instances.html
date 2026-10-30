@@ -31,6 +31,12 @@
       <div class="col-md-6"><label class="form-label">Trailing exit (ATR ×)</label>
         <input class="form-control" type="number" min="0.5" max="20" step="any" id="trail" placeholder="off">
         <div class="form-text">Exit when the close falls this many ATRs below the highest close since entry. Empty = off.</div></div>
+      <div class="col-md-6"><label class="form-label">Lower timeframes</label>
+        <div class="form-check"><input class="form-check-input" type="checkbox" id="ltf-entry">
+          <label class="form-check-label" for="ltf-entry">Entry confirmation (E)</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" id="ltf-exit">
+          <label class="form-check-label" for="ltf-exit">Early exit (X)</label></div>
+        <div class="form-text" id="ltf-help"></div></div>
       <div class="col-md-6"><label class="form-label">Symbols</label>
         <select class="form-select" id="symbol-mode"><option value="all">All default symbols</option><option value="custom">Custom list</option></select></div>
       <div class="col-12 d-none" id="symbols-box"><textarea class="form-control font-monospace" name="symbols" rows="2" placeholder="BTC/USDT, ETH/USDT"></textarea></div>
@@ -54,7 +60,8 @@ async function load() {
     ["Mode", i => KB.modeBadge(i.mode)],
     ["Status", i => KB.statusBadge(i.status, i.enabled)],
     ["Setup", i => `${KB.esc(i.strategy)} <span class="text-secondary small">${KB.esc(KB.params(i.params))}</span>`],
-    ["TF", i => KB.esc(i.timeframe)],
+    ["TF", i => KB.esc(i.timeframe) + (i.lower_tf_entry || i.lower_tf_exit
+      ? ` <span class="badge text-bg-secondary" title="lower-timeframe rules">${[i.lower_tf_entry && "E", i.lower_tf_exit && "X"].filter(Boolean).join("+")}</span>` : "")],
     ["Symbols", i => i.symbols.length],
     ["Return", i => `<span class="${KB.sign(i.summary.return_pct)}">${KB.pct(i.summary.return_pct)}</span>`],
     ["B&amp;H", i => `<span class="${KB.sign(i.summary.buy_hold_pct)}">${KB.pct(i.summary.buy_hold_pct)}</span>`],
@@ -114,10 +121,24 @@ function modeChanged() {
   document.getElementById("sizing").disabled = testnet;
   if (testnet) document.getElementById("trail").value = "";
   document.getElementById("trail").disabled = testnet;
-  sizingChanged();
+  sizingChanged(); lowerChanged();
+}
+function lowerChanged() {
+  const tf = document.getElementById("timeframe").value, lower = META.lower_timeframes[tf];
+  const ok = lower && document.getElementById("mode").value === "paper";
+  for (const id of ["ltf-entry", "ltf-exit"]) {
+    const el = document.getElementById(id);
+    if (!ok) el.checked = false;
+    el.disabled = !ok;
+  }
+  document.getElementById("ltf-help").textContent = ok
+    ? `Uses ${lower.join(" + ")} with the same strategy: E enters only if both say BUY at the ${tf} close; ` +
+      `X sells inside the candle when both say SELL (docs/intrabar-watch.md).`
+    : `Paper instances on ${Object.keys(META.lower_timeframes).join(" or ")} only.`;
 }
 document.getElementById("strategy").addEventListener("change", renderParams);
 document.getElementById("mode").addEventListener("change", modeChanged);
+document.getElementById("timeframe").addEventListener("change", lowerChanged);
 document.getElementById("symbol-mode").addEventListener("change", e =>
   document.getElementById("symbols-box").classList.toggle("d-none", e.target.value !== "custom"));
 
@@ -129,6 +150,7 @@ document.getElementById("form").addEventListener("submit", async e => {
   const body = { name: f.get("name"), mode: f.get("mode"), strategy: f.get("strategy"), timeframe: f.get("timeframe"),
     stop: document.getElementById("stop").value, sizing: document.getElementById("sizing").value,
     trail: document.getElementById("trail").value || null,
+    lower_tf_entry: document.getElementById("ltf-entry").checked, lower_tf_exit: document.getElementById("ltf-exit").checked,
     equity: f.get("equity"), description: f.get("description"), params,
     symbols: document.getElementById("symbol-mode").value === "custom"
       ? f.get("symbols").split(/[\s,]+/).filter(Boolean) : null };

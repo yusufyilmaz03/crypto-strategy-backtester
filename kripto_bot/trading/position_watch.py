@@ -9,11 +9,17 @@ It never changes a position: the engine still closes it at the main close, at
 min(open, stop) as in the backtest, so paper stays identical to the backtest. The
 records show how far a fill seen minute by minute is from that assumption, and how
 long after the hit the bot noticed it.
+
+With the instance setting lower_tf_exit it also runs rule X live (EarlyExitWatch): after
+each close of the finest lower timeframe it sells the position if every lower timeframe
+says SELL. This one does change the position, with the same decision SymbolRunner.step
+makes for candles the watcher missed, so a restart can't change the trades.
 """
 import pandas as pd
 
 from kripto_bot import config
-from kripto_bot.core.data import timeframe_ms
+from kripto_bot.core import lower_timeframes
+from kripto_bot.core.data import now_ms, timeframe_ms
 from kripto_bot.core.lower_timeframes import WATCH_TIMEFRAME, closed_candles, has_lower_timeframes
 
 
@@ -108,3 +114,84 @@ class StopWatch:
         print(f"⚠️ [{r.symbol}] stop {stop:.8g} hit at {_fmt(m['timestamp'])} UTC (1m low {float(m['low']):.8g}), "
               f"est. fill {est:.8g} ({(est / stop - 1) * 100:+.2f}% vs stop); "
               f"the engine closes it at the {self.timeframe} close")
+
+
+class EarlyExitWatch:
+    """Rule X for the SymbolRunners of one instance (docs/intrabar-watch.md). After each
+    close of the finest lower timeframe inside the forming main candle, the position is
+    sold if every lower timeframe says SELL, at the open that follows: read from the 1m
+    candle starting at that time, which opens with the same trade as the finest candle."""
+
+    def __init__(self, runners, store, timeframe, fetch=closed_candles,
+                 clock=lambda: pd.Timestamp(now_ms(), unit="ms")):
+        self.runners, self.store, self.timeframe = runners, store, timeframe
+        self.step = pd.Timedelta(milliseconds=timeframe_ms(timeframe))
+        self.fine_tf = lower_timeframes.LOWER_TIMEFRAMES[timeframe][-1]
+        self.fine_step = pd.Timedelta(milliseconds=timeframe_ms(self.fine_tf))
+        self.fetch, self.clock = fetch, clock
+        self.checked = {}      # symbol -> (period, latest finest close evaluated)
+        self.decided = {}      # symbol -> (period, open, exit time) waiting for its fill price
+
+    def check(self):
+        for r in self.runners:
+            try:
+                self._check(r)
+            except Exception as e:     # watching must never stop the trading loop
+                print(f"[WATCH ERROR] {r.symbol}: {type(e).__name__}: {e}")
+
+    def _check(self, r):
+        if r.last_time is None or not r.exit_watchable():
+            return
+        period = pd.Timestamp(r.last_time) + self.step
+        latest = self.clock().floor(self.fine_step)      # the finest candles closed so far end here
+        if latest <= period:
+            return
+        decided = self.decided.get(r.symbol)
+        if decided is None or decided[0] != period:
+            self.decided.pop(r.symbol, None)
+            if self.checked.get(r.symbol) == (period, latest):
+                return
+            frames = lower_timeframes.load_signals(r.symbol, self.timeframe, r.signal_fn, period, fetch=self.fetch)
+            self.checked[r.symbol] = (period, latest)
+            first = frames[self.fine_tf]
+            first = first.loc[first["timestamp"] == period, "open"]
+            if first.empty:
+                return
+            t = r.early_exit_time(period, float(first.iloc[0]), frames)
+            if t is None:
+                return
+            decided = self.decided[r.symbol] = (period, float(first.iloc[0]), t)
+        _, open_, t = decided
+        minute = self.fetch(r.symbol, WATCH_TIMEFRAME, t)
+        minute = minute.loc[minute["timestamp"] == t, "open"]
+        if minute.empty:
+            return                                        # the 1m candle at t hasn't closed yet
+        with self.store.candle():
+            r.exit_early(period, open_, t, float(minute.iloc[0]))
+            self.store.save_state(r.symbol, r.key, r.timeframe, r.engine.to_state(), r.last_time)
+        del self.decided[r.symbol]
+        print(f"⬇️ [{r.symbol}] lower timeframes {'+'.join(lower_timeframes.LOWER_TIMEFRAMES[self.timeframe])} "
+              f"all say SELL at {_fmt(t)} UTC: sold at the {self.fine_tf} open")
+
+
+class Watches:
+    def __init__(self, watches):
+        self.watches = watches
+
+    def check(self):
+        for w in self.watches:
+            w.check()
+
+
+def for_instance(inst, runners, store):
+    """The intraday watches an instance needs, or None."""
+    watches = []
+    if eligible(inst):
+        watches.append(StopWatch(runners, store, inst.run_key, inst.timeframe))
+        print("👀 Shadow stop on: open positions are checked against their stop every minute "
+              "(recorded only, docs/intrabar-watch.md)\n")
+    if inst.lower_tf_exit:
+        watches.append(EarlyExitWatch(runners, store, inst.timeframe))
+        print(f"👀 Lower-timeframe exit on: {' + '.join(lower_timeframes.LOWER_TIMEFRAMES[inst.timeframe])} "
+              "checked after each of their closes\n")
+    return Watches(watches) if watches else None

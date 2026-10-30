@@ -14,7 +14,7 @@ from functools import partial
 import pandas as pd
 
 from kripto_bot import config
-from kripto_bot.core import sizing, strategy
+from kripto_bot.core import lower_timeframes, sizing, strategy
 from kripto_bot.core.data import fetch_recent, now_ms, timeframe_ms
 from kripto_bot.core.engine import Engine
 from kripto_bot.core.indicators import add_indicators
@@ -32,13 +32,15 @@ def _fmt_time(t):
     return pd.Timestamp(t).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def describe_action(engine, signal):
+def describe_action(engine, signal, entry_ok=True):
     """What the engine did with this candle's signal."""
     if engine.pending is None:
         if engine.position:
             return "ignored (already in position)"
         if signal == "BUY" and engine.reentry_above is not None:
-            return "ignored (waiting after a trailing exit)"
+            return "ignored (waiting after a trailing or lower-timeframe exit)"
+        if signal == "BUY" and not entry_ok:
+            return "ignored (lower timeframes don't confirm)"
         return "ignored (long-only)"
     if engine.pending[0] == "EXIT":
         return "trailing exit at next open" if engine.pending[1:] == ("TRAIL",) else "exit at next open"
@@ -46,9 +48,13 @@ def describe_action(engine, signal):
 
 
 class SymbolRunner:
-    def __init__(self, symbol, timeframe, strategy_key, engine_cfg, store, params=None, label=None):
+    def __init__(self, symbol, timeframe, strategy_key, engine_cfg, store, params=None, label=None,
+                 lower_tf_entry=False, lower_tf_exit=False):
         self.symbol = symbol
         self.timeframe = timeframe
+        self.step_delta = pd.Timedelta(milliseconds=timeframe_ms(timeframe))
+        self.lower_tf_entry, self.lower_tf_exit = lower_tf_entry, lower_tf_exit
+        self.lower = None                  # lower-timeframe candles and signals of the last prepare()
         self.key = label or strategy_key   # run name used in paper.db
         self.signal_fn = partial(strategy.get_strategy(strategy_key), **(params or {}))
         self.store = store
@@ -95,20 +101,63 @@ class SymbolRunner:
         new = df["timestamp"] > self.last_time
         if new.any():
             first_new = df.loc[new, "timestamp"].iloc[0]
+            if self.lower_tf_entry or self.lower_tf_exit:
+                self.lower = lower_timeframes.load_signals(self.symbol, self.timeframe, self.signal_fn, first_new,
+                                                           fetch=lower_timeframes.closed_candles)
             gap = (first_new - pd.Timestamp(self.last_time)) // pd.Timedelta(milliseconds=timeframe_ms(self.timeframe)) - 1
             if gap > 0:
                 print(f"⚠️ [{self.symbol}] {gap} candles missed beyond the fetch window; continuing")
         return df[new]
 
+    def exit_watchable(self):
+        """Is there something rule X could sell in the forming main candle: a long position
+        (unless it is sold at the open anyway) or a long entry pending at the open?"""
+        e = self.engine
+        if e.pending is not None and e.pending[0] == "EXIT":
+            return False
+        if e.position is not None:
+            return e.position.side == "LONG"
+        return e.pending is not None and e.pending[0] == "ENTER" and e.pending[1] == "LONG"
+
+    def early_exit_time(self, period, open_, frames):
+        """Rule X for the main candle that opened at `period` (open `open_`): the time to
+        exit at, or None."""
+        if not self.exit_watchable():
+            return None
+        e = self.engine
+        stop = e.position.stop if e.position is not None else e.entry_stop(open_)
+        return lower_timeframes.early_exit_time(frames, period, self.timeframe, stop)
+
+    def exit_early(self, period, open_, time, price):
+        """Sell at `price` at `time` inside the main candle that opened at `period`. Call
+        inside the store's candle() transaction."""
+        fine = lower_timeframes.LOWER_TIMEFRAMES[self.timeframe][-1]
+        if self.engine.exit_inside(period, open_, time, price) is not None:
+            self.store.log_signal(self.key, self.timeframe, self.symbol, time, "SELL", None, price, None,
+                                  f"lower-timeframe exit at the {fine} open")
+
     def step(self, row):
         """Process one closed candle. Call inside the store's candle() transaction."""
-        sig = row["signal"]
-        self.engine.on_bar(row["timestamp"], row["open"], row["high"], row["low"],
-                           row["close"], sig, row["ATR"], row["RSI"])
+        sig, period = row["signal"], row["timestamp"]
+        if self.lower_tf_exit:
+            # the watcher normally exits during the candle; this covers what it missed
+            t = self.early_exit_time(period, row["open"], self.lower)
+            if t is not None:
+                fine = self.lower[lower_timeframes.LOWER_TIMEFRAMES[self.timeframe][-1]]
+                opens = fine.loc[fine["timestamp"] == t, "open"]
+                if len(opens):
+                    self.exit_early(period, row["open"], t, float(opens.iloc[0]))
+                else:
+                    print(f"⚠️ [{self.symbol}] lower-timeframe exit at {_fmt_time(t)} skipped: no candle at that time")
+        entry_ok = True
+        if self.lower_tf_entry and sig == "BUY":
+            entry_ok = lower_timeframes.all_say(self.lower, period + self.step_delta, "BUY")
+        self.engine.on_bar(period, row["open"], row["high"], row["low"],
+                           row["close"], sig, row["ATR"], row["RSI"], entry_ok=entry_ok)
         if sig in ("BUY", "SELL"):
             side = self.engine.position.side if self.engine.position else None
             self.store.log_signal(self.key, self.timeframe, self.symbol, row["timestamp"], sig,
-                                  row["RSI"], row["close"], side, describe_action(self.engine, sig))
+                                  row["RSI"], row["close"], side, describe_action(self.engine, sig, entry_ok))
         t, eq = self.engine.equity_curve[-1]
         self.store.log_equity(self.key, self.timeframe, self.symbol, t, eq, row["close"])
         self.store.save_state(self.symbol, self.key, self.timeframe,
@@ -331,17 +380,16 @@ def main(instance_name="forward-v9", rebuild=False):
             raise SystemExit(f"❌ {e}")
         print(f"✅ {len(rebuilt)} symbol states verified and saved. Start the instance again.")
         return
-    runners = [SymbolRunner(s, inst.timeframe, inst.strategy, cfg, store,
-                            params=inst.params, label=inst.run_key) for s in inst.symbol_list]
+    runners = [SymbolRunner(s, inst.timeframe, inst.strategy, cfg, store, params=inst.params, label=inst.run_key,
+                            lower_tf_entry=inst.lower_tf_entry, lower_tf_exit=inst.lower_tf_exit)
+               for s in inst.symbol_list]
     resumed = sum(r.last_time is not None for r in runners)
     print(f"📡 Paper instance '{inst.name}': {inst.strategy} {inst.params} stop={inst.stop}, "
-          f"sizing {inst.sizing}, timeframe {inst.timeframe}, {len(runners)} symbols "
+          f"sizing {inst.sizing}, timeframe {inst.timeframe}, {len(runners)} symbols, "
+          f"lower-timeframe entry {'on' if inst.lower_tf_entry else 'off'}, exit {'on' if inst.lower_tf_exit else 'off'} "
           f"({resumed} resumed from paper.db)\n")
     portfolio = PortfolioRunner(runners, store, inst.run_key, inst.timeframe) if inst.sizing == "inverse_vol" else None
-    watch = position_watch.StopWatch(runners, store, inst.run_key, inst.timeframe) if position_watch.eligible(inst) else None
-    if watch:
-        print("👀 Shadow stop on: open positions are checked against their stop every minute "
-              "(recorded only, docs/intrabar-watch.md)\n")
+    watch = position_watch.for_instance(inst, runners, store)
     run_loop(inst, runners, portfolio, watch)
 
 

@@ -24,6 +24,7 @@ from kripto_bot.app import notify, playground
 from kripto_bot.app import reporting
 from kripto_bot import settings
 from kripto_bot.core import strategy
+from kripto_bot.core.lower_timeframes import LOWER_TIMEFRAMES
 
 app = Flask(__name__)
 
@@ -79,7 +80,8 @@ def _inst(name):
 
 def _instance_view(inst):
     d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop", "trail", "sizing",
-                                       "equity", "enabled", "description", "created_at", "run_key")}
+                                       "lower_tf_entry", "lower_tf_exit", "equity", "enabled", "description",
+                                       "created_at", "run_key")}
     d["symbols"] = inst.symbol_list
     d["custom_symbols"] = bool(inst.symbols)
     d["status"] = reporting.service_status(inst.name)
@@ -177,7 +179,7 @@ def api_strategies():
                             for n, v in strategy.PARAM_GRIDS.get(k, {}).items()}}
                        for k in strategy.STRATEGY_DISPATCH],
         "timeframes": instances.TIMEFRAMES, "modes": instances.MODES, "sizings": instances.SIZINGS,
-        "stops": dict(config.STOPLOSS_CONFIG),
+        "stops": dict(config.STOPLOSS_CONFIG), "lower_timeframes": LOWER_TIMEFRAMES,
         "symbols": list(config.SYMBOLS), "default_equity": config.INITIAL_EQUITY,
         "default_capital": config.TRADING_CAPITAL_USDT,
     })

@@ -58,7 +58,7 @@ class Trade:
     fees: float
     pnl: float
     return_pct: float
-    reason: str                    # "SIGNAL" | "STOP" | "TRAIL" | "END"
+    reason: str                    # "SIGNAL" | "STOP" | "TRAIL" | "LTF" | "END"
     entry_rsi: float | None = None
 
 
@@ -163,20 +163,41 @@ class Engine:
         return cost
 
     # ---------- main step ----------
-    def on_bar(self, time, open_, high, low, close, signal="-", atr=None, rsi=None):
-        """Process one closed candle and the signal computed at its close."""
+    def _fill_pending(self, time, open_):
+        """Fill the order queued on the previous candle at this candle's open."""
+        if self.pending is None:
+            return
+        order, self.pending = self.pending, None
+        if order[0] == "EXIT" and self.position is not None:
+            reason = order[1] if len(order) > 1 else "SIGNAL"
+            peak = self.position.high
+            self._close(open_, time, reason)
+            if reason == "TRAIL":
+                self.reentry_above = peak
+        elif order[0] == "ENTER" and self.position is None:
+            _, side, sig_atr, sig_rsi = order
+            self._open(side, open_, time, sig_atr, sig_rsi)
+
+    def exit_inside(self, period, open_, time, price, reason="LTF"):
+        """Close the long position inside the candle that opened at `period` (open `open_`),
+        at `price` at `time`, before on_bar processes that candle. The order queued on the
+        previous candle is filled at the open first, as on_bar would. Afterwards entries wait
+        as after a trailing exit (re-entry above the highest close, or the entry price if the
+        trade had no close yet). Returns the trade, or None if there was no long position."""
+        self._fill_pending(period, open_)
+        p = self.position
+        if p is None or p.side != "LONG":
+            return None
+        peak = p.high if p.high is not None else p.entry_price
+        trade = self._close(price, time, reason)
+        self.reentry_above = peak
+        return trade
+
+    def on_bar(self, time, open_, high, low, close, signal="-", atr=None, rsi=None, entry_ok=True):
+        """Process one closed candle and the signal computed at its close. entry_ok=False
+        keeps a BUY signal from queuing an entry (lower-timeframe entry confirmation)."""
         # 1) Fill the order queued on the previous candle at this open.
-        if self.pending is not None:
-            order, self.pending = self.pending, None
-            if order[0] == "EXIT" and self.position is not None:
-                reason = order[1] if len(order) > 1 else "SIGNAL"
-                peak = self.position.high
-                self._close(open_, time, reason)
-                if reason == "TRAIL":
-                    self.reentry_above = peak
-            elif order[0] == "ENTER" and self.position is None:
-                _, side, sig_atr, sig_rsi = order
-                self._open(side, open_, time, sig_atr, sig_rsi)
+        self._fill_pending(time, open_)
 
         # 2) Stop-loss against this candle's range.
         p = self.position
@@ -200,7 +221,7 @@ class Engine:
             self.reentry_above = None
         trail = self.config.trail_atr
         if p is None:
-            if signal == "BUY" and self.reentry_above is None:
+            if signal == "BUY" and self.reentry_above is None and entry_ok:
                 self.pending = ("ENTER", "LONG", atr, rsi)
             elif signal == "SELL" and self.config.allow_short:
                 self.pending = ("ENTER", "SHORT", atr, rsi)
