@@ -6,6 +6,9 @@
 3. python -m kripto_bot telegram-setup  → lists the chats that wrote to the bot.
 4. Put your chat id in .env as TELEGRAM_CHAT_ID and run the command again: it
    sends a test message.
+
+Stop the supervisor first: it reads the bot's updates for the Telegram commands, and
+only one program may do that at a time.
 """
 import sys
 

@@ -204,6 +204,10 @@ The supervisor can send Telegram messages: opened and closed positions, testnet 
 
 Trade messages, the daily summary and its hour can be switched on the Settings page without a restart. Errors, crashes and the kill switch are always reported.
 
+The bot also answers commands from that chat (and no other): `/status` lists every instance, `/instance` opens one with buttons for its positions, signals and trades. Instances with manual close get a Close button per position; it asks for confirmation and then files the same request as the panel's Close button. While the supervisor runs it reads the bot's updates, so stop it before running `telegram-setup`.
+
+**The panel on a phone:** with [Tailscale](https://tailscale.com) on the Mac and the phone, run `tailscale serve --bg 5002` on the Mac and open the `https://….ts.net` address it prints. Only your own devices can reach it; set `DASHBOARD_PASSWORD` anyway. Details in `docs/telegram-commands-and-mobile.md`.
+
 ## Notes and limitations
 
 - Each instance keeps its own state; the dashboard only accepts changes to an instance's description and running state, so results always belong to one setup.

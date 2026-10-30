@@ -27,7 +27,7 @@ import time
 import pandas as pd
 
 from kripto_bot import config, instances, paths
-from kripto_bot.app import notify
+from kripto_bot.app import notify, telegram_commands
 from kripto_bot.trading.store import AlreadyRunning, single_instance
 
 LOG_DIR = paths.LOG_DIR
@@ -255,16 +255,22 @@ def main():
         subprocess.Popen(["caffeinate", "-i", "-s", "-w", str(os.getpid())])
     sender = notify.from_config()
     watcher = notify.Watcher(sender) if sender.enabled else None
+    commands = telegram_commands.from_config() if sender.enabled else None
     sup = Supervisor(with_dashboard=not a.no_dashboard, watcher=watcher, echo=not a.quiet)
     print(f"▶️  Supervisor started (logs in {LOG_DIR}). Instances follow runtime/instances.json; "
           "Ctrl+C stops everything.")
-    print("🔔 Telegram notifications on.\n" if watcher else
+    print("🔔 Telegram notifications and commands on.\n" if watcher else
           "🔕 Telegram notifications off (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set in .env).\n")
     signal.signal(signal.SIGTERM, _raise_interrupt)   # `kill` stops cleanly too
+    if commands:
+        commands.start()
     try:
         sup.run()
     except KeyboardInterrupt:
         print("\n⏹  Stopping...")
+    finally:
+        if commands:
+            commands.stop()
 
 
 if __name__ == "__main__":
