@@ -70,7 +70,7 @@ def _instance(name="fwd", manual_close=True, enabled=True, symbols=("X/USDT", "Y
     store.trade_closed(Trade(f"u-{name}", "Y/USDT", "LONG", pd.Timestamp("2026-10-01"), pd.Timestamp("2026-10-05"),
                              10.0, 12.0, 1.0, 0.0, 2.0, 20.0, "SIGNAL"))
     store.log_signal(inst.run_key, inst.timeframe, "X/USDT", pd.Timestamp("2026-10-29"), "BUY", 55.0, 100.0,
-                     "NONE", "buy at the next open")
+                     "NONE", "enter LONG at next open")
     store.conn.commit()
     return inst
 
@@ -105,9 +105,12 @@ def test_status(bot):
     _say(bot, "/status@CryptoTesterBot")
     text = bot.api.last()[0]
     assert bot.api.sent("sendMessage")[-1]["parse_mode"] == "HTML"
-    assert re.search(r"<pre>Instance +Ret% +B&amp;H% +Open\n(.*\n)*fwd +– +– +1(\n|</pre>)", text)
+    assert re.search(r"<pre> Instance +Ret% +B&amp;H% +Open\n(.*\n)* fwd +– +– +1(\n|</pre>)", text)
     assert "Not running: forward-v9 (supervisor not running), fwd (supervisor not running)" in text
     assert "Stopped: testnet-v9, idle ⭐" in text and "Kill switch: block" in text
+    instances.update("fwd", favorite=True)
+    _say(bot, "/status")
+    assert "\n*fwd " in bot.api.last()[0]
 
 
 def test_instance_views(bot):
@@ -129,7 +132,7 @@ def test_instance_views(bot):
     assert re.search(r"\nX +100 110 \+10\.0</pre>", text)
     assert "Y" not in text.split("<pre>")[1] and [b for b in buttons if b.startswith("c|")] == ["c|1"]
     _press(bot, "s|fwd")
-    assert "X/USDT BUY @ 100: buy at the next open" in bot.api.last()[0]
+    assert re.search(r"\n10-29 +X +BUY +buy</pre>", bot.api.last()[0])
     _press(bot, "t|fwd")
     assert re.search(r"\n10-05 +Y +\+20\.0 +\+2\.00 SIGNAL</pre>", bot.api.last()[0])
     _press(bot, "i|gone")
@@ -146,10 +149,10 @@ def test_text_from_the_databases_is_escaped(bot):
     inst = _instance()
     store = PaperStore()
     store.log_signal(inst.run_key, inst.timeframe, "X/USDT", pd.Timestamp("2026-10-30"), "SELL", 40.0, 90.0,
-                     "LONG", "close < SMA & exit")
+                     "LONG", "x < y & z")
     store.conn.commit()
     _press(bot, "s|fwd")
-    assert "close &lt; SMA &amp; exit" in bot.api.last()[0]
+    assert "x &lt; y &amp; z" in bot.api.last()[0]
 
 
 def test_no_close_buttons_without_manual_close(bot):
@@ -258,3 +261,24 @@ def test_conflicts_are_logged_once(bot, monkeypatch):
 
 def test_disabled_without_token():
     assert not telegram_commands.CommandBot("", "1").enabled
+
+
+def test_instance_summary_tables(bot):
+    inst = _instance()
+    store = PaperStore()
+    for day, x, y in [("2026-10-28", 100.0, 10.0), ("2026-10-29", 110.0, 9.0)]:
+        store.log_equity(inst.run_key, inst.timeframe, "X/USDT", pd.Timestamp(day), 1000.0 * x / 100, x)
+        store.log_equity(inst.run_key, inst.timeframe, "Y/USDT", pd.Timestamp(day), 1000.0, y)
+    store.conn.commit()
+    _press(bot, "i|fwd")
+    text = bot.api.last()[0]
+    assert re.search(r"<pre> +Strategy +B&amp;H\nReturn % +\+5\.00 +\+0\.00\n", text)   # B&H: (+10% - 10%) / 2
+    assert re.search(r"<pre>Days Open Closed +Win +PnL\n +1 +1 +1 +100% +\+2\.00</pre>", text)
+
+
+def test_actions_in_a_word():
+    words = [telegram_commands._action(a) for a in [
+        "ignored (long-only)", "ignored (already in position)", "ignored (waiting after a trailing exit)",
+        "ignored (trend filter)", "enter LONG at next open", "exit at next open", "trailing exit at next open",
+        "lower-timeframe exit at the 1h open", "manual close (panel or Telegram)", None]]
+    assert words == ["ignored", "holding", "waiting", "blocked", "buy", "sell", "trail", "LTF exit", "manual", ""]

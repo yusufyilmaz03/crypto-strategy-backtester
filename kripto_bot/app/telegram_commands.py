@@ -42,6 +42,8 @@ MAX_POSITIONS = 40
 COMMANDS = [("status", "All instances at a glance"),
             ("instance", "Positions, signals and trades of one instance"),
             ("help", "What this bot can do")]
+ACTIONS = ("buy/sell/trail: at the next open · holding: in a position · waiting: after an early exit · "
+           "blocked: by a filter · ignored: no position to sell")
 HELP = ("<b>Crypto Tester Bot</b>\n"
         "/status: all instances at a glance\n"
         "/instance: pick an instance for its positions, signals and trades\n"
@@ -76,6 +78,37 @@ def _p1(x):
 
 def _price(x):
     return "–" if _missing(x) else f"{x:.5g}"
+
+
+def _p2(x):
+    return "–" if _missing(x) else f"{x:+.2f}"
+
+
+def _f1(x):
+    return "–" if _missing(x) else f"{x:.1f}"
+
+
+def _f2(x):
+    return "–" if _missing(x) else f"{x:.2f}"
+
+
+def _when(t, inst):
+    """Candle or trade time, short: the date on 1d, else day and time."""
+    if _missing(t):
+        return "?"
+    return pd.Timestamp(t).strftime("%m-%d" if inst.timeframe == "1d" else "%d %H:%M")
+
+
+def _action(text):
+    """What the engine did with a signal (run_realtime.describe_action), in a word."""
+    text = text or ""
+    for start, word in [("ignored (long-only)", "ignored"), ("ignored (already", "holding"),
+                        ("ignored (waiting", "waiting"), ("ignored", "blocked"), ("enter", "buy"),
+                        ("exit", "sell"), ("trailing", "trail"), ("lower-timeframe exit", "LTF exit"),
+                        ("manual", "manual")]:
+        if text.startswith(start):
+            return word
+    return text[:10]
 
 
 def _money(x):
@@ -266,13 +299,15 @@ class CommandBot:
         if s["return_pct"] is None:
             lines.append("No data yet.")
         else:
-            dd = f"max DD {s['max_dd_pct']:.1f}%" if s["max_dd_pct"] is not None else ""
-            if s["buy_hold_max_dd_pct"] is not None:
-                dd += f" (B&amp;H {s['buy_hold_max_dd_pct']:.1f}%)"
-            win = f", win {s['win_rate_pct']:.0f}%" if s["win_rate_pct"] is not None else ""
-            lines += [f"<b>{notify._pct(s['return_pct'])}</b> vs B&amp;H {notify._pct(s['buy_hold_pct'])} · {dd}",
-                      f"{s['days']} days · {s['open_positions']} open · {s['closed_trades']} closed{win}",
-                      f"Realized PnL {s['realized_pnl']:+.2f} USDT"]
+            lines.append(_table(["", "Strategy", "B&H"], [
+                ["Return %", _p2(s["return_pct"]), _p2(s["buy_hold_pct"])],
+                ["Sharpe", _f2(s["sharpe"]), _f2(s["buy_hold_sharpe"])],
+                ["Max DD %", _f1(s["max_dd_pct"]), _f1(s["buy_hold_max_dd_pct"])]]))
+            win = "–" if _missing(s["win_rate_pct"]) else f"{s['win_rate_pct']:.0f}%"
+            lines.append(_table(["Days", "Open", "Closed", "Win", "PnL"],
+                                [[str(s["days"]), str(s["open_positions"]), str(s["closed_trades"]), win,
+                                  _money(s["realized_pnl"])]], "rrrrr"))
+            lines.append("PnL: realized, closed trades, USDT.")
         if inst.manual_close:
             lines.append("Manual close: on")
         keyboard = [[_button(f"Positions ({s['open_positions']})", f"p|{inst.name}"),
@@ -322,14 +357,13 @@ class CommandBot:
         df = reporting.signals(inst, ROWS, self.paper_db)
         if df.empty:
             return f"<b>{_e(inst.name)}</b>: no signals yet.", self._back(inst)
+        title = f"<b>{_e(inst.name)}</b> · last {'signals' if inst.mode == 'paper' else 'events'} (newest first)"
         if inst.mode == "paper":
-            rows = [f"{_date(r.candle_time)} {r.symbol} {r.signal} @ {notify._num(r.close)}: {r.action}"
-                    for r in df.itertuples()]
-        else:
-            rows = [f"{_date(r.time)} {r.level}{' ' + r.symbol if r.symbol else ''}: {r.message}"
-                    for r in df.itertuples()]
-        title = "last signals" if inst.mode == "paper" else "last events"
-        return "\n".join([f"<b>{_e(inst.name)}</b> · {title} (newest first)"] + [_e(r) for r in rows]), self._back(inst)
+            rows = [[_when(r.candle_time, inst), _base(r.symbol), r.signal, _action(r.action)] for r in df.itertuples()]
+            return "\n".join([title, _table(["Candle", "Symbol", "Sig", "Action"], rows, "llll"), ACTIONS]), \
+                self._back(inst)
+        rows = [f"{_date(r.time)} {r.level}{' ' + r.symbol if r.symbol else ''}: {r.message}" for r in df.itertuples()]
+        return "\n".join([title] + [_e(r) for r in rows]), self._back(inst)
 
     def _trades(self, inst):
         df = reporting.trades(inst, self.paper_db)
@@ -339,15 +373,14 @@ class CommandBot:
             return f"<b>{_e(inst.name)}</b>: no closed trades yet.", self._back(inst)
         df = df.tail(ROWS).iloc[::-1]
         if inst.mode == "paper":
-            when = "%m-%d" if inst.timeframe == "1d" else "%d %H:%M"
-            rows = [[pd.Timestamp(r.exit_time).strftime(when), _base(r.symbol), _p1(r.return_pct), _money(r.pnl),
+            rows = [[_when(r.exit_time, inst), _base(r.symbol), _p1(r.return_pct), _money(r.pnl),
                      r.reason or "SIGNAL"] for r in df.itertuples()]
             body = _table(["Closed", "Symbol", "Ret%", "PnL", "Exit"], rows, "llrrl")
             return f"<b>{_e(inst.name)}</b> · last closed trades (newest first)\n{body}", self._back(inst)
-        rows = [f"{_date(r.created_at)} {str(r.side).upper()} {r.symbol} {notify._num(r.filled)} "
-                f"@ {notify._num(r.average)} [{r.status}]" for r in df.itertuples()]
-        return "\n".join([f"<b>{_e(inst.name)}</b> · last orders (newest first)"] + [_e(r) for r in rows]), \
-            self._back(inst)
+        rows = [[_when(r.created_at, inst), str(r.side).upper(), _base(r.symbol), _price(r.average),
+                 str(r.status or "")[:6]] for r in df.itertuples()]
+        body = _table(["Time", "Side", "Symbol", "Price", "Status"], rows, "lllrl")
+        return f"<b>{_e(inst.name)}</b> · last orders (newest first)\n{body}", self._back(inst)
 
     def _confirm(self, target_id, name, symbol):
         self.audit(f"close {symbol} on {name}: asked for confirmation")
@@ -383,10 +416,10 @@ class CommandBot:
             if state != "running":
                 down.append(f"{inst.name} ({state})")
             s = reporting.summary(inst, self.paper_db)
-            rows.append([_short(inst.name, 15) + ("*" if inst.favorite else ""), _p1(s["return_pct"]),
+            rows.append([("*" if inst.favorite else " ") + _short(inst.name, 15), _p1(s["return_pct"]),
                          _p1(s["buy_hold_pct"]), str(s["open_positions"])])
         parts = [f"<b>📊 Status {pd.Timestamp(self.clock(), unit='s', tz='UTC'):%Y-%m-%d %H:%M} UTC</b>"]
-        parts.append(_table(["Instance", "Ret%", "B&H%", "Open"], rows) if rows else "No running instances.")
+        parts.append(_table([" Instance", "Ret%", "B&H%", "Open"], rows) if rows else "No running instances.")
         if any(i.favorite for i in items if i.enabled):
             parts.append("* favorite")
         if down:
