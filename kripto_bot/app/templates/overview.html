@@ -32,6 +32,7 @@
     <label class="form-check-label small" for="show-stopped">Show stopped</label>
   </div>
   <span class="small text-secondary" id="hidden-note"></span>
+  <select class="form-select form-select-sm w-auto ms-auto" id="sort" aria-label="Sort instances"></select>
 </div>
 <div class="row g-3" id="cards"></div>
 {% endblock %}
@@ -55,7 +56,7 @@ async function load() {
   const cards = document.getElementById("cards");
   KB.disposeTips(cards);
   const showStopped = document.getElementById("show-stopped").checked;
-  const shown = KB.favoritesFirst(d.instances.filter(i => showStopped || i.enabled));
+  const shown = sortInstances(d.instances.filter(i => showStopped || i.enabled));
   const hidden = d.instances.length - shown.length;
   document.getElementById("hidden-note").textContent = hidden ? `${hidden} stopped hidden` : "";
   cards.innerHTML = shown.map(i => {
@@ -97,6 +98,32 @@ function confirmFlatten() {   // two clicks within 5s instead of a blocking dial
   KB.toast("Click Flatten again within 5 seconds to close every testnet/live position.", "warning");
   return false;
 }
+// Sort options: [label, value of an instance, direction]. Favorites stay on top in every order;
+// instances without a value (no data yet) go last.
+const SORTS = {
+  newest: ["Newest first", i => i.created_at, -1],
+  oldest: ["Oldest first", i => i.created_at, 1],
+  pnl: ["Highest realized PnL", i => i.summary.realized_pnl, -1],
+  return: ["Highest return %", i => i.summary.return_pct, -1],
+  sharpe: ["Highest Sharpe", i => i.summary.sharpe, -1],
+  drawdown: ["Lowest max drawdown", i => i.summary.max_dd_pct, 1],
+  winrate: ["Highest win rate", i => i.summary.win_rate_pct, -1],
+  trades: ["Most closed trades", i => i.summary.closed_trades, -1],
+  name: ["Name A–Z", i => i.name.toLowerCase(), 1],
+};
+function sortInstances(rows) {
+  const [, key, dir] = SORTS[document.getElementById("sort").value] || SORTS.newest;
+  const cmp = (x, y) => x == null || y == null ? (x == null) - (y == null) : (x < y ? -1 : x > y ? 1 : 0) * dir;
+  return [...rows].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0) || cmp(key(a), key(b)));
+}
+const SORT_KEY = "kb-overview-sort", sortEl = document.getElementById("sort");
+sortEl.innerHTML = Object.entries(SORTS).map(([k, [label]]) => `<option value="${k}">${label}</option>`).join("");
+try { if (SORTS[localStorage.getItem(SORT_KEY)]) sortEl.value = localStorage.getItem(SORT_KEY); } catch (e) {}
+sortEl.addEventListener("change", () => {
+  try { localStorage.setItem(SORT_KEY, sortEl.value); } catch (e) {}
+  load();
+});
+
 // The switch is a per-browser preference: off (only running instances) unless turned on here.
 const SHOW_KEY = "kb-show-stopped";
 try { document.getElementById("show-stopped").checked = localStorage.getItem(SHOW_KEY) === "1"; } catch (e) {}
