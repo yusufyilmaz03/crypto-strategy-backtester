@@ -2,6 +2,7 @@ import pytest
 
 from kripto_bot import config
 from kripto_bot import instances
+from kripto_bot.core import strategy
 from kripto_bot.instances import InstanceError
 
 
@@ -69,7 +70,8 @@ def test_delete_requires_stop(path):
 
 def test_param_spec():
     spec = {p["name"]: p for p in instances.param_spec("v9")}
-    assert spec["slow"] == {"name": "slow", "default": 200, "type": "int"}
+    assert spec["slow"] == {"name": "slow", "default": 200, "type": "int",
+                            "description": strategy.PARAM_INFO["v9"]["slow"]}
     assert {p["name"]: p["type"] for p in instances.param_spec("v4")}["bb_mult"] == "float"
 
 

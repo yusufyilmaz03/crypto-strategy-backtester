@@ -106,11 +106,18 @@ def test_price_errors_are_retried(tmp_path, capsys):
     assert "CLOSE ERROR" in capsys.readouterr().out
 
 
-def test_every_paper_instance_handles_close_requests(tmp_path):
+def test_manual_close_is_an_instance_setting(tmp_path):
     store = PaperStore(str(tmp_path / "p.db"))
-    w = position_watch.for_instance(instances.Instance(name="p", timeframe="5m"), [], store)
+    w = position_watch.for_instance(instances.Instance(name="p", timeframe="5m", manual_close=True), [], store)
     assert [type(x).__name__ for x in w.watches] == ["ManualClose"]
-    assert position_watch.for_instance(instances.Instance(name="t", mode="testnet"), [], store) is None
+    assert position_watch.for_instance(instances.Instance(name="p", timeframe="5m"), [], store) is None
+    path = str(tmp_path / "i.json")
+    assert instances.create({"name": "mc", "manual_close": True}, path).manual_close is True
+    assert instances.create({"name": "plain"}, path).manual_close is False
+    with pytest.raises(instances.InstanceError, match="paper"):
+        instances.create({"name": "tn", "mode": "testnet", "manual_close": True}, path)
+    with pytest.raises(instances.InstanceError, match="can't be changed"):
+        instances.update("plain", path, manual_close=True)
 
 
 # ---------------------------------------------------------------- panel
@@ -123,15 +130,19 @@ def client():
 def _open_position(inst, symbol="X/USDT"):
     store = PaperStore()
     store.trade_opened(inst.run_key, inst.timeframe, symbol,
-                       Position("t1", "LONG", 2.0, pd.Timestamp("2026-10-20"), 100.0, 0.0, 200.0, None))
+                       Position(f"t-{inst.name}", "LONG", 2.0, pd.Timestamp("2026-10-20"), 100.0, 0.0, 200.0, None))
     store.conn.commit()
     return store
 
 
 def test_close_endpoint(client):
-    instances.create({"name": "pp", "symbols": ["X/USDT"], "enabled": True})
-    instances.create({"name": "off", "symbols": ["X/USDT"]})
+    instances.create({"name": "pp", "symbols": ["X/USDT"], "enabled": True, "manual_close": True})
+    instances.create({"name": "off", "symbols": ["X/USDT"], "manual_close": True})
+    instances.create({"name": "no-close", "symbols": ["X/USDT"], "enabled": True})
     _open_position(instances.get("pp"))
+    _open_position(instances.get("no-close"))
+    refused = client.post("/api/instances/no-close/close", json={"symbol": "X/USDT"}, headers=H)
+    assert refused.status_code == 400 and "without manual close" in refused.get_json()["error"]
     assert client.post("/api/instances/pp/close", json={"symbol": "X/USDT"}, headers=H).status_code == 200
     again = client.post("/api/instances/pp/close", json={"symbol": "X/USDT"}, headers=H)
     assert again.status_code == 400 and "already" in again.get_json()["error"]

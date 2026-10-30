@@ -244,9 +244,9 @@ class Watches:
 
 def for_instance(inst, runners, store):
     """The intraday watches an instance needs, or None."""
-    if inst.mode != "paper":
-        return None
-    watches = [ManualClose(runners, store, inst.run_key, inst.timeframe)]
+    watches = []
+    if inst.manual_close:
+        watches.append(ManualClose(runners, store, inst.run_key, inst.timeframe))
     if eligible(inst):
         watches.append(StopWatch(runners, store, inst.run_key, inst.timeframe))
         print("👀 Shadow stop on: open positions are checked against their stop every minute "
@@ -255,4 +255,4 @@ def for_instance(inst, runners, store):
         watches.append(EarlyExitWatch(runners, store, inst.timeframe))
         print(f"👀 Lower-timeframe exit on: {' + '.join(lower_timeframes.LOWER_TIMEFRAMES[inst.timeframe])} "
               "checked after each of their closes\n")
-    return Watches(watches)
+    return Watches(watches) if watches else None

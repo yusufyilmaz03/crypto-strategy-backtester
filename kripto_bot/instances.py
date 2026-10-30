@@ -30,7 +30,7 @@ SIZINGS = {"equal": "Equal capital per symbol, never rebalanced",
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing",
-                "lower_tf_entry", "lower_tf_exit"]
+                "lower_tf_entry", "lower_tf_exit", "manual_close"]
 
 
 class InstanceError(ValueError):
@@ -51,6 +51,7 @@ class Instance:
     sizing: str = "equal"              # key of SIZINGS
     lower_tf_entry: bool = False       # rule E: enter only if the lower timeframes say BUY too
     lower_tf_exit: bool = False        # rule X: exit inside the candle when they all say SELL
+    manual_close: bool = False         # positions can be closed from the panel (reason MANUAL)
     enabled: bool = False              # should run_all.py keep it running?
     run_key: str = ""                  # paper: key in paper.db; testnet: database file in runtime/
     description: str = ""
@@ -80,7 +81,8 @@ def param_spec(key):
         if p.default is inspect.Parameter.empty:
             continue
         spec.append({"name": p.name, "default": p.default,
-                     "type": "int" if isinstance(p.default, int) else "float"})
+                     "type": "int" if isinstance(p.default, int) else "float",
+                     "description": strategy.PARAM_INFO.get(key, {}).get(p.name, "")})
     return spec
 
 
@@ -131,7 +133,7 @@ def validate(inst, existing):
             raise InstanceError("trailing exit must be between 0.5 and 20 ATR")
         if inst.mode != "paper":
             raise InstanceError("only paper instances can use a trailing exit for now")
-    for f in ("lower_tf_entry", "lower_tf_exit"):
+    for f in ("lower_tf_entry", "lower_tf_exit", "manual_close"):
         value = getattr(inst, f)
         if value in ("true", "false"):
             value = value == "true"
@@ -143,6 +145,8 @@ def validate(inst, existing):
             raise InstanceError("only paper instances can use lower-timeframe rules for now")
         if inst.timeframe not in LOWER_TIMEFRAMES:
             raise InstanceError(f"lower-timeframe rules need a {' or '.join(LOWER_TIMEFRAMES)} timeframe")
+    if inst.manual_close and inst.mode != "paper":
+        raise InstanceError("only paper positions can be closed from the panel (testnet: use the kill switch)")
     if inst.sizing not in SIZINGS:
         raise InstanceError(f"sizing must be one of {', '.join(SIZINGS)}")
     if inst.sizing != "equal" and inst.mode != "paper":

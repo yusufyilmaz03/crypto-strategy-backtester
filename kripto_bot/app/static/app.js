@@ -25,6 +25,25 @@ const KB = {
     const note = st && st.note ? ` title="${KB.esc(st.note)}"` : "";
     return `<span class="badge text-bg-${map[s] || "secondary"}"${note}>${KB.esc(label)}</span>`;
   },
+  // A "?" icon whose tooltip explains a setting (id: to change the text later with setTip).
+  tip(text, id = "") {
+    return `<i class="bi bi-question-circle text-secondary ms-1" role="button" tabindex="0"${id ? ` id="${id}"` : ""}
+      data-bs-toggle="tooltip" data-bs-title="${KB.esc(text)}"></i>`;
+  },
+  // Create the Bootstrap tooltips under `root` (after its HTML changed).
+  initTips(root = document) {
+    root.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => bootstrap.Tooltip.getOrCreateInstance(el));
+  },
+  disposeTips(root) {
+    root.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => bootstrap.Tooltip.getInstance(el)?.dispose());
+  },
+  setTip(el, text) {
+    if (typeof el === "string") el = document.getElementById(el);
+    bootstrap.Tooltip.getInstance(el)?.dispose();
+    el.setAttribute("data-bs-title", text);
+    el.classList.toggle("d-none", !text);
+    bootstrap.Tooltip.getOrCreateInstance(el);
+  },
   modeBadge(m) { return `<span class="badge ${m === "testnet" ? "text-bg-warning" : "text-bg-primary"}">${KB.esc(m)}</span>`; },
   toast(msg, kind = "success") {
     const box = document.getElementById("toasts");
@@ -56,9 +75,11 @@ const KB = {
                                    : "bi-chevron-expand text-body-tertiary";
       return `<th role="button" class="user-select-none" data-sort="${i}">${c[0]} <i class="bi ${icon} small"></i></th>`;
     }).join("");
+    KB.disposeTips(el);        // tooltips of the rows being replaced
     el.innerHTML = `<thead><tr>${head}</tr></thead><tbody>` +
       (rows.length ? rows.map(r => `<tr>${cols.map(c => `<td>${c[1](r)}</td>`).join("")}</tr>`).join("")
                    : `<tr><td colspan="${cols.length}" class="text-muted">${empty}</td></tr>`) + "</tbody>";
+    KB.initTips(el);
     if (!el._sortable) {
       el._sortable = true;
       el.addEventListener("click", e => {

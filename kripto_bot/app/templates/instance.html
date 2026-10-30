@@ -57,7 +57,7 @@ async function loadInstance() {
   const s = INST.summary, paper = INST.mode === "paper";
   document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}`;
   document.getElementById("setup-line").textContent =
-    `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.trail ? `trail ${INST.trail}×ATR · ` : ""}${INST.lower_tf_entry ? "lower-TF entry · " : ""}${INST.lower_tf_exit ? "lower-TF exit · " : ""}${INST.sizing === "equal" ? "" : `${INST.sizing} sizing · `}${INST.symbols.length} symbols · ` +
+    `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.trail ? `trail ${INST.trail}×ATR · ` : ""}${INST.lower_tf_entry ? "lower-TF entry · " : ""}${INST.lower_tf_exit ? "lower-TF exit · " : ""}${INST.manual_close ? "manual close · " : ""}${INST.sizing === "equal" ? "" : `${INST.sizing} sizing · `}${INST.symbols.length} symbols · ` +
     (paper ? `${INST.equity} USDT per symbol` : `${INST.equity} USDT capital`);
   if (document.activeElement.id !== "description") document.getElementById("description").value = INST.description || "";
   document.getElementById("actions").innerHTML = INST.enabled
@@ -103,7 +103,8 @@ async function loadTables() {
     ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Side", r => KB.esc(r.side), r => r.side],
     ["Entry time", r => KB.time(r.entry_time), r => r.entry_time],
     ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price], ...priceCols,
-    ["Qty", r => KB.num(r.qty, 6), r => r.qty], ["Stop", r => KB.num(r.stop, 6), r => r.stop], ["", closeButton]] : [
+    ["Qty", r => KB.num(r.qty, 6), r => r.qty], ["Stop", r => KB.num(r.stop, 6), r => r.stop],
+    ...(INST.manual_close ? [["", closeButton]] : [])] : [
     ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Qty", r => KB.num(r.qty, 8), r => r.qty],
     ["Cost", r => KB.num(r.cost), r => r.cost], ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price],
     ...priceCols, ["Entry time", r => KB.time(r.entry_time), r => r.entry_time]],
@@ -118,7 +119,8 @@ async function loadTables() {
                                 : `<span class="${KB.sign(change(r))}" title="open: change since entry">${KB.pct(change(r))}</span>`,
      r => r.exit_time ? r.return_pct : change(r)],
     ["PnL", r => KB.num(r.pnl), r => r.pnl], ["Reason", r => KB.esc(r.reason ?? "open"), r => r.reason ?? "open"],
-    ["", r => r.exit_time ? "" : closeButton({ ...r, close_requested: pos.some(p => p.symbol === r.symbol && p.close_requested) })]] : [
+    ...(INST.manual_close ? [["", r => r.exit_time ? "" :
+        closeButton({ ...r, close_requested: pos.some(p => p.symbol === r.symbol && p.close_requested) })]] : [])] : [
     ["Time", r => KB.time(r.created_at), r => r.created_at], ["Symbol", r => KB.esc(r.symbol), r => r.symbol],
     ["Side", r => KB.esc(r.side), r => r.side], ["Status", r => KB.esc(r.status), r => r.status],
     ["Filled", r => KB.num(r.filled, 8), r => r.filled], ["Avg price", r => KB.num(r.average, 6), r => r.average],

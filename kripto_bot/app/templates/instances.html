@@ -7,39 +7,40 @@
 </div>
 <p class="text-secondary small">Each instance is one strategy setup running in its own process under <code>python -m kripto_bot run</code>.
   Its setup can't be changed after creation, so its results always describe one setup. To try something else, create another instance.</p>
-<div class="card"><div class="table-responsive"><table class="table table-hover align-middle mb-0" id="list"></table></div></div>
+<div class="card"><div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0" id="list"></table></div></div>
 
 <div class="modal fade" id="newModal" tabindex="-1"><div class="modal-dialog modal-lg"><form class="modal-content" id="form">
   <div class="modal-header"><h5 class="modal-title">New instance</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body">
+{% macro tip(text, id="") -%}
+<i class="bi bi-question-circle text-secondary ms-1" role="button" tabindex="0"{% if id %} id="{{ id }}"{% endif %} data-bs-toggle="tooltip" data-bs-title="{{ text }}"></i>
+{%- endmacro %}
     <div class="row g-3">
-      <div class="col-md-6"><label class="form-label">Name</label>
-        <input class="form-control" name="name" required pattern="[a-z0-9][a-z0-9-]{1,39}" placeholder="e.g. v9-sma100-1d">
-        <div class="form-text">Lowercase letters, digits and '-'.</div></div>
-      <div class="col-md-3"><label class="form-label">Mode</label><select class="form-select" name="mode" id="mode"></select></div>
-      <div class="col-md-3"><label class="form-label">Timeframe</label><select class="form-select" name="timeframe" id="timeframe"></select></div>
-      <div class="col-md-6"><label class="form-label">Strategy</label><select class="form-select" name="strategy" id="strategy"></select></div>
-      <div class="col-md-6"><label class="form-label">Stop</label><select class="form-select" name="stop" id="stop"></select>
-        <div class="form-text" id="stop-help"></div></div>
-      <div class="col-12"><div class="small text-secondary" id="strategy-desc"></div></div>
-      <div class="col-12"><label class="form-label">Parameters</label><div class="row g-2" id="params"></div>
-        <div class="form-text">Empty fields use the default shown.</div></div>
-      <div class="col-md-6"><label class="form-label" id="equity-label">Equity per symbol (USDT)</label>
+      <div class="col-md-6"><label class="form-label">Name{{ tip("Lowercase letters, digits and '-'. The setup can't be changed after creation: to try something else, create another instance.") }}</label>
+        <input class="form-control" name="name" required pattern="[a-z0-9][a-z0-9-]{1,39}" placeholder="e.g. v9-sma100-1d"></div>
+      <div class="col-md-3"><label class="form-label">Mode{{ tip("paper: simulated on live Binance prices. testnet: real market orders on the Binance Spot Testnet; one testnet instance can run at a time.") }}</label>
+        <select class="form-select" name="mode" id="mode"></select></div>
+      <div class="col-md-3"><label class="form-label">Timeframe{{ tip("Candle length the strategy trades on. Signals use closed candles only.") }}</label>
+        <select class="form-select" name="timeframe" id="timeframe"></select></div>
+      <div class="col-md-6"><label class="form-label">Strategy{{ tip("", "tip-strategy") }}</label><select class="form-select" name="strategy" id="strategy"></select></div>
+      <div class="col-md-6"><label class="form-label">Stop{{ tip("", "tip-stop") }}</label><select class="form-select" name="stop" id="stop"></select></div>
+      <div class="col-12"><label class="form-label">Parameters{{ tip("Empty fields use the default shown.") }}</label><div class="row g-2" id="params"></div></div>
+      <div class="col-md-6"><label class="form-label"><span id="equity-label">Equity per symbol (USDT)</span>{{ tip("", "tip-equity") }}</label>
         <input class="form-control" name="equity" type="number" min="10" step="any" id="equity"></div>
-      <div class="col-md-6"><label class="form-label">Sizing</label><select class="form-select" id="sizing"></select>
-        <div class="form-text" id="sizing-help"></div></div>
-      <div class="col-md-6"><label class="form-label">Trailing exit (ATR ×)</label>
-        <input class="form-control" type="number" min="0.5" max="20" step="any" id="trail" placeholder="off">
-        <div class="form-text">Exit when the close falls this many ATRs below the highest close since entry. Empty = off.</div></div>
-      <div class="col-md-6"><label class="form-label">Lower timeframes</label>
+      <div class="col-md-6"><label class="form-label">Sizing{{ tip("", "tip-sizing") }}</label><select class="form-select" id="sizing"></select></div>
+      <div class="col-md-6"><label class="form-label">Trailing exit (ATR ×){{ tip("Sell at the next open when the close falls this many ATRs below the highest close since entry. Empty = off. Paper only.") }}</label>
+        <input class="form-control" type="number" min="0.5" max="20" step="any" id="trail" placeholder="off"></div>
+      <div class="col-md-6"><label class="form-label">Symbols{{ tip("All default symbols: the list in config.SYMBOLS. Custom: your own list, e.g. BTC/USDT, ETH/USDT.") }}</label>
+        <select class="form-select" id="symbol-mode"><option value="all">All default symbols</option><option value="custom">Custom list</option></select></div>
+      <div class="col-12 d-none" id="symbols-box"><textarea class="form-control font-monospace" name="symbols" rows="2" placeholder="BTC/USDT, ETH/USDT"></textarea></div>
+      <div class="col-md-6"><label class="form-label">Lower timeframes{{ tip("", "tip-ltf") }}</label>
         <div class="form-check"><input class="form-check-input" type="checkbox" id="ltf-entry">
           <label class="form-check-label" for="ltf-entry">Entry confirmation (E)</label></div>
         <div class="form-check"><input class="form-check-input" type="checkbox" id="ltf-exit">
-          <label class="form-check-label" for="ltf-exit">Early exit (X)</label></div>
-        <div class="form-text" id="ltf-help"></div></div>
-      <div class="col-md-6"><label class="form-label">Symbols</label>
-        <select class="form-select" id="symbol-mode"><option value="all">All default symbols</option><option value="custom">Custom list</option></select></div>
-      <div class="col-12 d-none" id="symbols-box"><textarea class="form-control font-monospace" name="symbols" rows="2" placeholder="BTC/USDT, ETH/USDT"></textarea></div>
+          <label class="form-check-label" for="ltf-exit">Early exit (X)</label></div></div>
+      <div class="col-md-6"><label class="form-label">Manual close{{ tip("Adds a Close button to open positions: the instance sells at the market within a minute. A manual close counts in this instance's results (reason MANUAL) and the next entry waits as after a trailing exit. Paper only.") }}</label>
+        <div class="form-check"><input class="form-check-input" type="checkbox" id="manual-close">
+          <label class="form-check-label" for="manual-close">Allow closing positions from the panel</label></div></div>
       <div class="col-12"><label class="form-label">Description</label><input class="form-control" name="description" maxlength="500"></div>
       <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="start-now" checked>
         <label class="form-check-label" for="start-now">Start right away</label></div></div>
@@ -56,20 +57,25 @@ let META;
 async function load() {
   const rows = await KB.api("/api/instances");
   KB.table(document.getElementById("list"), rows, [
-    ["Name", i => `<a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a>`],
-    ["Mode", i => KB.modeBadge(i.mode)],
+    ["Name", i => `<a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a> ${KB.modeBadge(i.mode)}`],
     ["Status", i => KB.statusBadge(i.status, i.enabled)],
-    ["Setup", i => `${KB.esc(i.strategy)} <span class="text-secondary small">${KB.esc(KB.params(i.params))}</span>`],
+    ["Setup", i => `<span class="setup-tip" data-bs-toggle="tooltip" data-bs-title="${KB.esc(setupText(i))}">${KB.esc(i.strategy)}</span>`],
     ["TF", i => KB.esc(i.timeframe) + (i.lower_tf_entry || i.lower_tf_exit
       ? ` <span class="badge text-bg-secondary" title="lower-timeframe rules">${[i.lower_tf_entry && "E", i.lower_tf_exit && "X"].filter(Boolean).join("+")}</span>` : "")],
     ["Symbols", i => i.symbols.length],
     ["Return", i => `<span class="${KB.sign(i.summary.return_pct)}">${KB.pct(i.summary.return_pct)}</span>`],
     ["B&amp;H", i => `<span class="${KB.sign(i.summary.buy_hold_pct)}">${KB.pct(i.summary.buy_hold_pct)}</span>`],
     ["Max DD", i => KB.num(i.summary.max_dd_pct, 1) + "%"],
-    ["Realized PnL", i => `<span class="${KB.sign(i.summary.realized_pnl)}">${KB.num(i.summary.realized_pnl)}</span>`],
+    ['PnL <i class="bi bi-info-circle text-secondary" title="Realized PnL of closed trades, USDT"></i>',
+     i => `<span class="${KB.sign(i.summary.realized_pnl)}">${KB.num(i.summary.realized_pnl)}</span>`],
     ["Trades", i => i.summary.closed_trades],
     ["", i => actions(i)],
   ], "No instances yet.");
+}
+function setupText(i) {
+  return [KB.params(i.params), `stop ${i.stop}`, i.trail && `trail ${i.trail}×ATR`,
+          i.sizing !== "equal" && `${i.sizing} sizing`, i.lower_tf_entry && "lower-TF entry",
+          i.lower_tf_exit && "lower-TF exit", i.manual_close && "manual close"].filter(Boolean).join(" · ");
 }
 function actions(i) {
   const n = encodeURIComponent(i.name);
@@ -96,26 +102,36 @@ async function initForm() {
     .map(([k, v]) => opt(k, v == null ? `${k} (exit on signals only)` : `${k} (ATR × ${v})`)).join("");
   document.getElementById("sizing").innerHTML = Object.entries(META.sizings).map(([k, v]) => opt(k, k)).join("");
   renderParams(); modeChanged();
+  KB.initTips(document.getElementById("form"));
 }
 function sizingChanged() {
-  document.getElementById("sizing-help").textContent = META.sizings[document.getElementById("sizing").value] || "";
+  KB.setTip("tip-sizing", META.sizings[document.getElementById("sizing").value] || "");
 }
 document.getElementById("sizing").addEventListener("change", sizingChanged);
 function renderParams() {
   const s = META.strategies.find(x => x.key === document.getElementById("strategy").value);
-  document.getElementById("strategy-desc").textContent = s.description;
-  document.getElementById("params").innerHTML = s.params.map(p => {
+  KB.setTip("tip-strategy", s.description);
+  const box = document.getElementById("params");
+  KB.disposeTips(box);
+  box.innerHTML = s.params.map(p => {
     const grid = Object.entries(s.grid).find(([k]) => k.split(" / ").includes(p.name));
-    return `<div class="col-6 col-md-3"><label class="form-label small mb-0">${KB.esc(p.name)}</label>
+    const text = [p.description, grid && `Research grid: ${JSON.stringify(grid[1])}`].filter(Boolean).join(" ");
+    return `<div class="col-6 col-md-3"><label class="form-label small mb-0">${KB.esc(p.name)}${text ? KB.tip(text) : ""}</label>
       <input class="form-control form-control-sm" data-param="${KB.esc(p.name)}" type="number" step="${p.type === "int" ? 1 : "any"}"
-        placeholder="${KB.esc(p.default)}"${grid ? ` title="Research grid: ${KB.esc(JSON.stringify(grid[1]))}"` : ""}></div>`;
+        placeholder="${KB.esc(p.default)}"></div>`;
   }).join("") || '<div class="text-secondary small">No parameters.</div>';
+  KB.initTips(box);
 }
 function modeChanged() {
   const testnet = document.getElementById("mode").value === "testnet";
   document.getElementById("equity-label").textContent = testnet ? "Capital (USDT, split across symbols)" : "Equity per symbol (USDT)";
   document.getElementById("equity").value = testnet ? META.default_capital : META.default_equity;
-  document.getElementById("stop-help").textContent = testnet ? "Testnet instances exit on signals only (exchange-side stops aren't implemented)." : "";
+  KB.setTip("tip-equity", testnet ? "Capital in USDT, split equally across the symbols."
+    : "USDT given to each symbol; the instance's return is over all symbols together.");
+  KB.setTip("tip-stop", "Stop-loss distance = ATR(14) × the multiple shown, checked against each candle's low (filled at the open on a gap). " +
+    (testnet ? "Testnet instances exit on signals only: exchange-side stops aren't implemented." : "none: exit on signals only."));
+  if (testnet) document.getElementById("manual-close").checked = false;
+  document.getElementById("manual-close").disabled = testnet;
   if (testnet) document.getElementById("stop").value = "none";
   document.getElementById("stop").disabled = testnet;
   if (testnet) document.getElementById("sizing").value = "equal";
@@ -132,10 +148,10 @@ function lowerChanged() {
     if (!ok) el.checked = false;
     el.disabled = !ok;
   }
-  document.getElementById("ltf-help").textContent = ok
-    ? `Uses ${lower.join(" + ")} with the same strategy: E enters only if both say BUY at the ${tf} close; ` +
-      `X sells inside the candle when both say SELL (docs/intrabar-watch.md).`
-    : `Paper instances on ${Object.keys(META.lower_timeframes).join(" or ")} only.`;
+  KB.setTip("tip-ltf", ok
+    ? `Uses ${lower.join(" + ")} with the same strategy. E: a BUY at the ${tf} close enters only if both say BUY too. ` +
+      `X: sells inside the candle as soon as both say SELL (docs/intrabar-watch.md).`
+    : `Paper instances on ${Object.keys(META.lower_timeframes).join(" or ")} only.`);
 }
 document.getElementById("strategy").addEventListener("change", renderParams);
 document.getElementById("mode").addEventListener("change", modeChanged);
@@ -152,6 +168,7 @@ document.getElementById("form").addEventListener("submit", async e => {
     stop: document.getElementById("stop").value, sizing: document.getElementById("sizing").value,
     trail: document.getElementById("trail").value || null,
     lower_tf_entry: document.getElementById("ltf-entry").checked, lower_tf_exit: document.getElementById("ltf-exit").checked,
+    manual_close: document.getElementById("manual-close").checked,
     equity: f.get("equity"), description: f.get("description"), params,
     symbols: document.getElementById("symbol-mode").value === "custom"
       ? f.get("symbols").split(/[\s,]+/).filter(Boolean) : null };

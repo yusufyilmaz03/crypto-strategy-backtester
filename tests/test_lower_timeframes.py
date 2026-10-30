@@ -235,7 +235,6 @@ def test_settings_are_validated(tmp_path):
 
 def test_watches_for_an_instance(tmp_path):
     store = PaperStore(str(tmp_path / "p.db"))
-    w = position_watch.for_instance(instances.Instance(name="a", stop="none"), [], store)
-    assert [type(x).__name__ for x in w.watches] == ["ManualClose"]
+    assert position_watch.for_instance(instances.Instance(name="a", stop="none"), [], store) is None
     w = position_watch.for_instance(instances.Instance(name="b", stop="tight", lower_tf_exit=True), [], store)
-    assert [type(x).__name__ for x in w.watches] == ["ManualClose", "StopWatch", "EarlyExitWatch"]
+    assert [type(x).__name__ for x in w.watches] == ["StopWatch", "EarlyExitWatch"]

@@ -209,6 +209,35 @@ STRATEGY_INFO = {
     "v10": "Turtle-style breakout: enter above the prior `entry`-bar high, exit below the `exit_len`-bar low.",
 }
 
+# Parameter descriptions for the dashboard (tooltips in the New instance form).
+_RSI_EMA = {"rsi_buy": "Buy when RSI(14) is below this, while the fast EMA is above the slow one.",
+            "rsi_sell": "Sell when RSI(14) is above this, while the fast EMA is below the slow one.",
+            "fast": "Fast EMA length, in candles.", "slow": "Slow EMA length, in candles."}
+PARAM_INFO = {
+    "v1": _RSI_EMA,
+    "v2": {**_RSI_EMA, "confirm": "Candles in a row the buy or sell condition must hold."},
+    "v3": _RSI_EMA,
+    "v4": {"bb_len": "Bollinger Band length, in candles.", "bb_mult": "Band width, in standard deviations.",
+           "rsi_buy": "A close below the lower band buys only if RSI(14) is below this.",
+           "rsi_sell": "A close above the upper band sells only if RSI(14) is above this."},
+    "v5": {"fast": "Fast EMA length, in candles.", "slow": "Slow EMA length, in candles; the close must be on its side too.",
+           "rsi_buy": "A buy needs RSI(14) above this.", "rsi_sell": "A sell needs RSI(14) below this."},
+    "v6": {"length": "Donchian channel length, in candles.",
+           "atr_thresh": "A breakout must clear the channel by this many ATRs."},
+    "v7": {"trend_fast": "Fast EMA of the trend filter, in candles.", "trend_slow": "Slow EMA of the trend filter, in candles.",
+           "oversold": "RSI(14) must have been below this within the last `lookback` candles before a buy.",
+           "buy_cross": "Buy when RSI(14) crosses back above this.",
+           "overbought": "RSI(14) must have been above this within the last `lookback` candles before a sell.",
+           "sell_cross": "Sell when RSI(14) crosses back below this.",
+           "lookback": "How many candles back to look for the oversold or overbought RSI."},
+    "v8": {"lookback": "Return measured over this many candles: long while it is positive."},
+    "v9": {"fast": "SMA length of the fast line, in candles; 1 means the close itself.",
+           "slow": "SMA length of the regime line, in candles: long above it, exit below it.",
+           "entry_band": "Enter only this fraction above SMA(slow), e.g. 0.02 = 2%. The exit stays at SMA(slow)."},
+    "v10": {"entry": "Buy when the close breaks above the highest high of this many previous candles.",
+            "exit_len": "Sell when the close breaks below the lowest low of this many previous candles."},
+}
+
 # Parameter grids for walk-forward optimization. Kept small on purpose: every extra
 # combination is another chance to fit noise. Tuples of names vary together.
 PARAM_GRIDS = {

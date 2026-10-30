@@ -81,7 +81,7 @@ def _inst(name):
 
 def _instance_view(inst):
     d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop", "trail", "sizing",
-                                       "lower_tf_entry", "lower_tf_exit", "equity", "enabled", "description",
+                                       "lower_tf_entry", "lower_tf_exit", "manual_close", "equity", "enabled", "description",
                                        "created_at", "run_key")}
     d["symbols"] = inst.symbol_list
     d["custom_symbols"] = bool(inst.symbols)
@@ -240,8 +240,8 @@ def api_instance_close(name):
     """Ask a paper instance's process to sell one position at the market."""
     inst = _inst(name)
     symbol = (request.get_json(silent=True) or {}).get("symbol")
-    if inst.mode != "paper":
-        raise ApiError("only paper positions can be closed from the panel (testnet: use the kill switch)")
+    if not inst.manual_close:
+        raise ApiError(f"{inst.name} was created without manual close")
     if not inst.enabled:
         raise ApiError("start the instance first: its process does the closing")
     if symbol not in set(reporting.positions(inst).get("symbol", [])):

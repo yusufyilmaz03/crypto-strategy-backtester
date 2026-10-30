@@ -53,10 +53,10 @@ async function load() {
           <span>${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}</span></div>
         <div class="small text-secondary mb-3">${KB.esc(i.strategy)} · ${KB.esc(KB.params(i.params))} · ${KB.esc(i.timeframe)} · stop ${KB.esc(i.stop)}${i.trail ? ` · trail ${KB.esc(i.trail)}×ATR` : ""}${i.sizing === "equal" ? "" : ` · ${KB.esc(i.sizing)} sizing`} · ${i.symbols.length} symbols</div>
         <div class="row text-center g-2">
-          <div class="col metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
-          <div class="col metric"><div class="label">Buy &amp; hold</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
-          <div class="col metric"><div class="label">Max DD</div><div class="value">${KB.num(s.max_dd_pct, 1)}%</div></div>
-          <div class="col metric"><div class="label">Realized PnL</div><div class="value ${KB.sign(s.realized_pnl)}"
+          <div class="col-6 col-sm-3 col-xl-6 metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
+          <div class="col-6 col-sm-3 col-xl-6 metric"><div class="label">Buy &amp; hold</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
+          <div class="col-6 col-sm-3 col-xl-6 metric"><div class="label">Max DD</div><div class="value">${KB.num(s.max_dd_pct, 1)}%</div></div>
+          <div class="col-6 col-sm-3 col-xl-6 metric"><div class="label">Realized PnL</div><div class="value ${KB.sign(s.realized_pnl)}"
             title="from closed trades, USDT">${KB.num(s.realized_pnl)}</div></div>
         </div>
         <div class="small text-secondary mt-2">${s.days} days · ${s.closed_trades} closed trades · ${s.open_positions} open · last candle ${KB.time(s.last_candle)}</div>
