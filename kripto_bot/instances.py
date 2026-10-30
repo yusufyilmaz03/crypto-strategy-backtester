@@ -56,6 +56,7 @@ class Instance:
     trend_sma: int | None = None       # trend filter: enter only above SMA(n) of the closes; None = off
     manual_close: bool = False         # positions can be closed from the panel (reason MANUAL)
     enabled: bool = False              # should run_all.py keep it running?
+    favorite: bool = False             # pinned on the panel; not part of the setup
     run_key: str = ""                  # paper: key in paper.db; testnet: database file in runtime/
     description: str = ""
     created_at: str = ""
@@ -136,7 +137,7 @@ def validate(inst, existing):
             raise InstanceError("trailing exit must be between 0.5 and 20 ATR")
         if inst.mode != "paper":
             raise InstanceError("only paper instances can use a trailing exit for now")
-    for f in ("lower_tf_entry", "lower_tf_exit", "manual_close"):
+    for f in ("lower_tf_entry", "lower_tf_exit", "manual_close", "favorite"):
         value = getattr(inst, f)
         if value in ("true", "false"):
             value = value == "true"
@@ -259,7 +260,7 @@ def update(name, path=None, **changes):
         raise InstanceError(f"{', '.join(locked)} can't be changed after creation; create a new instance")
     inst = items[name]
     for k, v in changes.items():
-        if k not in ("enabled", "description", "restart_requested_at"):
+        if k not in ("enabled", "description", "restart_requested_at", "favorite"):
             raise InstanceError(f"field '{k}' can't be changed")
         setattr(inst, k, v)
     validate(inst, items)

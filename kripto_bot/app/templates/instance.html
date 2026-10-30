@@ -5,7 +5,7 @@
 <nav class="small mb-2"><a href="/instances">Instances</a> / {{ name }}</nav>
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
-    <h1 class="h3 mb-1">{{ name }} <span id="badges"></span></h1>
+    <h1 class="h3 mb-1"><span id="star"></span> {{ name }} <span id="badges"></span></h1>
     <div class="text-secondary" id="setup-line">…</div>
   </div>
   <div class="btn-group" id="actions"></div>
@@ -56,6 +56,7 @@ async function loadInstance() {
   INST = await KB.api(`/api/instances/${N}`);
   const s = INST.summary, paper = INST.mode === "paper";
   document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}`;
+  document.getElementById("star").innerHTML = KB.star(INST);
   document.getElementById("setup-line").textContent =
     `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.trail ? `trail ${INST.trail}×ATR · ` : ""}${INST.trend_sma ? `trend SMA${INST.trend_sma} · ` : ""}${INST.lower_tf_entry ? "lower-TF entry · " : ""}${INST.lower_tf_exit ? "lower-TF exit · " : ""}${INST.lower_tf_sma ? `lower-TF SMA${INST.lower_tf_sma} · ` : ""}${INST.manual_close ? "manual close · " : ""}${INST.sizing === "equal" ? "" : `${INST.sizing} sizing · `}${INST.symbols.length} symbols · ` +
     (paper ? `${INST.equity} USDT per symbol` : `${INST.equity} USDT capital`);
@@ -220,6 +221,7 @@ async function del() {
   catch (e) { KB.toast(e.message, "danger"); }
 }
 window.addEventListener("kb-theme", () => { chart?.destroy(); chart = null; loadChart(); });
+window.addEventListener("kb-favorite", loadInstance);
 refresh(); setInterval(refresh, 15000);
 </script>
 {% endblock %}

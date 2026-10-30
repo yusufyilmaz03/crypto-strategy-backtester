@@ -50,6 +50,14 @@ const KB = {
     el.classList.toggle("d-none", !text);
     bootstrap.Tooltip.getOrCreateInstance(el);
   },
+  // Favorite star of an instance; clicks are handled below (also inside card links).
+  star(i) {
+    return `<button type="button" class="btn btn-link p-0 border-0 align-baseline kb-star" data-name="${KB.esc(i.name)}"
+      data-favorite="${i.favorite ? 1 : 0}" title="${i.favorite ? "Remove from favorites" : "Add to favorites"}">` +
+      `<i class="bi ${i.favorite ? "bi-star-fill text-warning" : "bi-star text-secondary"}"></i></button>`;
+  },
+  // Favorites first, then the server's order.
+  favoritesFirst(rows) { return [...rows].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)); },
   modeBadge(m) { return `<span class="badge ${m === "testnet" ? "text-bg-warning" : "text-bg-primary"}">${KB.esc(m)}</span>`; },
   toast(msg, kind = "success") {
     const box = document.getElementById("toasts");
@@ -99,6 +107,19 @@ const KB = {
   },
   cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); },
 };
+
+// Favorite stars: toggle on the server, then tell the page to reload its data ("kb-favorite").
+document.addEventListener("click", async e => {
+  const btn = e.target.closest(".kb-star");
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const favorite = btn.dataset.favorite !== "1";
+  try {
+    await KB.api(`/api/instances/${encodeURIComponent(btn.dataset.name)}/action`, { method: "POST", body: { action: "favorite", favorite } });
+    window.dispatchEvent(new Event("kb-favorite"));
+  } catch (err) { KB.toast(err.message, "danger"); }
+});
 
 // Light/dark theme toggle (remembered per browser).
 (function () {

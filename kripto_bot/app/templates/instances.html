@@ -60,13 +60,15 @@
 <script>
 let META, ROWS = [];
 async function load() {
-  const rows = ROWS = await KB.api("/api/instances");
+  const rows = ROWS = KB.favoritesFirst(await KB.api("/api/instances"));
   KB.table(document.getElementById("list"), rows, [
-    ["Name", i => `${KB.modeBadge(i.mode)} <a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a>`],
+    ["Name", i => `${KB.star(i)} ${KB.modeBadge(i.mode)} <a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a>`],
     ["Status", i => KB.statusBadge(i.status, i.enabled)],
     ["Setup", i => `<span class="setup-tip" data-bs-toggle="tooltip" data-bs-title="${KB.esc(setupText(i))}">${KB.esc(i.strategy)}</span>`],
     ["TF", i => KB.esc(i.timeframe) + (i.lower_tf_entry || i.lower_tf_exit
-      ? ` <span class="badge text-bg-secondary" title="lower-timeframe rules">${[i.lower_tf_entry && "E", i.lower_tf_exit && "X"].filter(Boolean).join("+")}</span>` : "")],
+      ? ` <span class="badge text-bg-secondary" title="lower-timeframe rules${i.lower_tf_sma ? `, SMA${i.lower_tf_sma} mode` : ""}">${
+          [i.lower_tf_entry && "E", i.lower_tf_exit && "X"].filter(Boolean).join("+")}${i.lower_tf_sma || ""}</span>` : "")
+      + (i.trend_sma ? ` <span class="badge text-bg-secondary" title="trend filter: close above SMA${i.trend_sma}">S${i.trend_sma}</span>` : "")],
     ["Symbols", i => i.symbols.length],
     ["Return", i => `<span class="${KB.sign(i.summary.return_pct)}">${KB.pct(i.summary.return_pct)}</span>`],
     ["B&amp;H", i => `<span class="${KB.sign(i.summary.buy_hold_pct)}">${KB.pct(i.summary.buy_hold_pct)}</span>`],
@@ -231,6 +233,7 @@ document.getElementById("form").addEventListener("submit", async e => {
     KB.toast(`Instance ${body.name} created`); load();
   } catch (ex) { err.textContent = ex.message; err.classList.remove("d-none"); }
 });
+window.addEventListener("kb-favorite", load);
 initForm(); load(); setInterval(load, 15000);
 if (location.hash === "#new") new bootstrap.Modal(document.getElementById("newModal")).show();
 </script>

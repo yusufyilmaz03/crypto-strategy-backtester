@@ -170,3 +170,12 @@ def test_access_log_drops_successful_requests_only():
     assert f.filter(rec(fmt, ("POST /api/x HTTP/1.1", "500", "-")))
     assert f.filter(rec(" * Running on %s", ("http://127.0.0.1:5002",)))
     assert f.filter(rec("plain message", None))
+
+
+def test_favorite_can_change_any_time(client):
+    _post(client, "/api/instances", {"name": "fav-me", "symbols": ["X/USDT"]})
+    r = _post(client, "/api/instances/fav-me/action", {"action": "favorite", "favorite": True})
+    assert r.status_code == 200 and r.get_json()["favorite"] is True
+    assert instances.get("fav-me").favorite is True
+    assert _post(client, "/api/instances/fav-me/action", {"action": "favorite", "favorite": False}).get_json()["favorite"] is False
+    assert instances.get("fav-me").enabled is False            # nothing else changed
