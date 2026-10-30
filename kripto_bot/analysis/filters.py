@@ -111,6 +111,7 @@ def member_trades(members, trades, end):
             e = pd.to_datetime(t["entry_time"])
             sel = (e >= m) & (e < stop) & (t["reason"] != "END") & (pd.to_datetime(t["exit_time"]) < pd.Timestamp(end))
             picked.append(t[sel])
+    picked = [p for p in picked if len(p)]
     return pd.concat(picked) if picked else pd.DataFrame(columns=TRADE_COLS)
 
 

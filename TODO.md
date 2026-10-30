@@ -13,20 +13,18 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   `docs/forward-test.md`). Run `python -m kripto_bot forward-report` for `forward-v9`.
   Then compare descriptively with the variants that run next to it since before their
   tests: `v9-trail-1d` (T), `v9-band-1d` (H), `v9-ltf-exit-1d` (X, started 2026-10-30),
-  `v9-ivol-1d` (inverse-volatility sizing). Report the number of closed trades and
-  winners/losers too, not only returns.
+  `v9-ivol-1d` (inverse-volatility sizing), `v9-s200-1d` (S200) and `v9-e200-1d` (E200,
+  both passed `docs/v9-filters-test.md`). Report the number of closed trades, win rate,
+  profit factor and expectancy too, not only returns.
 
 ## Research (notes, not decided)
 
-- **SMA trend filter at entry** (a variable SMA length per instance). Aim: more reliable
-  entries, not more return. Needs its own pre-registration with one fixed length.
-- **Combinations** H + E + X, E + X: the best Sharpe and drawdown in
-  `docs/v9-lower-tf-test.md`, but only reported there. Using one needs its own test, on
-  data that has been seen.
-- **Trade-level reliability metrics** in every test: closed trades, winners vs losers
-  (win rate), average win and loss, profit factor, expectancy per trade. The filters aim
-  at fewer losing trades, which the portfolio metrics (return, Sharpe, drawdown) show
-  only indirectly.
+- **Done 2026-10-30, `docs/v9-filters-test.md`:** S200 and E200 PASS (trade criteria);
+  X200, E + X, H + E + X FAIL (they raise the win rate by cutting winners: lower profit
+  factor and expectancy in the bull period).
+- **S200 + E200** (both passes together): would need its own test, on seen data.
+- **Trade-level metrics in every test from now on:** closed trades, win rate, average
+  win and loss, profit factor, expectancy per trade (`analysis/filters.py`).
 
 ## Needs approval first (order-sending code)
 
