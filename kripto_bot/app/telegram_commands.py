@@ -92,6 +92,17 @@ def _f2(x):
     return "–" if _missing(x) else f"{x:.2f}"
 
 
+def _settings(inst):
+    """The instance's setup in one line, as on the panel's instance page (mode left out)."""
+    params = " ".join(f"{k}={v}" for k, v in inst.params.items())
+    parts = [f"{inst.strategy} {params}".strip(), inst.timeframe, f"stop {inst.stop}",
+             inst.trail and f"trail {inst.trail}×ATR", inst.trend_sma and f"trend SMA{inst.trend_sma}",
+             inst.lower_tf_entry and "lower-TF entry", inst.lower_tf_exit and "lower-TF exit",
+             inst.lower_tf_sma and f"lower-TF SMA{inst.lower_tf_sma}", inst.manual_close and "manual close",
+             inst.sizing != "equal" and f"{inst.sizing} sizing", f"{len(inst.symbol_list)} symbols"]
+    return " · ".join(p for p in parts if p)
+
+
 def _when(t, inst):
     """Candle or trade time, short: the date on 1d, else day and time."""
     if _missing(t):
@@ -132,6 +143,7 @@ def _table(headers, rows, align=None):
     widths = [max(len(r[k]) for r in cells) for k in range(len(headers))]
     lines = [" ".join(c.ljust(w) if a == "l" else c.rjust(w) for c, w, a in zip(r, widths, align)).rstrip()
              for r in cells]
+    lines[0] += "\u00a0" * 3      # room for the copy button Telegram puts over the block's top right
     return f"<pre>{_e(chr(10).join(lines))}</pre>"
 
 
@@ -294,8 +306,11 @@ class CommandBot:
     def _instance(self, inst):
         s = reporting.summary(inst, self.paper_db)
         state = reporting.service_status(inst.name)
-        lines = [f"<b>{_e(_name(inst))}</b>", _e(notify._setup(inst)),
-                 f"Process: {_e(state['state'])}{' (' + _e(state['note']) + ')' if state.get('note') else ''}"]
+        status = state["state"] + (f": {state['note']}" if state.get("note") else "")
+        lines = [f"<b>{_e(_name(inst))}</b> - ({inst.mode}) - ({_e(status)})"]
+        if inst.description:
+            lines.append(f"<i>{_e(inst.description)}</i>")
+        lines.append(_e(_settings(inst)))
         if s["return_pct"] is None:
             lines.append("No data yet.")
         else:
@@ -308,8 +323,6 @@ class CommandBot:
                                 [[str(s["days"]), str(s["open_positions"]), str(s["closed_trades"]), win,
                                   _money(s["realized_pnl"])]], "rrrrr"))
             lines.append("PnL: realized, closed trades, USDT.")
-        if inst.manual_close:
-            lines.append("Manual close: on")
         keyboard = [[_button(f"Positions ({s['open_positions']})", f"p|{inst.name}"),
                      _button("Signals", f"s|{inst.name}"), _button("Trades", f"t|{inst.name}")],
                     [_button("↻ Refresh", f"i|{inst.name}"), _button("« Instances", "l")]]

@@ -105,7 +105,7 @@ def test_status(bot):
     _say(bot, "/status@CryptoTesterBot")
     text = bot.api.last()[0]
     assert bot.api.sent("sendMessage")[-1]["parse_mode"] == "HTML"
-    assert re.search(r"<pre> Instance +Ret% +B&amp;H% +Open\n(.*\n)* fwd +– +– +1(\n|</pre>)", text)
+    assert re.search(r"<pre> Instance +Ret% +B&amp;H% +Open\xa0{3}\n(.*\n)* fwd +– +– +1(\n|</pre>)", text)
     assert "Not running: forward-v9 (supervisor not running), fwd (supervisor not running)" in text
     assert "Stopped: testnet-v9, idle ⭐" in text and "Kill switch: block" in text
     instances.update("fwd", favorite=True)
@@ -125,8 +125,12 @@ def test_instance_views(bot):
     _press(bot, "i|fwd")
     assert bot.api.sent("answerCallbackQuery")
     text, buttons = bot.api.last()
-    assert text.startswith("<b>fwd ⭐</b>\npaper · v9") and "Manual close: on" in text
+    assert text.startswith("<b>fwd ⭐</b> - (paper) - (supervisor not running)\n"
+                           "v9 · 1d · stop none · manual close · 2 symbols\n")
     assert buttons[:3] == ["p|fwd", "s|fwd", "t|fwd"]
+    instances.update("fwd", description="SMA <50> & more")
+    _press(bot, "i|fwd")
+    assert "\n<i>SMA &lt;50&gt; &amp; more</i>\nv9 · 1d" in bot.api.last()[0]
     _press(bot, "p|fwd")
     text, buttons = bot.api.last()
     assert re.search(r"\nX +100 110 \+10\.0</pre>", text)
@@ -141,8 +145,8 @@ def test_instance_views(bot):
 
 def test_table():
     assert telegram_commands._table(["Name", "Ret%"], [["a", "+1.0"], ["long-name", "-12.5"]]) == \
-        "<pre>Name       Ret%\na          +1.0\nlong-name -12.5</pre>"
-    assert telegram_commands._table(["A", "B"], [["x", "y"]], "ll") == "<pre>A B\nx y</pre>"
+        "<pre>Name       Ret%\xa0\xa0\xa0\na          +1.0\nlong-name -12.5</pre>"
+    assert telegram_commands._table(["A", "B"], [["x", "y"]], "ll") == "<pre>A B\xa0\xa0\xa0\nx y</pre>"
 
 
 def test_text_from_the_databases_is_escaped(bot):
@@ -272,8 +276,8 @@ def test_instance_summary_tables(bot):
     store.conn.commit()
     _press(bot, "i|fwd")
     text = bot.api.last()[0]
-    assert re.search(r"<pre> +Strategy +B&amp;H\nReturn % +\+5\.00 +\+0\.00\n", text)   # B&H: (+10% - 10%) / 2
-    assert re.search(r"<pre>Days Open Closed +Win +PnL\n +1 +1 +1 +100% +\+2\.00</pre>", text)
+    assert re.search(r"<pre> +Strategy +B&amp;H\xa0{3}\nReturn % +\+5\.00 +\+0\.00\n", text)   # B&H: (+10% - 10%) / 2
+    assert re.search(r"<pre>Days Open Closed +Win +PnL\xa0{3}\n +1 +1 +1 +100% +\+2\.00</pre>", text)
 
 
 def test_actions_in_a_word():
