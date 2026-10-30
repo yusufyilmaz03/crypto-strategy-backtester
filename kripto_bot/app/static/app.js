@@ -56,8 +56,6 @@ const KB = {
       data-favorite="${i.favorite ? 1 : 0}" title="${i.favorite ? "Remove from favorites" : "Add to favorites"}">` +
       `<i class="bi ${i.favorite ? "bi-star-fill text-warning" : "bi-star text-secondary"}"></i></button>`;
   },
-  // Favorites first, then the server's order.
-  favoritesFirst(rows) { return [...rows].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)); },
   modeBadge(m) { return `<span class="badge ${m === "testnet" ? "text-bg-warning" : "text-bg-primary"}">${KB.esc(m)}</span>`; },
   toast(msg, kind = "success") {
     const box = document.getElementById("toasts");

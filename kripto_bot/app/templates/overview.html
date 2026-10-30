@@ -107,8 +107,8 @@ function confirmFlatten() {   // two clicks within 5s instead of a blocking dial
   KB.toast("Click Flatten again within 5 seconds to close every testnet/live position.", "warning");
   return false;
 }
-// Sort options: [label, value of an instance, direction]. Favorites stay on top in every order;
-// instances without a value (no data yet) go last.
+// Sort options: [label, value of an instance, direction]. Instances without a value (no data
+// yet) go last. Favorites are sorted like the others; their star marks them.
 const SORTS = {
   newest: ["Newest first", i => i.created_at, -1],
   oldest: ["Oldest first", i => i.created_at, 1],
@@ -123,7 +123,7 @@ const SORTS = {
 function sortInstances(rows) {
   const [, key, dir] = SORTS[document.getElementById("sort").value] || SORTS.newest;
   const cmp = (x, y) => x == null || y == null ? (x == null) - (y == null) : (x < y ? -1 : x > y ? 1 : 0) * dir;
-  return [...rows].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0) || cmp(key(a), key(b)));
+  return [...rows].sort((a, b) => cmp(key(a), key(b)));
 }
 const SORT_KEY = "kb-overview-sort", sortEl = document.getElementById("sort");
 sortEl.innerHTML = Object.entries(SORTS).map(([k, [label]]) => `<option value="${k}">${label}</option>`).join("");

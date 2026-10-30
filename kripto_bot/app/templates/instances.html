@@ -60,7 +60,7 @@
 <script>
 let META, ROWS = [];
 async function load() {
-  const rows = ROWS = KB.favoritesFirst(await KB.api("/api/instances"));
+  const rows = ROWS = await KB.api("/api/instances");
   KB.table(document.getElementById("list"), rows, [
     ["Name", i => `${KB.star(i)} ${KB.modeBadge(i.mode)} <a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a>`],
     ["Status", i => KB.statusBadge(i.status, i.enabled)],
