@@ -27,6 +27,7 @@
   <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t-pos">Positions</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-trades" id="trades-tab">Trades</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-signals" id="signals-tab">Signals</button></li>
+  <li class="nav-item d-none" id="stops-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-stops">Stop events</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-log">Log</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-setup">Setup</button></li>
 </ul>
@@ -34,6 +35,10 @@
   <div class="tab-pane fade show active table-responsive" id="t-pos"><table class="table table-sm" id="positions"></table></div>
   <div class="tab-pane fade table-responsive" id="t-trades" style="max-height: 520px"><table class="table table-sm" id="trades"></table></div>
   <div class="tab-pane fade table-responsive" id="t-signals" style="max-height: 520px"><table class="table table-sm" id="signals"></table></div>
+  <div class="tab-pane fade table-responsive" id="t-stops" style="max-height: 520px">
+    <div class="small text-secondary mb-1">Shadow stop: the first 1m candle that reached a trade's stop. Recorded only; the engine
+      closes the trade at the main close at min(open, stop), as in the backtest. Times UTC.</div>
+    <table class="table table-sm" id="stops"></table></div>
   <div class="tab-pane fade" id="t-log"><div class="small text-secondary mb-1">Newest first.</div><div class="log bg-body-tertiary p-2 rounded" id="log">…</div></div>
   <div class="tab-pane fade" id="t-setup"><pre class="small mb-0" id="setup"></pre></div>
 </div>
@@ -84,7 +89,8 @@ async function loadChart() {
 }
 async function loadTables() {
   const paper = INST.mode === "paper";
-  const [pos, trades, signals, log] = await Promise.all(["positions", "trades", "signals", "log"].map(t => KB.api(`/api/instances/${N}/${t}`)));
+  const [pos, trades, signals, log, stops] = await Promise.all(["positions", "trades", "signals", "log", ...(paper ? ["stops"] : [])]
+    .map(t => KB.api(`/api/instances/${N}/${t}`)));
   // Columns: [header, cell html, sort value]. Newest first by default; click a header to re-sort.
   KB.table(document.getElementById("positions"), pos, paper ? [
     ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Side", r => KB.esc(r.side), r => r.side],
@@ -116,6 +122,22 @@ async function loadTables() {
     ["Time", r => KB.time(r.time), r => r.time], ["Level", r => KB.esc(r.level), r => r.level],
     ["Symbol", r => KB.esc(r.symbol ?? ""), r => r.symbol], ["Message", r => KB.esc(r.message), r => r.message]],
     paper ? "No signals yet." : "No events yet.", [0, "desc"]);
+  document.getElementById("stops-item").classList.toggle("d-none", !paper);
+  if (paper) {
+    const rel = (a, b) => a == null || b == null ? null : (a / b - 1) * 100;
+    // detection delay: wall clock at detection minus the 1m candle's close
+    const late = r => (Date.parse(r.detected_at) - Date.parse(r.minute_time + "Z") - 60000) / 1000;
+    KB.table(document.getElementById("stops"), stops, [
+      ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Hit", r => KB.time(r.minute_time), r => r.minute_time],
+      ["Stop", r => KB.num(r.stop, 6), r => r.stop], ["1m open", r => KB.num(r.minute_open, 6), r => r.minute_open],
+      ["1m low", r => KB.num(r.minute_low, 6), r => r.minute_low], ["Est. fill", r => KB.num(r.est_fill, 6), r => r.est_fill],
+      ["Fill vs stop", r => KB.pct(rel(r.est_fill, r.stop)), r => rel(r.est_fill, r.stop)],
+      ["Noticed after", r => `${Math.max(0, Math.round(late(r)))}s`, r => late(r)],
+      ["Engine exit", r => KB.num(r.exit_price, 6), r => r.exit_price],
+      ["Engine vs est.", r => KB.pct(rel(r.exit_price, r.est_fill)), r => rel(r.exit_price, r.est_fill)],
+      ["Reason", r => KB.esc(r.reason ?? (r.exit_time ? "" : "open")), r => r.reason]],
+      "No stop hits recorded.", [1, "desc"]);
+  }
   const logEl = document.getElementById("log");
   logEl.textContent = log.length ? [...log].reverse().join("\n")     // newest line on top
     : "No log yet (logs are written when the instance runs under run_all.py).";

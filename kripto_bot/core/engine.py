@@ -90,18 +90,28 @@ class Engine:
         buying = (side == "LONG") == entering
         return price * (1 + s) if buying else price * (1 - s)
 
+    def _stop_for(self, side, fill, atr):
+        if atr is None or not self.config.atr_multiplier:
+            return None
+        dist = atr * self.config.atr_multiplier
+        return fill - dist if side == "LONG" else fill + dist
+
+    def entry_stop(self, open_):
+        """Stop of the position the pending entry would open at `open_` (None if no entry
+        is pending or it gets no stop). Lets an intraday watcher check the entry candle."""
+        if self.pending is None or self.pending[0] != "ENTER" or self.position is not None:
+            return None
+        _, side, atr, _ = self.pending
+        return self._stop_for(side, self._slip(open_, side, entering=True), atr)
+
     def _open(self, side, price, time, atr, rsi):
         fill = self._slip(price, side, entering=True)
         fee_rate = self.config.fee_rate
         qty = self.equity / (fill * (1 + fee_rate))
-        stop = None
-        if atr is not None and self.config.atr_multiplier:
-            dist = atr * self.config.atr_multiplier
-            stop = fill - dist if side == "LONG" else fill + dist
         self.position = Position(
             trade_id=uuid.uuid4().hex[:8], side=side, qty=qty, entry_time=time,
             entry_price=fill, entry_fee=qty * fill * fee_rate, equity_before=self.equity,
-            stop=stop, signal_rsi=rsi,
+            stop=self._stop_for(side, fill, atr), signal_rsi=rsi,
         )
         if self.on_open:
             self.on_open(self.symbol, self.position)

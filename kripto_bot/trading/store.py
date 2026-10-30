@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS weights (
     strategy TEXT, timeframe TEXT, time TEXT, symbol TEXT, weight REAL, cost REAL,
     PRIMARY KEY (strategy, timeframe, time, symbol)
 );
+CREATE TABLE IF NOT EXISTS stop_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, strategy TEXT, timeframe TEXT, symbol TEXT,
+    entry_time TEXT, stop REAL, minute_time TEXT, minute_open REAL, minute_low REAL,
+    est_fill REAL, detected_at TEXT,
+    UNIQUE (strategy, timeframe, symbol, entry_time)
+);
 """
 
 
@@ -152,6 +158,20 @@ class PaperStore:
         """Target weight set at a portfolio rebalance and the trading cost it caused."""
         self.conn.execute("INSERT OR REPLACE INTO weights VALUES (?, ?, ?, ?, ?, ?)",
                           (strategy, timeframe, _t(time), symbol, float(weight), float(cost)))
+
+    def log_stop_event(self, strategy, timeframe, symbol, entry_time, stop, minute_time, minute_open,
+                       minute_low, est_fill, detected_at):
+        """Shadow stop: the first 1m candle that reached the stop of the trade entered at
+        entry_time (trading/position_watch.py). One row per trade."""
+        self.conn.execute(
+            "INSERT OR IGNORE INTO stop_events (strategy, timeframe, symbol, entry_time, stop, minute_time,"
+            " minute_open, minute_low, est_fill, detected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (strategy, timeframe, symbol, _t(entry_time), float(stop), _t(minute_time), float(minute_open),
+             float(minute_low), float(est_fill), _t(detected_at)))
+
+    def stop_event_recorded(self, strategy, timeframe, symbol, entry_time):
+        return self.conn.execute("SELECT 1 FROM stop_events WHERE strategy=? AND timeframe=? AND symbol=?"
+                                 " AND entry_time=?", (strategy, timeframe, symbol, _t(entry_time))).fetchone() is not None
 
     def last_rebalance(self, strategy, timeframe):
         row = self.conn.execute("SELECT MAX(time) FROM weights WHERE strategy=? AND timeframe=?",

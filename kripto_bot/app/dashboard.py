@@ -233,6 +233,8 @@ def api_instance_table(name, table):
         return jsonify(records(reporting.trades(inst).iloc[::-1]))
     if table == "signals":
         return jsonify(records(reporting.signals(inst)))
+    if table == "stops":
+        return jsonify(records(reporting.stop_events(inst).iloc[::-1]))
     if table == "log":
         return jsonify(reporting.log_tail(inst.name, int(request.args.get("lines", 200))))
     raise ApiError(f"unknown table {table}")

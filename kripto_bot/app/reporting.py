@@ -86,6 +86,19 @@ def positions(inst, paper_db=None):
     return _query(inst.db_path, "SELECT * FROM positions ORDER BY symbol")
 
 
+def stop_events(inst, paper_db=None):
+    """Paper: shadow stop hits (trading/position_watch.py) with how the engine closed the
+    trade. Testnet: none."""
+    if inst.mode != "paper":
+        return pd.DataFrame()
+    return _query(paper_db or store.DB_FILE,
+                  "SELECT s.symbol, s.entry_time, s.stop, s.minute_time, s.minute_open, s.minute_low, s.est_fill,"
+                  " s.detected_at, t.exit_time, t.exit_price, t.reason FROM stop_events s LEFT JOIN trades t"
+                  " ON t.strategy = s.strategy AND t.timeframe = s.timeframe AND t.symbol = s.symbol"
+                  " AND t.entry_time = s.entry_time WHERE s.strategy=? AND s.timeframe=? ORDER BY s.minute_time",
+                  (inst.run_key, inst.timeframe))
+
+
 def signals(inst, limit=500, paper_db=None):
     if inst.mode == "paper":
         return _query(paper_db or store.DB_FILE, "SELECT candle_time, symbol, signal, rsi, close, position, action FROM signals "

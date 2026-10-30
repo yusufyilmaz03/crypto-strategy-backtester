@@ -18,7 +18,7 @@ from kripto_bot.core import sizing, strategy
 from kripto_bot.core.data import fetch_recent, now_ms, timeframe_ms
 from kripto_bot.core.engine import Engine
 from kripto_bot.core.indicators import add_indicators
-from kripto_bot.trading import store as store_mod
+from kripto_bot.trading import position_watch, store as store_mod
 from kripto_bot.trading.store import PaperStore, single_instance
 
 HISTORY = 300          # closed candles needed for indicator warm-up
@@ -198,14 +198,25 @@ class PortfolioRunner:
             r.report()
 
 
-def sleep_until_next_close(timeframe, check_every_s=30):
+def _next_minute():
+    return (now_ms() // 60_000 + 1) * 60_000 + CLOSE_DELAY_S * 1000
+
+
+def sleep_until_next_close(timeframe, check_every_s=30, on_minute=None):
     """Wait until the next candle close (+ CLOSE_DELAY_S), checking the wall clock in short
-    steps: on macOS a single long sleep doesn't count time the computer spends asleep."""
+    steps: on macOS a single long sleep doesn't count time the computer spends asleep.
+    on_minute, if given, is called a few seconds after each 1m close while waiting."""
     step = timeframe_ms(timeframe)
     target = (now_ms() // step + 1) * step + CLOSE_DELAY_S * 1000
     print(f"\n⏳ Next {timeframe} candle closes in {(target - now_ms()) / 1000:.0f}s "
           f"({pd.Timestamp(target, unit='ms'):%Y-%m-%d %H:%M:%S} UTC)...\n")
+    minute = _next_minute()
     while (remaining := target - now_ms()) > 0:
+        if on_minute is not None:
+            if now_ms() >= minute:
+                on_minute()
+                minute = _next_minute()
+            remaining = min(remaining, max(minute - now_ms(), 0))
         time.sleep(min(check_every_s, remaining / 1000))
 
 
@@ -299,7 +310,13 @@ def main(instance_name="forward-v9", rebuild=False):
           f"sizing {inst.sizing}, timeframe {inst.timeframe}, {len(runners)} symbols "
           f"({resumed} resumed from paper.db)\n")
     portfolio = PortfolioRunner(runners, store, inst.run_key, inst.timeframe) if inst.sizing == "inverse_vol" else None
+    watch = position_watch.StopWatch(runners, store, inst.run_key, inst.timeframe) if position_watch.eligible(inst) else None
+    if watch:
+        print("👀 Shadow stop on: open positions are checked against their stop every minute "
+              "(recorded only, docs/intrabar-watch.md)\n")
     while True:
+        if watch:
+            watch.check()          # the last minutes of the candle that just closed
         if portfolio:
             portfolio.update()
         else:
@@ -308,7 +325,7 @@ def main(instance_name="forward-v9", rebuild=False):
                     r.update()
                 except Exception as e:
                     print(f"[ERROR] {r.symbol}: {e}")
-        sleep_until_next_close(inst.timeframe)
+        sleep_until_next_close(inst.timeframe, on_minute=watch.check if watch else None)
 
 
 if __name__ == "__main__":

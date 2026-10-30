@@ -5,8 +5,8 @@ The bots themselves don't send anything: a Watcher in the supervisor reads their
 databases every POLL_S seconds and reports what is new, so notifications can't
 slow down or break trading. Reported:
 
-- opened/closed paper positions and testnet orders (NOTIFY_TRADES), one message
-  per instance and poll, not one per symbol
+- opened/closed paper positions, shadow stop hits and testnet orders (NOTIFY_TRADES),
+  one message per instance and poll, not one per symbol
 - testnet warnings and errors, crashed or blocked processes, kill switch changes
   (always)
 - a daily summary of every enabled instance (NOTIFY_DAILY_SUMMARY)
@@ -170,6 +170,15 @@ def format_paper(inst, opened, closed):
     if closed:
         lines.append(f"Closed {len(closed)}:")
         lines += _limit([f"  {r['symbol']} {_pct(r['return_pct'])} ({r['reason'] or 'signal'})" for r in closed])
+    return "\n".join(lines)
+
+
+def format_stops(inst, events):
+    lines = [f"⚠️ {inst.name} ({_setup(inst)}): stop hit (shadow stop)"]
+    lines += _limit([f"  {e['symbol']} stop {_num(e['stop'])} at {pd.Timestamp(e['minute_time']):%Y-%m-%d %H:%M} UTC, "
+                     f"est. fill {_num(e['est_fill'])} ({_pct((e['est_fill'] / e['stop'] - 1) * 100)} vs stop)"
+                     for e in events])
+    lines.append(f"Paper closes the position at the {inst.timeframe} close.")
     return "\n".join(lines)
 
 
@@ -338,6 +347,14 @@ class Watcher:
         closed, cur["exits"] = advance(cur.get("exits"), exits)
         if not first and (opened or closed) and option("NOTIFY_TRADES"):
             self.sender.send(format_paper(inst, opened, closed))
+        stops = _rows(self.paper_db or store.DB_FILE,
+                      "SELECT id, symbol, stop, minute_time, est_fill FROM stop_events "
+                      "WHERE strategy=? AND timeframe=? AND id > ? ORDER BY id",
+                      (inst.run_key, inst.timeframe, cur.get("stop_id", 0)))
+        first = "stop_id" not in cur
+        cur["stop_id"] = stops[-1]["id"] if stops else cur.get("stop_id", 0)
+        if not first and stops and option("NOTIFY_TRADES"):
+            self.sender.send(format_stops(inst, stops))
 
     def _testnet(self, inst):
         cur = self._cursors(inst)
