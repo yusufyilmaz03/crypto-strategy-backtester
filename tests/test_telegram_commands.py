@@ -88,23 +88,27 @@ def test_commands_sent_while_down_are_ignored(bot):
 
 def test_status(bot):
     _instance()
-    instances.create({"name": "idle"})
+    instances.create({"name": "idle", "favorite": True})
     open(notify.config.KILL_SWITCH_FILE, "w").close()
     _say(bot, "/status@CryptoTesterBot")
     text = bot.api.last()[0]
     assert "🟢 fwd (paper · v9 · 1d): supervisor not running\n  no data yet · 1 open" in text
-    assert "⚪️ idle: stopped" in text and "Kill switch: block" in text
+    assert "⚪️ idle ⭐: stopped" in text and "Kill switch: block" in text
 
 
 def test_instance_views(bot):
     _instance()
+    instances.update("fwd", favorite=True)
     _say(bot, "/instance")
     text, buttons = bot.api.last()
     assert "Pick an instance" in text and "i|fwd" in buttons
+    labels = [b["text"] for row in json.loads(bot.api.sent("sendMessage")[-1]["reply_markup"])["inline_keyboard"]
+              for b in row]
+    assert "🟢 fwd ⭐" in labels
     _press(bot, "i|fwd")
     assert bot.api.sent("answerCallbackQuery")
     text, buttons = bot.api.last()
-    assert text.startswith("fwd (paper · v9") and "Manual close: on" in text
+    assert text.startswith("fwd ⭐ (paper · v9") and "Manual close: on" in text
     assert buttons[:3] == ["p|fwd", "s|fwd", "t|fwd"]
     _press(bot, "p|fwd")
     text, buttons = bot.api.last()

@@ -5,6 +5,7 @@ A background thread long-polls getUpdates, so nothing has to be reachable from t
 internet. Only the chat in TELEGRAM_CHAT_ID is answered; anything else is ignored.
 
     /status     every instance: process state, return vs buy-and-hold, open positions
+                (⭐ marks the panel's favorites, here and in the instance list)
     /instance   pick an instance, then its positions, signals and trades (buttons)
     /help       this list
 
@@ -43,6 +44,10 @@ HELP = ("Crypto Tester Bot\n"
 
 def _button(text, data):
     return {"text": text, "callback_data": data}
+
+
+def _name(inst):
+    return f"{inst.name} ⭐" if inst.favorite else inst.name
 
 
 def _date(t):
@@ -174,13 +179,13 @@ class CommandBot:
         items = instances.load_all(self.instances_path).values()
         if not items:
             return "No instances yet. Create one on the panel.", []
-        rows = [[_button(f"{'🟢' if i.enabled else '⚪️'} {i.name}", f"i|{i.name}")] for i in items]
+        rows = [[_button(f"{'🟢' if i.enabled else '⚪️'} {_name(i)}", f"i|{i.name}")] for i in items]
         return "Pick an instance:", rows
 
     def _instance(self, inst):
         s = reporting.summary(inst, self.paper_db)
         state = reporting.service_status(inst.name)
-        lines = [f"{inst.name} ({notify._setup(inst)})",
+        lines = [f"{_name(inst)} ({notify._setup(inst)})",
                  f"Process: {state['state']}{' (' + state['note'] + ')' if state.get('note') else ''}"]
         if s["return_pct"] is None:
             lines.append("No data yet.")
@@ -286,12 +291,12 @@ class CommandBot:
         for inst in instances.load_all(self.instances_path).values():
             state = reporting.service_status(inst.name)["state"]
             if not inst.enabled:
-                lines.append(f"⚪️ {inst.name}: stopped")
+                lines.append(f"⚪️ {_name(inst)}: stopped")
                 continue
             s = reporting.summary(inst, self.paper_db)
             perf = ("no data yet" if s["return_pct"] is None else
                     f"{notify._pct(s['return_pct'])} vs B&H {notify._pct(s['buy_hold_pct'])}")
-            lines.append(f"🟢 {inst.name} ({notify._setup(inst)}): {state}\n"
+            lines.append(f"🟢 {_name(inst)} ({notify._setup(inst)}): {state}\n"
                          f"  {perf} · {s['open_positions']} open")
         if len(lines) == 1:
             lines.append("No instances yet.")
