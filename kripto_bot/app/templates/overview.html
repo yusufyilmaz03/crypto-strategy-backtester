@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Overview{% endblock %}
+{% block head %}
+<style>
+  #sort { width: auto; }
+  /* Narrow screens: drop the hidden-count note so the switch and the sort select share
+     the row; once the select wraps to its own line it takes the full width. */
+  @media (max-width: 599.98px) { #hidden-note { display: none; } }
+  @media (max-width: 467.98px) { #sort { flex: 1 1 100%; width: 100%; } }
+</style>
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Overview</h1>
@@ -32,7 +41,7 @@
     <label class="form-check-label small" for="show-stopped">Show stopped</label>
   </div>
   <span class="small text-secondary" id="hidden-note"></span>
-  <select class="form-select form-select-sm w-auto ms-auto" id="sort" aria-label="Sort instances"></select>
+  <select class="form-select form-select-sm ms-auto" id="sort" aria-label="Sort instances"></select>
 </div>
 <div class="row g-3" id="cards"></div>
 {% endblock %}
