@@ -15,10 +15,16 @@ instance's process sells and the notifier reports the trade. A confirmation pres
 more than CONFIRM_TTL_S after it was asked is refused, and close buttons stop working
 when the supervisor restarts, so an old message can't close anything.
 
+Logging: everything about closing a position (asked, requested, refused, too late,
+expired) and messages from other chats always go to the supervisor's output, which
+the background service writes to runtime/logs/supervisor.log. Read-only commands are
+printed only when the supervisor runs in a terminal, so they don't fill the log.
+
 Only one program may read a bot's updates at a time: while the supervisor runs,
 `telegram-setup` gets a conflict error (and vice versa).
 """
 import json
+import sys
 import threading
 import time
 
@@ -56,11 +62,12 @@ def _date(t):
 
 class CommandBot:
     def __init__(self, token, chat_id, call=notify.telegram_call, instances_path=None, paper_db=None,
-                 prices=None, clock=time.time, log=print):
+                 prices=None, clock=time.time, log=print, verbose=None):
         self.token, self.chat_id = token, str(chat_id)
         self.call, self.instances_path, self.paper_db = call, instances_path, paper_db
         self.prices = prices or reporting.current_prices
         self.clock, self.log = clock, log
+        self.verbose = sys.stdout.isatty() if verbose is None else verbose   # read-only commands too
         self.offset = None
         self.targets = {}           # close button id -> (instance name, symbol); in memory on purpose
         self._ids = {}              # (instance name, symbol) -> close button id
@@ -111,16 +118,35 @@ class CommandBot:
             except Exception as e:
                 self.log(f"[commands] {type(e).__name__}: {e}")
 
+    # ----- logging
+    def audit(self, text):
+        """Always logged: closes and strangers."""
+        self.log(f"{pd.Timestamp(self.clock(), unit='s', tz='UTC'):%Y-%m-%d %H:%M:%S} [telegram] {text}")
+
+    def trace(self, text):
+        """Logged in a terminal only: read-only commands."""
+        if self.verbose:
+            self.audit(text)
+
     # ----- updates
-    def _ours(self, message):
-        return str(((message or {}).get("chat") or {}).get("id")) == self.chat_id
+    def _ours(self, message, sender=None, what="message"):
+        chat = ((message or {}).get("chat") or {}).get("id")
+        if str(chat) == self.chat_id:
+            return True
+        who = (sender or (message or {}).get("from") or {})
+        self.audit(f"ignored a {what} from chat {chat} (user {who.get('id')} @{who.get('username')}): "
+                   "not TELEGRAM_CHAT_ID")
+        return False
 
     def handle(self, update):
         if "callback_query" in update:
             return self._pressed(update["callback_query"])
         msg = update.get("message")
-        if not self._ours(msg) or self.clock() - msg.get("date", 0) > MAX_AGE_S:
+        if not self._ours(msg):
             return
+        if self.clock() - msg.get("date", 0) > MAX_AGE_S:
+            return self.trace(f"ignored {msg.get('text')!r}: sent while the supervisor was down")
+        self.trace(msg.get("text"))
         word, *args = (msg.get("text") or "").split() or [""]
         command = word[1:].split("@")[0].lower() if word.startswith("/") else ""
         if command == "status":
@@ -134,9 +160,13 @@ class CommandBot:
 
     def _pressed(self, query):
         msg = query.get("message")
-        if not self._ours(msg):
+        if msg is None:             # a press on a message too old for Telegram to send along
+            return self.trace("button press without its message ignored")
+        if not self._ours(msg, query.get("from"), "button press"):
             return
         kind, _, arg = (query.get("data") or "").partition("|")
+        if kind not in ("c", "y"):
+            self.trace(f"button {query.get('data')}")
         text, keyboard = self.view(kind, arg, msg)
         try:        # only stops the button's spinner; Telegram refuses it for a press answered late
             self.call(self.token, "answerCallbackQuery", {"callback_query_id": query["id"]})
@@ -163,6 +193,7 @@ class CommandBot:
         if kind in ("c", "y"):
             target = self.targets.get(arg)
             if target is None:
+                self.audit("close button from before a restart pressed: refused (expired)")
                 return "This button has expired (the supervisor restarted). Open the instance again.", self._back()
             return self._confirm(arg, *target) if kind == "c" else self._close(arg, msg, *target)
         try:
@@ -271,6 +302,7 @@ class CommandBot:
         return "\n".join([f"{inst.name}: {title} (newest first)"] + rows), self._back(inst)
 
     def _confirm(self, target_id, name, symbol):
+        self.audit(f"close {symbol} on {name}: asked for confirmation")
         text = (f"Close {symbol} on {name} at the market now?\n"
                 "The instance sells at the last price within about a minute; "
                 "the trade is recorded with reason MANUAL.")
@@ -280,11 +312,14 @@ class CommandBot:
         back = [[_button("Positions", f"p|{name}"), _button("« Instances", "l")]]
         asked = (msg or {}).get("edit_date") or (msg or {}).get("date", 0)
         if self.clock() - asked > CONFIRM_TTL_S:
+            self.audit(f"close {symbol} on {name}: confirmed too late, not closed")
             return f"Too late: {symbol} was not closed. Press Close again.", back
         try:
             manual_close.request(instances.get(name, self.instances_path), symbol, self.paper_db)
         except (manual_close.CloseRefused, instances.InstanceError) as e:
+            self.audit(f"close {symbol} on {name}: refused ({e})")
             return f"{symbol} not closed: {e}", back
+        self.audit(f"close {symbol} on {name}: confirmed, request filed")
         return (f"✋ Close of {symbol} requested. {name} sells it within about a minute; "
                 "the trade message follows."), back
 

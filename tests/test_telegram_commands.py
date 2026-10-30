@@ -40,9 +40,10 @@ class FakeApi:
 def bot():
     api = FakeApi()
     clock = {"now": NOW}
+    logged = []
     b = CommandBot("token", str(CHAT), call=api, prices=lambda symbols: {s: 110.0 for s in symbols},
-                   clock=lambda: clock["now"])
-    b.api, b.time = api, clock
+                   clock=lambda: clock["now"], log=logged.append, verbose=False)
+    b.api, b.time, b.logged = api, clock, logged
     return b
 
 
@@ -77,6 +78,16 @@ def test_only_our_chat_is_answered(bot):
     _say(bot, "/status", chat=7)
     _press(bot, "l", chat=7)
     assert bot.api.calls == []
+    assert len(bot.logged) == 2 and all("from chat 7" in line for line in bot.logged)   # always logged
+
+
+def test_read_only_commands_are_logged_in_a_terminal_only(bot):
+    _say(bot, "/status")
+    assert bot.logged == []
+    bot.verbose = True
+    _say(bot, "/status")
+    _press(bot, "l")
+    assert bot.logged == ["2026-10-30 12:00:00 [telegram] /status", "2026-10-30 12:00:00 [telegram] button l"]
 
 
 def test_commands_sent_while_down_are_ignored(bot):
@@ -141,6 +152,9 @@ def test_close_asks_first_then_files_the_request(bot):
     assert bool(pos.loc["X/USDT", "close_requested"])
     _press(bot, "y|1", edit_date=NOW - 5)                         # a second tap
     assert "already requested" in bot.api.last()[0]
+    assert [line.split("] ")[1] for line in bot.logged] == [
+        "close X/USDT on fwd: asked for confirmation", "close X/USDT on fwd: confirmed, request filed",
+        "close X/USDT on fwd: refused (closing X/USDT was already requested)"]
     _press(bot, "p|fwd")
     text, buttons = bot.api.last()
     assert "close requested" in text and "c|1" not in buttons
@@ -150,14 +164,14 @@ def test_late_confirmation_is_refused(bot):
     inst = _instance()
     _press(bot, "p|fwd")
     _press(bot, "y|1", edit_date=NOW - CONFIRM_TTL_S - 1)
-    assert "Too late" in bot.api.last()[0]
+    assert "Too late" in bot.api.last()[0] and "confirmed too late" in bot.logged[-1]
     assert not reporting.positions(inst).close_requested.any()
 
 
 def test_buttons_from_before_a_restart_expire(bot):
     _instance()
     _press(bot, "y|1")
-    assert "expired" in bot.api.last()[0]
+    assert "expired" in bot.api.last()[0] and "expired" in bot.logged[-1]
 
 
 def test_close_refused_when_the_instance_is_stopped(bot):
