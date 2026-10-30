@@ -16,8 +16,8 @@
 <i class="bi bi-question-circle text-secondary ms-1" role="button" tabindex="0"{% if id %} id="{{ id }}"{% endif %} data-bs-toggle="tooltip" data-bs-title="{{ text }}"></i>
 {%- endmacro %}
     <div class="row g-3">
-      <div class="col-md-6"><label class="form-label">Name{{ tip("Lowercase letters, digits and '-'. The setup can't be changed after creation: to try something else, create another instance.") }}</label>
-        <input class="form-control" name="name" required pattern="[a-z0-9][a-z0-9-]{1,39}" placeholder="e.g. v9-sma100-1d"></div>
+      <div class="col-md-6"><label class="form-label">Name{{ tip("2-60 characters: letters, digits, '-' and '_'. The setup can't be changed after creation: to try something else, create another instance.") }}</label>
+        <input class="form-control" name="name" required pattern="[A-Za-z0-9][A-Za-z0-9_\-]{1,59}" placeholder="e.g. v9-sma100-1d"></div>
       <div class="col-md-3"><label class="form-label">Mode{{ tip("paper: simulated on live Binance prices. testnet: real market orders on the Binance Spot Testnet; one testnet instance can run at a time.") }}</label>
         <select class="form-select" name="mode" id="mode"></select></div>
       <div class="col-md-3"><label class="form-label">Timeframe{{ tip("Candle length the strategy trades on. Signals use closed candles only.") }}</label>
@@ -57,7 +57,7 @@ let META, ROWS = [];
 async function load() {
   const rows = ROWS = await KB.api("/api/instances");
   KB.table(document.getElementById("list"), rows, [
-    ["Name", i => `<a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a> ${KB.modeBadge(i.mode)}`],
+    ["Name", i => `${KB.modeBadge(i.mode)} <a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a>`],
     ["Status", i => KB.statusBadge(i.status, i.enabled)],
     ["Setup", i => `<span class="setup-tip" data-bs-toggle="tooltip" data-bs-title="${KB.esc(setupText(i))}">${KB.esc(i.strategy)}</span>`],
     ["TF", i => KB.esc(i.timeframe) + (i.lower_tf_entry || i.lower_tf_exit
@@ -136,7 +136,7 @@ function cloneInstance(encodedName) {
   document.getElementById("symbols-box").classList.toggle("d-none", !i.custom_symbols);
   form.querySelector('[name="symbols"]').value = i.custom_symbols ? i.symbols.join(", ") : "";
   form.querySelector('[name="description"]').value = i.description || "";
-  form.querySelector('[name="name"]').value = `${i.name}-copy`.slice(0, 40);
+  form.querySelector('[name="name"]').value = `${i.name}-copy`.slice(0, 60);
   document.getElementById("form-title").textContent = `New instance · copy of ${i.name}`;
   bootstrap.Modal.getOrCreateInstance(document.getElementById("newModal")).show();
 }

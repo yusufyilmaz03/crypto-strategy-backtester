@@ -17,11 +17,12 @@
     .navbar-brand i { color: var(--bs-warning); }
     .card-instance:hover { border-color: var(--bs-primary); }
     .setup-tip { text-decoration: underline dotted; cursor: help; }
-    /* instance card metrics: spread edge to edge; two rows of two on extra-large screens */
+    /* instance card metrics: spread edge to edge; on extra-large screens two rows of two,
+       each metric's label and value on one line, sharing a baseline */
     .metrics-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; }
     @media (min-width: 1200px) {
-      .metrics-row > .metric { flex: 0 0 calc(50% - .5rem); }
-      .metrics-row > .metric:nth-child(even) { text-align: end; }
+      .metrics-row > .metric { flex: 0 0 calc(50% - .5rem); display: flex; align-items: baseline; gap: .5rem; }
+      .metrics-row > .metric:nth-child(even) { justify-content: flex-end; }
     }
     #toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 1100; max-width: 380px; }
   </style>

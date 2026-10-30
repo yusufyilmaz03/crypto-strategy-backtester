@@ -98,3 +98,13 @@ def test_trailing_exit_is_a_locked_paper_setting(path):
                           ({"trail": 3, "mode": "testnet"}, "only paper")]:
         with pytest.raises(instances.InstanceError, match=message):
             instances.create({"name": "bad-trail", "strategy": "v9", **data}, path)
+
+
+def test_names(path):
+    assert instances.create({"name": "V9_Trail-1d"}, path).name == "V9_Trail-1d"
+    assert instances.create({"name": "x" * 60}, path)
+    for bad in ["x" * 61, "_lead", "-lead", "a", "has space", "dot.ted"]:
+        with pytest.raises(InstanceError, match="name"):
+            instances.create({"name": bad}, path)
+    with pytest.raises(InstanceError, match="already exists"):
+        instances.create({"name": "v9_trail-1D"}, path)       # log and lock files would collide on macOS

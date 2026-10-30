@@ -28,7 +28,7 @@ MODES = ["paper", "testnet"]
 SIZINGS = {"equal": "Equal capital per symbol, never rebalanced",
            "inverse_vol": "Monthly rebalanced to 1/volatility weights (docs/v9-sizing-test.md)"}
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
-NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,59}$")
 SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing",
                 "lower_tf_entry", "lower_tf_exit", "manual_close"]
 
@@ -110,7 +110,7 @@ def _clean_params(key, params):
 
 def validate(inst, existing):
     if not NAME_RE.match(inst.name):
-        raise InstanceError("name: 2-40 characters, lowercase letters, digits and '-'")
+        raise InstanceError("name: 2-60 characters: letters, digits, '-' and '_', starting with a letter or digit")
     if inst.mode not in MODES:
         raise InstanceError(f"mode must be one of {', '.join(MODES)}")
     if inst.strategy not in strategy.STRATEGY_DISPATCH:
@@ -219,8 +219,10 @@ def get(name, path=None):
 def create(data, path=None):
     items = load_all(path)
     inst = Instance(**{k: v for k, v in data.items() if k in Instance.__dataclass_fields__})
-    if inst.name in items:
-        raise InstanceError(f"an instance named '{inst.name}' already exists")
+    # case-insensitive: log and lock files are named after the instance, and macOS file names ignore case
+    same = [n for n in items if n.lower() == inst.name.lower()]
+    if same:
+        raise InstanceError(f"an instance named '{same[0]}' already exists")
     inst.created_at = pd.Timestamp.now(tz="UTC").isoformat()
     inst.run_key = f"testnet-{inst.name}.db" if inst.mode == "testnet" else f"instance:{inst.name}"
     validate(inst, items)

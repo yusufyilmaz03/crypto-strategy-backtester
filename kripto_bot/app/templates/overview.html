@@ -61,11 +61,11 @@ async function load() {
              data-bs-title="${KB.esc(about)}"></i></h6>
           <span>${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}</span></div>
         <div class="metrics-row">
-          <div class="metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
+          <div class="metric"><div class="label">Max DD</div><div class="value">${KB.num(s.max_dd_pct, 1)}%</div></div>
           <div class="metric"><div class="label">Buy &amp; hold</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
           <div class="metric"><div class="label">Realized PnL</div><div class="value ${KB.sign(s.realized_pnl)}"
             title="from closed trades, USDT">${KB.num(s.realized_pnl)}</div></div>
-          <div class="metric"><div class="label">Max DD</div><div class="value">${KB.num(s.max_dd_pct, 1)}%</div></div>
+          <div class="metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
         </div>
         <div class="small text-secondary mt-2">${s.days} days · ${s.closed_trades} closed trades · ${s.open_positions} open</div>
       </div></div></a></div>`;
