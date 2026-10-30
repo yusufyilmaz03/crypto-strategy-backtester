@@ -22,6 +22,14 @@ const KB = {
   pct(v, d = 2) { return v == null || isNaN(v) ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d) + "%"; },
   sign(v) { return v == null || isNaN(v) ? "" : v >= 0 ? "text-success" : "text-danger"; },
   time(t) { return t ? String(t).replace("T", " ").slice(0, 16) : "–"; },
+  // What the buy-and-hold benchmark is (reporting.curves).
+  BH_TIP: "Equal-weight buy & hold of the instance's symbols since its first recorded candle: their average " +
+    "price change, compounded candle by candle, without fees. It is what the market did over the same period, " +
+    "so it moves even when the instance holds nothing.",
+  // A word with a dotted underline whose tooltip explains it (html: the word, already escaped).
+  term(html, tip) {
+    return `<span class="setup-tip" role="button" tabindex="0" data-bs-toggle="tooltip" data-bs-title="${KB.esc(tip)}">${html}</span>`;
+  },
   params(p) { const e = Object.entries(p || {}); return e.length ? e.map(([k, v]) => `${k}=${v}`).join(", ") : "defaults"; },
   statusBadge(st, enabled) {
     const s = (st && st.state) || "stopped";
@@ -107,6 +115,11 @@ const KB = {
 };
 
 // Favorite stars: toggle on the server, then tell the page to reload its data ("kb-favorite").
+// A tooltip inside a card link opens on a tap (phones) instead of following the link.
+document.addEventListener("click", e => {
+  if (e.target.closest('a [data-bs-toggle="tooltip"]')) e.preventDefault();
+});
+
 document.addEventListener("click", async e => {
   const btn = e.target.closest(".kb-star");
   if (!btn) return;

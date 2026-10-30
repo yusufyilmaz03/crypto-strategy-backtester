@@ -85,7 +85,7 @@ async function load() {
           <span class="text-nowrap">${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}</span></div>
         <div class="card-metrics">
           <div class="metric"><div class="label">Max DD</div><div class="value">${s.max_dd_pct == null ? "–" : KB.num(s.max_dd_pct, 1) + "%"}</div></div>
-          <div class="metric"><div class="label">Buy &amp; hold</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
+          <div class="metric"><div class="label">${KB.term("Buy &amp; hold", KB.BH_TIP)}</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
           <div class="metric"><div class="label">Realized PnL</div><div class="value ${KB.sign(s.realized_pnl)}"
             title="from closed trades, USDT">${KB.money(s.realized_pnl)}</div></div>
           <div class="metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>

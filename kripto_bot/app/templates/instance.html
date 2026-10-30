@@ -19,7 +19,7 @@
 <div class="row g-3 mb-4" id="metrics"></div>
 
 <div class="card mb-4"><div class="card-body">
-  <h6 class="card-title">Return vs equal-weight buy &amp; hold (%)</h6>
+  <h6 class="card-title">Return vs equal-weight buy &amp; hold (%)<span id="bh-tip"></span></h6>
   <canvas id="chart" height="90"></canvas>
 </div></div>
 
@@ -222,6 +222,8 @@ async function del() {
 }
 window.addEventListener("kb-theme", () => { chart?.destroy(); chart = null; loadChart(); });
 window.addEventListener("kb-favorite", loadInstance);
+document.getElementById("bh-tip").innerHTML = KB.tip(KB.BH_TIP);
+KB.initTips(document.getElementById("bh-tip"));
 refresh(); setInterval(refresh, 15000);
 </script>
 {% endblock %}
