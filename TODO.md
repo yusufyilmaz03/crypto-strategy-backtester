@@ -43,13 +43,53 @@ Open work that isn't code yet. Dated items first; check this file at the start o
 - **`/kill` command in Telegram** (off / block entries / flatten, with a confirmation like
   Close). Flatten closes testnet positions, so ask for approval before writing it.
 
-## Bankroll (paper, 2026-11-01)
+## Bankroll (paper, 2026-11-01) — check before merging `phase-4g-bankroll`
 
-- Look at the panel pages of a bankroll instance in a browser (New instance modal,
-  bankroll card, Bankroll tab, Deposit / Withdraw) and on the phone width.
-- Bankroll instances are untested variants: compare them descriptively, with the trade
-  metrics, before trusting any stake grades or rotation (a pre-registered test needs a
-  portfolio backtest built on `core/bankroll.py`).
+The branch is pushed, not merged. Merge into dev once the checks below pass on the two
+paper instances started on 2026-11-01: `withBankroll` (4h) and `withBankroll-copy` (5m).
+Both run v2 on 42 symbols with 10,000 USDT, stakes 2/5/7/10%, min entry 10, rotation on
+(profit only, reduce allowed), low bankroll below 50% of value. The 4h one also has the
+lower_tf score input and the lower-timeframe exit. The 5m one fills the ledger fastest.
+
+- **Stakes and scores.** The first BUYs write `RESERVE` then `BUY` rows with a score and
+  grade. The stake is the grade's % of the contributed capital: 200 / 500 / 700 / 1,000
+  USDT for Weak / Normal / Strong / Very strong. Weak trades here, since its stake is 2%.
+  The Score column is filled on Signals, Positions (with Now) and Trades.
+- **Books add up.** In every ledger row free + reserved + invested equals value, and
+  free is never negative:
+  ```
+  sqlite3 runtime/paper.db "SELECT strategy, time, kind, free_after, reserved_after,
+    invested_after, value_after FROM bankroll_ledger WHERE strategy LIKE
+    'instance:withBankroll%' AND (free_after < -1e-6 OR abs(free_after +
+    reserved_after + invested_after - value_after) > 0.01)"
+  ```
+  An empty result is a pass.
+- **A busy candle.** When many BUYs arrive together, the higher scores are funded first.
+  Once the cash runs out, rows say "cut to the free cash" or "no free cash" (`SKIP`).
+- **Rotation.** A Very strong signal (score 80 or more) short of cash spends the free
+  cash first. The ledger note reads "… from free cash + … expected from rotating out …".
+  Only positions in profit, held 3 candles or more and scoring 20 points lower are sold.
+  At most 2 are sold per candle. A reduce shows as a `TRIM` row and a REDUCE trade. The
+  rotated-out symbol waits for re-entry as after a trailing exit.
+- **Lower-timeframe exit with a bankroll** (4h only, no test covers it). A position
+  sold during the candle returns its cash at once: a `SELL` row and higher free cash.
+- **Deposit and withdraw** on the instance page. The request is applied within a minute
+  as a `DEPOSIT` or `WITHDRAW` row. The contributed capital changes and the stakes follow
+  it. The return curve (TWR) doesn't jump. A withdrawal above the free cash is refused.
+- **Low-bankroll warning.** It won't trigger at 50% on its own soon. To see it, set the
+  threshold on the Bankroll tab to free cash, 101%, for a candle or two. Expect the badge
+  on the overview, instances and instance pages, a Telegram message and the instance in
+  `/status`. Set it back: "recovered" comes once the level is 5 points above the threshold.
+- **Restart.** After `service restart` both instances resume from paper.db: same free
+  cash and positions, no second `INITIAL` row.
+- **Telegram.** The instance view shows the bankroll table, and positions and signals
+  have the Sc column. The action words "no cash", "rotate" and "reduce" appear in place.
+- **Panel in a browser**, also at phone width: the Bankroll section of the New instance
+  modal, the bankroll card, the Bankroll tab (chart, ledger, requests) and Deposit /
+  Withdraw.
+- **Afterwards:** bankroll instances are untested variants. Compare them descriptively,
+  with the trade metrics, before trusting any stake grades or rotation. A pre-registered
+  test needs a portfolio backtest built on `core/bankroll.py`.
 
 ## Maintenance
 
