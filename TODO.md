@@ -53,7 +53,9 @@ The branch is pushed, not merged. Merge into dev once the checks below pass on t
 instance `bankroll-v4-5m` (started 2026-11-02): v4 on 5m, 41 symbols, 10,000 USDT, stakes
 2/5/7/10%, min entry 10, rotation on (profit only, reduce allowed), low bankroll below 50%
 of value. v4 on 5m gives about 18 BUY signals an hour and up to 40 on one candle, so the
-cash runs short quickly. (The first two instances, `withBankroll` and `withBankroll-copy`,
+cash runs short quickly. `bankroll-v4-4h` (started 2026-11-02) has the same setup on 4h
+plus the lower_tf score input and the lower-timeframe exit; v4 on 4h gives about 9 BUYs a
+day, up to 33 on one candle. (The first two instances, `withBankroll` and `withBankroll-copy`,
 ran v2 40/60/3, which gave no BUY in the last 1000 candles of any symbol on 4h or 5m; they
 were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
 
@@ -65,8 +67,8 @@ were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
   free is never negative:
   ```
   sqlite3 runtime/paper.db "SELECT strategy, time, kind, free_after, reserved_after,
-    invested_after, value_after FROM bankroll_ledger WHERE strategy =
-    'instance:bankroll-v4-5m' AND (free_after < -1e-6 OR abs(free_after +
+    invested_after, value_after FROM bankroll_ledger WHERE strategy LIKE
+    'instance:bankroll-v4-%' AND (free_after < -1e-6 OR abs(free_after +
     reserved_after + invested_after - value_after) > 0.01)"
   ```
   An empty result is a pass.
@@ -77,8 +79,7 @@ were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
   Only positions in profit, held 3 candles or more and scoring 20 points lower are sold.
   At most 2 are sold per candle. A reduce shows as a `TRIM` row and a REDUCE trade. The
   rotated-out symbol waits for re-entry as after a trailing exit.
-- **Lower-timeframe exit with a bankroll** (4h/1d only, no test covers it; no instance runs it
-  now: needs its own 4h bankroll instance with a strategy that fires). A position
+- **Lower-timeframe exit with a bankroll** (`bankroll-v4-4h` only, no test covers it). A position
   sold during the candle returns its cash at once: a `SELL` row and higher free cash.
 - **Deposit and withdraw** on the instance page. The request is applied within a minute
   as a `DEPOSIT` or `WITHDRAW` row. The contributed capital changes and the stakes follow
@@ -87,7 +88,7 @@ were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
   threshold on the Bankroll tab to free cash, 101%, for a candle or two. Expect the badge
   on the overview, instances and instance pages, a Telegram message and the instance in
   `/status`. Set it back: "recovered" comes once the level is 5 points above the threshold.
-- **Restart.** After `service restart` the instance resumes from paper.db: same free
+- **Restart.** After `service restart` both instances resume from paper.db: same free
   cash and positions, no second `INITIAL` row.
 - **Telegram.** The instance view shows the bankroll table, and positions and signals
   have the Sc column. The action words "no cash", "rotate" and "reduce" appear in place.
