@@ -11,10 +11,13 @@ slow down or break trading. Reported:
   (always)
 - a daily summary of every enabled instance (NOTIFY_DAILY_SUMMARY)
 
-Messages go through a background queue; if Telegram can't be reached they are
+Messages are sent with parse_mode HTML (lists as monospace tables, like the
+commands in telegram_commands.py), so every text put in them is escaped with esc().
+They go through a background queue; if Telegram can't be reached they are
 retried a few times and then dropped with a line in the supervisor output. The
 bot token is never printed.
 """
+import html
 import json
 import os
 import queue
@@ -63,8 +66,38 @@ def telegram_call(token, method, params=None, timeout=15):
     return body["result"]
 
 
+def esc(text):
+    """Text for a message sent with parse_mode HTML."""
+    return html.escape(str(text), quote=False)
+
+
+def table(headers, rows, align=None):
+    """Rows of strings as a monospace table. align: "l" or "r" per column (default: the
+    first left, the others right). Phones show about 34 characters per line before
+    wrapping, so keep it narrow."""
+    align = align or "l" + "r" * (len(headers) - 1)
+    cells = [headers] + rows
+    widths = [max(len(r[k]) for r in cells) for k in range(len(headers))]
+    lines = [" ".join(c.ljust(w) if a == "l" else c.rjust(w) for c, w, a in zip(r, widths, align)).rstrip()
+             for r in cells]
+    lines[0] += "\u00a0" * 3      # room for the copy button Telegram puts over the block's top right
+    return f"<pre>{esc(chr(10).join(lines))}</pre>"
+
+
 def split_message(text, limit=MAX_LEN):
-    """Split on line breaks into chunks Telegram accepts."""
+    """Split on line breaks into chunks Telegram accepts. A table cut in two is closed
+    at the end of one chunk and reopened in the next, so each chunk is valid HTML."""
+    chunks, inside = [], False
+    room = limit - len("<pre></pre>") if "<pre>" in text else limit
+    for chunk in _split_lines(text, room):
+        if inside:
+            chunk = "<pre>" + chunk
+        inside = chunk.count("<pre>") > chunk.count("</pre>")
+        chunks.append(chunk + "</pre>" if inside else chunk)
+    return chunks
+
+
+def _split_lines(text, limit):
     chunks, cur = [], ""
     for line in text.split("\n"):
         while len(line) > limit:
@@ -99,7 +132,7 @@ class Telegram:
     def send_now(self, text):
         """Send synchronously and raise TelegramError on failure (used by the panel's test button)."""
         for chunk in split_message(text):
-            self.call(self.token, "sendMessage", {"chat_id": self.chat_id, "text": chunk,
+            self.call(self.token, "sendMessage", {"chat_id": self.chat_id, "text": chunk, "parse_mode": "HTML",
                                                   "disable_web_page_preview": "true"})
 
     def send(self, text):
@@ -143,79 +176,92 @@ class Telegram:
 
 
 # ---------------------------------------------------------------- formatting
+def _missing(x):
+    return x is None or pd.isna(x)
+
+
 def _num(x, digits=6):
-    return f"{x:.{digits}g}" if x is not None and not pd.isna(x) else "?"
+    return "?" if _missing(x) else f"{x:.{digits}g}"
 
 
-def _pct(x):
-    return f"{x:+.2f}%" if x is not None and not pd.isna(x) else "n/a"
+def _signed(x, digits=2):
+    return "–" if _missing(x) else f"{x:+.{digits}f}"
 
 
-def _limit(lines):
-    if len(lines) <= MAX_ITEMS:
-        return lines
-    return lines[:MAX_ITEMS] + [f"  … and {len(lines) - MAX_ITEMS} more"]
+def base(symbol):
+    return symbol.removesuffix("/USDT")
+
+
+def short(text, n):
+    return text if len(text) <= n else text[:n - 1] + "…"
+
+
+def _cap(rows):
+    """At most MAX_ITEMS table rows, and a line saying how many were left out."""
+    more = [f"… and {len(rows) - MAX_ITEMS} more"] if len(rows) > MAX_ITEMS else []
+    return rows[:MAX_ITEMS], more
 
 
 def _setup(inst):
     params = " ".join(f"{k}={v}" for k, v in inst.params.items())
-    return f"{inst.mode} · {inst.strategy}{' ' + params if params else ''} · {inst.timeframe}"
+    return f"{inst.mode} - {inst.strategy}{' ' + params if params else ''} · {inst.timeframe}"
+
+
+def _head(icon, inst, what=""):
+    name = f"{inst.name} ⭐" if inst.favorite else inst.name
+    return f"{icon} <b>{esc(name)}</b> - {esc(_setup(inst))}{esc(what)}"
 
 
 def format_paper(inst, opened, closed):
-    lines = [f"📈 {inst.name} ({_setup(inst)})"]
+    lines = [_head("📈", inst)]
     if opened:
-        lines.append(f"Opened {len(opened)}:")
-        lines += _limit([f"  {r['symbol']} @ {_num(r['entry_price'])}" for r in opened])
+        rows, more = _cap([[base(r["symbol"]), _num(r["entry_price"], 5)] for r in opened])
+        lines += [f"Opened {len(opened)}", table(["Symbol", "Entry"], rows)] + more
     if closed:
-        lines.append(f"Closed {len(closed)}:")
-        lines += _limit([f"  {r['symbol']} {_pct(r['return_pct'])} ({r['reason'] or 'signal'})" for r in closed])
+        rows, more = _cap([[base(r["symbol"]), _signed(r["return_pct"]), _signed(r.get("pnl")),
+                            (r["reason"] or "signal").lower()] for r in closed])
+        lines += [f"Closed {len(closed)}", table(["Symbol", "Ret%", "PnL", "Exit"], rows, "lrrl")] + more
     return "\n".join(lines)
 
 
 def format_stops(inst, events):
-    lines = [f"⚠️ {inst.name} ({_setup(inst)}): stop hit (shadow stop)"]
-    lines += _limit([f"  {e['symbol']} stop {_num(e['stop'])} at {pd.Timestamp(e['minute_time']):%Y-%m-%d %H:%M} UTC, "
-                     f"est. fill {_num(e['est_fill'])} ({_pct((e['est_fill'] / e['stop'] - 1) * 100)} vs stop)"
-                     for e in events])
-    lines.append(f"Paper closes the position at the {inst.timeframe} close.")
-    return "\n".join(lines)
+    rows, more = _cap([[base(e["symbol"]), _num(e["stop"]), f"{pd.Timestamp(e['minute_time']):%m-%d %H:%M}",
+                        _num(e["est_fill"]), _signed((e["est_fill"] / e["stop"] - 1) * 100)] for e in events])
+    return "\n".join([_head("⚠️", inst, ": stop hit (shadow stop)"),
+                      table(["Symbol", "Stop", "UTC", "Fill", "Δ%"], rows, "lrlrr")] + more +
+                     [f"Fill: estimated, Δ% vs the stop. Paper closes the position at the {inst.timeframe} close."])
 
 
 def format_orders(inst, orders):
-    lines = [f"🧪 {inst.name} ({_setup(inst)}): {len(orders)} order(s)"]
-    rows = []
-    for o in orders:
-        text = f"  {str(o['side']).upper()} {o['symbol']} {_num(o['filled'])} @ {_num(o['average'])} [{o['status']}]"
-        if o.get("pnl") is not None and not pd.isna(o["pnl"]):
-            text += f" PnL {o['pnl']:+.2f} USDT"
-        if o.get("error"):
-            text += f" error: {o['error']}"
-        rows.append(text)
-    return "\n".join(lines + _limit(rows))
+    pnl = any(not _missing(o.get("pnl")) for o in orders)
+    status = any(o["status"] != "closed" for o in orders)       # the usual one is left out to save width
+    headers = ["Side", "Symbol", "Qty", "Price"] + ["PnL"] * pnl + ["Status"] * status
+    rows, more = _cap([[str(o["side"]).upper(), base(o["symbol"]), _num(o["filled"], 4), _num(o["average"], 5)]
+                       + [_signed(o.get("pnl"))] * pnl + [str(o["status"])] * status for o in orders])
+    errors = [f"{esc(base(o['symbol']))}: {esc(o['error'])}" for o in orders if o.get("error")]
+    return "\n".join([_head("🧪", inst, f": {len(orders)} order(s)"),
+                      table(headers, rows, "llrr" + "r" * pnl + "l" * status)] + more + errors +
+                     (["PnL: USDT."] if pnl else []))
 
 
 def format_events(inst, events):
     icon = {"ERROR": "🛑", "WARN": "⚠️"}
-    rows = [f"{icon.get(e['level'], '•')} {inst.name}: {e['level']}"
-            f"{' ' + e['symbol'] if e['symbol'] else ''}: {e['message']}" for e in events]
-    return "\n".join(_limit(rows))
+    rows = [f"{icon.get(e['level'], '•')} <b>{esc(inst.name)}</b>: {e['level']}"
+            f"{' ' + esc(e['symbol']) if e['symbol'] else ''}: {esc(e['message'])}" for e in events]
+    rows, more = _cap(rows)
+    return "\n".join(rows + more)
 
 
 def format_summary(items, kill_state, day):
-    lines = [f"📊 Daily summary {day}"]
-    for inst, s in items:
-        if s["return_pct"] is None:
-            lines.append(f"• {inst.name} ({_setup(inst)}): no data yet")
-            continue
-        dd = f"max DD {s['max_dd_pct']:.1f}%" if s["max_dd_pct"] is not None else ""
-        if s["buy_hold_max_dd_pct"] is not None:
-            dd += f" (B&H {s['buy_hold_max_dd_pct']:.1f}%)"
-        win = f", win {s['win_rate_pct']:.0f}%" if s["win_rate_pct"] is not None else ""
-        lines.append(f"• {inst.name} ({_setup(inst)}), {s['days']} days\n"
-                     f"  {_pct(s['return_pct'])} vs B&H {_pct(s['buy_hold_pct'])} · {dd}\n"
-                     f"  {s['open_positions']} open · {s['closed_trades']} closed{win}")
-    if len(lines) == 1:
+    rows = [[("*" if inst.favorite else " ") + short(inst.name, 10), _signed(s["return_pct"], 1),
+             _signed(s["buy_hold_pct"], 1), "–" if _missing(s["max_dd_pct"]) else f"{s['max_dd_pct']:.1f}",
+             str(s["open_positions"]) if s["return_pct"] is not None else "–"] for inst, s in items]
+    lines = [f"📊 <b>Daily summary</b> {day}"]
+    if rows:
+        note = "Since each instance started. DD: max drawdown."
+        lines += [table([" Instance", "Ret%", "B&H%", "DD%", "Open"], rows),
+                  note + (" * favorite" if any(i.favorite for i, _ in items) else "")]
+    else:
         lines.append("No instance is enabled.")
     lines.append(f"Kill switch: {kill_state}")
     return "\n".join(lines)
@@ -294,7 +340,7 @@ class Watcher:
 
     # ----- supervisor hooks
     def started(self, names):
-        self.sender.send(f"▶️ Crypto Tester Bot supervisor started. Running: {', '.join(names) or 'no instances'}")
+        self.sender.send(f"▶️ Crypto Tester Bot supervisor started. Running: {esc(', '.join(names)) or 'no instances'}")
 
     def stopped(self):
         self.sender.send("⏹ Crypto Tester Bot supervisor stopped. Bots are not running.")
@@ -304,12 +350,12 @@ class Watcher:
         self.failures[name] = n
         if n in (1, 3) or n % 10 == 0:
             again = f" ({n} quick exits in a row)" if n > 1 else ""
-            self.sender.send(f"💥 {name} exited with code {code} after {ran_s:.0f}s{again}; "
+            self.sender.send(f"💥 <b>{esc(name)}</b> exited with code {code} after {ran_s:.0f}s{again}; "
                              "the supervisor restarts it. See its log on the panel.")
 
     def blocked(self, blocked):
         for name in set(blocked) - self.blocked_sent:
-            self.sender.send(f"⛔ {name} can't start: {blocked[name]}")
+            self.sender.send(f"⛔ <b>{esc(name)}</b> can't start: {esc(blocked[name])}")
         self.blocked_sent = set(blocked)
 
     # ----- polling
@@ -338,7 +384,7 @@ class Watcher:
     def _paper(self, inst):
         cur = self._cursors(inst)
         rows = _rows(self.paper_db or store.DB_FILE,
-                     "SELECT trade_id, symbol, entry_time, exit_time, entry_price, return_pct, reason "
+                     "SELECT trade_id, symbol, entry_time, exit_time, entry_price, pnl, return_pct, reason "
                      "FROM trades WHERE strategy=? AND timeframe=?", (inst.run_key, inst.timeframe))
         entries = [(r["entry_time"], r["trade_id"], r) for r in rows if r["entry_time"]]
         exits = [(r["exit_time"], r["trade_id"], r) for r in rows if r["exit_time"]]

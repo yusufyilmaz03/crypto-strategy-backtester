@@ -49,6 +49,28 @@ def test_split_message():
     assert all(len(c) <= 10 for c in chunks) and "".join(chunks).replace("\n", "") == "x" * 18 + "y" * 25
 
 
+def test_split_message_keeps_tables_valid():
+    text = "head\n" + notify.table(["A", "B"], [[str(i), "x"] for i in range(10)]) + "\nfoot"
+    chunks = notify.split_message(text, limit=40)
+    assert len(chunks) > 2 and all(len(c) <= 40 for c in chunks)
+    assert all(c.count("<pre>") == c.count("</pre>") for c in chunks)
+    assert chunks[0].startswith("head\n<pre>") and chunks[-1].endswith("</pre>\nfoot")
+    joined = "".join(c.replace("<pre>", "").replace("</pre>", "") for c in chunks)
+    assert joined.replace("\n", "") == text.replace("<pre>", "").replace("</pre>", "").replace("\n", "")
+
+
+def test_summary_table():
+    fav = instances.Instance(name="forward-v9", favorite=True)
+    rows = [(fav, {"return_pct": 3.21, "buy_hold_pct": -12.34, "max_dd_pct": 8.7, "open_positions": 3}),
+            (instances.Instance(name="new"), {"return_pct": None, "buy_hold_pct": None, "max_dd_pct": None,
+                                             "open_positions": 0})]
+    text = notify.format_summary(rows, "off", "2026-11-01")
+    assert ("<pre> Instance   Ret%  B&amp;H% DD% Open\xa0\xa0\xa0\n*forward-v9 +3.2 -12.3 8.7    3\n"
+            " new           –     –   –    –</pre>") in text
+    assert "* favorite" in text and text.endswith("Kill switch: off")
+    assert "No instance is enabled." in notify.format_summary([], "off", "2026-11-01")
+
+
 def test_advance_reports_rows_of_the_same_candle_once():
     t = "2026-10-12T00:00:00"
     new, cur = notify.advance(None, [(t, "a", 1)])
@@ -70,12 +92,13 @@ def test_paper_trades(setup, tmp_path):
     _open(db, inst, "t1", "A/USDT", "2026-10-12")
     _open(db, inst, "t2", "B/USDT", "2026-10-12")
     w.poll(force=True)
-    assert len(rec.messages) == 1 and "Opened 2" in rec.messages[0] and "B/USDT" in rec.messages[0]
+    assert len(rec.messages) == 1 and rec.messages[0].startswith("📈 <b>fwd</b> - paper - v9 · 1d\nOpened 2\n<pre>")
+    assert "\nB        100</pre>" in rec.messages[0]
     db.trade_closed(Trade("t1", "A/USDT", "LONG", pd.Timestamp("2026-10-12"), pd.Timestamp("2026-10-13"),
                           100, 95, 1, 0.2, -5.2, -5.2, "SIGNAL"))
     db.conn.commit()
     w.poll(force=True)
-    assert "Closed 1" in rec.messages[-1] and "-5.20%" in rec.messages[-1]
+    assert "Closed 1\n<pre>Symbol  Ret%   PnL Exit\xa0\xa0\xa0\nA      -5.20 -5.20 signal</pre>" in rec.messages[-1]
     w.poll(force=True)
     assert len(rec.messages) == 2                   # nothing new, nothing sent
 
@@ -108,7 +131,8 @@ def test_testnet_orders_and_alerts(setup):
     st.commit()
     w.poll(force=True)
     text = "\n".join(rec.messages)
-    assert "BUY A/USDT 0.5 @ 100" in text and "InsufficientFunds" in text
+    assert "<pre>Side Symbol Qty Price\xa0\xa0\xa0\nBUY  A      0.5   100</pre>" in text   # no PnL yet, status closed
+    assert "🛑 <b>tn</b>: ERROR B/USDT: BUY order failed: InsufficientFunds" in text
     assert "dust" not in text and "old failure" not in text
 
 
@@ -132,11 +156,11 @@ def test_daily_summary_once_per_day(setup):
     clock["now"] = DAY + 7 * 3600                 # after NOTIFY_SUMMARY_HOUR_UTC (6)
     w.poll(force=True)
     w.poll(force=True)
-    summaries = [m for m in rec.messages if "Daily summary 2026-10-12" in m]
-    assert len(summaries) == 1 and "fwd" in summaries[0] and "tn" not in summaries[0].split("\n", 1)[1]
+    summaries = [m for m in rec.messages if "Daily summary</b> 2026-10-12" in m]
+    assert len(summaries) == 1 and "\n fwd " in summaries[0] and "tn" not in summaries[0].split("\n", 1)[1]
     clock["now"] = DAY + 86400 + 7 * 3600
     w.poll(force=True)
-    assert "Daily summary 2026-10-13" in rec.messages[-1]
+    assert "Daily summary</b> 2026-10-13" in rec.messages[-1]
 
 
 def test_poll_is_throttled(setup):
@@ -161,7 +185,9 @@ def test_crash_messages_are_rate_limited(setup):
     assert len(rec.messages) == 4 and "quick exits" not in rec.messages[-1]
     w.blocked({"tn": "keys missing"})
     w.blocked({"tn": "keys missing"})
-    assert rec.messages[-1] == "⛔ tn can't start: keys missing" and len(rec.messages) == 5
+    assert rec.messages[-1] == "⛔ <b>tn</b> can't start: keys missing" and len(rec.messages) == 5
+    w.blocked({"a<b": "x & y"})
+    assert rec.messages[-1] == "⛔ <b>a&lt;b</b> can't start: x &amp; y"
 
 
 def test_sender_retries_and_never_raises():

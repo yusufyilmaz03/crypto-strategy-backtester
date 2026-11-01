@@ -23,7 +23,6 @@ printed only when the supervisor runs in a terminal, so they don't fill the log.
 Only one program may read a bot's updates at a time: while the supervisor runs,
 `telegram-setup` gets a conflict error (and vice versa).
 """
-import html
 import json
 import sys
 import threading
@@ -33,6 +32,7 @@ import pandas as pd
 
 from kripto_bot import config, instances
 from kripto_bot.app import manual_close, notify, reporting
+from kripto_bot.app.notify import base as _base, esc as _e, short as _short, table as _table
 
 POLL_TIMEOUT_S = 50     # long polling: Telegram holds the request until something arrives
 MAX_AGE_S = 120         # commands older than this (sent while the supervisor was down) are ignored
@@ -61,11 +61,6 @@ def _name(inst):
 
 def _date(t):
     return pd.Timestamp(t).strftime("%Y-%m-%d %H:%M") if t is not None and not pd.isna(t) else "?"
-
-
-def _e(text):
-    """Text for a message sent with parse_mode HTML."""
-    return html.escape(str(text), quote=False)
 
 
 def _missing(x):
@@ -124,27 +119,6 @@ def _action(text):
 
 def _money(x):
     return "–" if _missing(x) else f"{x:+.0f}" if abs(x) >= 100 else f"{x:+.2f}"
-
-
-def _base(symbol):
-    return symbol.removesuffix("/USDT")
-
-
-def _short(text, n):
-    return text if len(text) <= n else text[:n - 1] + "…"
-
-
-def _table(headers, rows, align=None):
-    """Rows of strings as a monospace table. align: "l" or "r" per column (default: the
-    first left, the others right). Phones show about 34 characters per line before
-    wrapping, so keep it narrow."""
-    align = align or "l" + "r" * (len(headers) - 1)
-    cells = [headers] + rows
-    widths = [max(len(r[k]) for r in cells) for k in range(len(headers))]
-    lines = [" ".join(c.ljust(w) if a == "l" else c.rjust(w) for c, w, a in zip(r, widths, align)).rstrip()
-             for r in cells]
-    lines[0] += "\u00a0" * 3      # room for the copy button Telegram puts over the block's top right
-    return f"<pre>{_e(chr(10).join(lines))}</pre>"
 
 
 class CommandBot:

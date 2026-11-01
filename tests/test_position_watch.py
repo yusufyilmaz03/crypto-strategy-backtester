@@ -215,5 +215,5 @@ def test_stop_hits_are_notified_once(tmp_path):
     w.poll(force=True)
     stops = [m for m in rec.messages if "stop hit" in m]
     assert len(stops) == 1
-    assert "X/USDT stop 95 at 2026-10-30 00:02 UTC, est. fill 95 (+0.00% vs stop)" in stops[0]
+    assert "\nX        95 10-30 00:02   95 +0.00</pre>" in stops[0]
     assert "1d close" in stops[0]
