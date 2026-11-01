@@ -33,9 +33,14 @@ Open work that isn't code yet. Dated items first; check this file at the start o
 - **Exchange-side stop / OCO orders** before going live (testnet refuses instances with
   a stop today).
 
+## Telegram and panel (ideas, not started)
+
+- **Faster manual close.** A close asked on the panel or in Telegram is sold within about
+  a minute: the instance's ManualClose looks once a minute and the notifier reports
+  every 30 s. Checking every few seconds would make it near instant.
+- **`/kill` command in Telegram** (off / block entries / flatten, with a confirmation like
+  Close). Flatten closes testnet positions, so ask for approval before writing it.
+
 ## Maintenance
 
-- Merge `phase-4c-readiness` and `phase-4d-intrabar` into `dev` / `main` when wanted.
-- `phase-4e-telegram` was opened from `phase-4d-intrabar` while 4d still got commits;
-  bring it up to date with 4d before merging.
 - `claude/proje-baglami.md`, known issues #11 (CSV logs) is out of date: paper uses SQLite.
