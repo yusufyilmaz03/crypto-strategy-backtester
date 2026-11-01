@@ -42,6 +42,10 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   every 30 s. Checking every few seconds would make it near instant.
 - **`/kill` command in Telegram** (off / block entries / flatten, with a confirmation like
   Close). Flatten closes testnet positions, so ask for approval before writing it.
+- **Charts in Telegram.** The daily summary is text only: add a PNG of each instance's
+  equity vs buy-and-hold (matplotlib, drawn locally, sent with `sendPhoto`). A `/chart
+  SYMBOL` command could reuse it: candles with the instance's entries and exits, the open
+  position's stop and the strategy's indicator.
 
 ## Bankroll (paper, 2026-11-01) — check before merging `phase-4g-bankroll`
 
