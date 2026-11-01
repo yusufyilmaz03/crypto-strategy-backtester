@@ -79,7 +79,8 @@ def curves(inst, paper_db=None):
     if df.empty:
         return pd.Series(dtype=float), pd.Series(dtype=float)
     wide = df.pivot_table(index="time", columns="symbol", values="equity").sort_index().ffill()
-    n = len(inst.symbol_list)
+    # symbols with records count too: one removed from the list later still holds its capital
+    n = len(set(inst.symbol_list) | set(wide.columns))
     per_symbol = inst.equity if inst.mode == "paper" else inst.equity / max(n, 1)
     start_total = per_symbol * n
     idle = max(n - wide.shape[1], 0)

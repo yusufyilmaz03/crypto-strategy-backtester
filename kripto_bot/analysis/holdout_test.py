@@ -26,7 +26,7 @@ def main():
     cfg = config.paper_engine_config()
     fn = strategy.get_strategy("v9")
     curves, bh, trades, skipped = {}, {}, [], []
-    for s in config.SYMBOLS:
+    for s in config.RESEARCH_SYMBOLS:
         df = load_ohlcv(s, "1d", 1460 + 30)
         start = int((df["timestamp"] < HOLDOUT_START).sum())
         if start < MIN_HISTORY or start >= len(df):

@@ -39,6 +39,14 @@ def test_curves_and_summary(inst):
     json.dumps(s)
 
 
+def test_curves_count_a_recorded_symbol_removed_from_the_list(inst):
+    """A symbol dropped from the list later (e.g. delisted) still holds its capital."""
+    i, db = inst
+    i.symbols = ["A/USDT"]
+    strat, _ = reporting.curves(i, db)
+    assert strat.iloc[-1] == pytest.approx((120 + 100) / 200 * 100 - 100)
+
+
 def test_service_status(tmp_path):
     f = tmp_path / "status.json"
     assert reporting.service_status("x", str(f))["state"] == "supervisor not running"

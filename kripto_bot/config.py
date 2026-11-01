@@ -18,7 +18,9 @@ BINANCE_TESTNET_API_KEY = os.getenv("BINANCE_TESTNET_API_KEY", "")
 BINANCE_TESTNET_API_SECRET = os.getenv("BINANCE_TESTNET_API_SECRET", "")
 
 # ===== Universe =====
-SYMBOLS = [
+# The 42 symbols every research test so far was run on (Phases 2 and 2b, the v9 holdout,
+# the survivorship test). Fixed, so those tests can be rerun as they were.
+RESEARCH_SYMBOLS = [
     "DOGE/USDT", "PEPE/USDT", "SHIB/USDT", "FLOKI/USDT",
     "BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT",
     "LINK/USDT", "POL/USDT", "TRX/USDT", "APT/USDT", "SUI/USDT",
@@ -30,6 +32,10 @@ SYMBOLS = [
     "ARB/USDT", "OP/USDT", "NEAR/USDT", "ICP/USDT", "SAND/USDT",
     "APE/USDT", "RENDER/USDT", "S/USDT", "GALA/USDT"
 ]
+# Symbols no longer traded: EPIC/USDT is halted on Binance (status BREAK) since 2026-10-28.
+REMOVED_SYMBOLS = {"EPIC/USDT"}
+# What the bots trade. Instances without their own list use this one.
+SYMBOLS = [s for s in RESEARCH_SYMBOLS if s not in REMOVED_SYMBOLS]
 
 # ===== Costs =====
 # Spot taker fee rate (e.g. 0.1% = 0.001). Adjust to your actual exchange rate.

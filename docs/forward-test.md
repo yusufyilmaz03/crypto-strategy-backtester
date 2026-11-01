@@ -55,3 +55,11 @@ closed trades and all 33 open positions exactly before anything was saved.
 missing close on pandas 2 but no longer does on pandas 3. It now forward-fills explicitly,
 which is what it always did on the pandas version the bot runs (2.3), so the benchmark stays
 the same whichever pandas version produces the report.
+
+**Note (2026-11-02, symbol list, no change to the rules or the numbers):** EPIC/USDT has been
+halted on Binance (status `BREAK`) since 2026-10-28; its last candle is 2026-10-28 and the
+`forward-v9` position in it was flat. It is removed from `config.SYMBOLS` (the research list
+stays as `config.RESEARCH_SYMBOLS`), so the bot stops processing it. The report is
+unaffected: `forward-report` and the panel take the symbols from the recorded equity, so
+EPIC keeps its last equity (cash) and buy-and-hold carries its last close forward, as they
+already did since 2026-10-28. The other 41 symbols trade as before.

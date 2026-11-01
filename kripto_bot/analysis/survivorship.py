@@ -215,7 +215,7 @@ def run(assets, n=50, log=print, workers=None):
     base = replace(config.engine_config(), atr_multiplier=None, allow_short=False)
     stress = replace(base, fee_rate=base.fee_rate * config.COST_STRESS,
                      slippage_bps=base.slippage_bps * config.COST_STRESS)
-    survivors = {s.replace("/", "") for s in config.SYMBOLS}
+    survivors = {s.replace("/", "") for s in config.RESEARCH_SYMBOLS}
     last_piece = {}
     for a in assets:
         last_piece[a.split("#")[0]] = a                    # sorted ids: the last listing wins

@@ -166,7 +166,7 @@ def _dev_panel(symbols, tf, days, cutoff):
 
 
 def run(symbols=None, timeframes=None, strategies=None, workers=None, fetch=True):
-    symbols = symbols or config.SYMBOLS
+    symbols = symbols or config.RESEARCH_SYMBOLS
     timeframes = timeframes or config.RESEARCH_TIMEFRAMES
     strategies = strategies if strategies is not None else config.RESEARCH_STRATEGIES
     if fetch:
