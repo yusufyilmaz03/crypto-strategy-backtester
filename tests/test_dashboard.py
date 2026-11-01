@@ -133,16 +133,37 @@ def test_strategies_api(client):
     assert {p["name"] for p in v9["params"]} == {"fast", "slow", "entry_band"} and v9["description"]
 
 
-def test_password_protects_every_request(client, monkeypatch):
+TAILSCALE = {"base_url": "http://mac.tail1.ts.net", "environ_base": {"REMOTE_ADDR": "127.0.0.1"},
+             "headers": {"X-Forwarded-For": "100.64.0.2", "X-Forwarded-Host": "mac.tail1.ts.net",
+                         "X-Forwarded-Proto": "https"}}
+
+
+def test_password_protects_every_remote_request(client, monkeypatch):
     import base64
     monkeypatch.setenv("DASHBOARD_PASSWORD", "s3cret")
-    assert client.get("/").status_code == 401
-    assert client.get("/api/overview").status_code == 401
-    good = {"Authorization": "Basic " + base64.b64encode(b"me:s3cret").decode()}
-    bad = {"Authorization": "Basic " + base64.b64encode(b"me:nope").decode()}
-    assert client.get("/", headers=bad).status_code == 401
-    assert client.get("/", headers=good).status_code == 200
-    assert client.post("/api/kill-switch", json={"mode": "off"}, headers=good).status_code == 403  # CSRF still on
+    lan = {"base_url": "http://192.168.1.5:5002", "environ_base": {"REMOTE_ADDR": "192.168.1.9"}}
+    assert client.get("/", **lan).status_code == 401
+    assert client.get("/api/overview", **lan).status_code == 401
+    good = "Basic " + base64.b64encode(b"me:s3cret").decode()
+    bad = "Basic " + base64.b64encode(b"me:nope").decode()
+    assert client.get("/", headers={"Authorization": bad}, **lan).status_code == 401
+    assert client.get("/", headers={"Authorization": good}, **lan).status_code == 200
+    assert client.post("/api/kill-switch", json={"mode": "off"}, headers={"Authorization": good},
+                       **lan).status_code == 403                                     # CSRF still on
+
+
+def test_password_is_not_asked_on_this_computer_only(client, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "s3cret")
+    for url in ("http://127.0.0.1:5002", "http://localhost:5002"):
+        assert client.get("/", base_url=url, environ_base={"REMOTE_ADDR": "127.0.0.1"}).status_code == 200
+    assert client.get("/", base_url="http://[::1]:5002", environ_base={"REMOTE_ADDR": "::1"}).status_code == 200
+    # tailscale serve connects from 127.0.0.1 too, but with forwarding headers and its host name
+    assert client.get("/", **TAILSCALE).status_code == 401
+    only_header = {"X-Forwarded-For": "100.64.0.2"}
+    assert client.get("/", base_url="http://127.0.0.1:5002", headers=only_header).status_code == 401
+    # a web page whose name resolves to 127.0.0.1 (DNS rebinding) keeps its own host name
+    assert client.get("/", base_url="http://evil.example:5002",
+                      environ_base={"REMOTE_ADDR": "127.0.0.1"}).status_code == 401
 
 
 def test_network_bind_requires_password(monkeypatch):

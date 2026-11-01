@@ -5,15 +5,19 @@ Binds to 127.0.0.1 by default. Requests that change something must carry the hea
 X-Requested-With: kripto-bot; browsers don't let other websites send it, which keeps
 pages you visit from driving the panel behind your back (CSRF).
 
-On a server (Docker) set DASHBOARD_HOST=0.0.0.0 and DASHBOARD_PASSWORD in .env: every
-request then needs HTTP basic auth (any user name). The panel refuses to listen
-beyond 127.0.0.1 without a password.
+On a server (Docker) set DASHBOARD_HOST=0.0.0.0 and DASHBOARD_PASSWORD in .env: requests
+then need HTTP basic auth (any user name). The panel refuses to listen beyond 127.0.0.1
+without a password. Opened directly on this computer (http://127.0.0.1:5002) it doesn't
+ask: whatever runs here could read .env anyway. Requests relayed by a proxy such as
+`tailscale serve` also come from 127.0.0.1, but they carry X-Forwarded-* headers and
+the proxy's host name, so they still need the password.
 """
 import hmac
 import importlib
 import json
 import logging
 import os
+import urllib.parse
 
 import pandas as pd
 from flask import Flask, Response, jsonify, render_template, request
@@ -30,6 +34,8 @@ app = Flask(__name__)
 
 BACKTEST_FILE = paths.results("multi_backtest_strategies.csv")
 CSRF_HEADER = ("X-Requested-With", "kripto-bot")
+LOOPBACK = ("127.0.0.1", "::1")
+PROXY_HEADERS = ("X-Forwarded-For", "X-Forwarded-Host", "Forwarded")
 
 
 class ApiError(Exception):
@@ -40,10 +46,17 @@ def _password():
     return os.environ.get("DASHBOARD_PASSWORD", "")
 
 
+def _direct_local():
+    """Typed on this computer, not relayed by a proxy (see the module docstring)."""
+    host = urllib.parse.urlsplit("//" + request.host).hostname
+    return (request.remote_addr in LOOPBACK and host in LOOPBACK + ("localhost",)
+            and not any(h in request.headers for h in PROXY_HEADERS))
+
+
 @app.before_request
 def _auth_guard():
     pw = _password()
-    if not pw:
+    if not pw or _direct_local():
         return None
     auth = request.authorization
     if auth and auth.password and hmac.compare_digest(auth.password.encode(), pw.encode()):

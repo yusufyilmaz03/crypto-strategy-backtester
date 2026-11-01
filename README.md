@@ -221,7 +221,7 @@ The panel keeps listening on the Mac's 127.0.0.1. [Tailscale](https://tailscale.
 How the pieces fit:
 
 - `service install` only manages the supervisor (panel, bots, notifier, Telegram commands). Tailscale is a separate app with its own login item; the `serve` setting is stored by Tailscale and survives restarts of both. If the supervisor is down, the address answers with an error until it is back.
-- The password is checked only when `DASHBOARD_PASSWORD` is set. It is read from `.env` when the supervisor starts, so changing it needs a `service restart`. The user name is ignored. Without a password the panel also refuses to listen beyond 127.0.0.1 (`DASHBOARD_HOST`).
+- The password is checked only when `DASHBOARD_PASSWORD` is set, and not for http://127.0.0.1:5002 opened on the Mac itself (anything running there could read `.env` anyway). Requests through Tailscale also reach the panel from 127.0.0.1, but `tailscale serve` adds `X-Forwarded-*` headers and keeps the `.ts.net` host name, so they always need it. The password is read from `.env` when the supervisor starts, so changing it needs a `service restart`. The user name is ignored. Without a password the panel also refuses to listen beyond 127.0.0.1 (`DASHBOARD_HOST`).
 - Traffic from the phone goes through Tailscale's encrypted tunnel and HTTPS; nothing is reachable from the home network or the internet. Don't use `tailscale funnel`, which would make the address public. To stop serving: `tailscale serve --https=443 off`.
 - The Mac has to be awake: with the lid closed neither the panel nor the bots run.
 
@@ -233,5 +233,5 @@ More background in `docs/telegram-commands-and-mobile.md`.
 - In paper trading, stops are evaluated when a candle closes (as if a stop order had been resting at the stop price), not tick by tick.
 - Times in logs are UTC candle times.
 - A second copy of the same instance refuses to start (`*.lock` files in `runtime/`).
-- The dashboard listens on 127.0.0.1 by default and requires an `X-Requested-With: kripto-bot` header on every change, so other websites can't drive it. With `DASHBOARD_PASSWORD` set it also requires HTTP basic auth (see *Running 24/7*).
+- The dashboard listens on 127.0.0.1 by default and requires an `X-Requested-With: kripto-bot` header on every change, so other websites can't drive it. With `DASHBOARD_PASSWORD` set it also requires HTTP basic auth for every request that doesn't come straight from the same computer (see *The panel on a phone*).
 - In the grid backtest strategies run with their default parameters, so its walk-forward folds are plain out-of-sample windows. Parameter optimization happens in the research runner.
