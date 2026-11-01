@@ -131,8 +131,9 @@ it also opens the panel to the home network over plain HTTP, so `serve` is bette
 
 ### To check
 
-- How the dashboard looks on a phone screen. The Overview cards were checked at
-  375–1400 px (headless Chrome, 2026-10-30); the instance page tables, charts,
-  Playground and Settings were not. Small CSS fixes may be needed.
+- How the dashboard looks on a phone screen: checked at 390 px (headless Chrome,
+  2026-11-01) for Overview, Instances, the instance page, Playground, Settings and
+  Backtest. The menu collapses, cards stack and wide tables scroll inside their box;
+  no CSS change was needed. Still to see on a real phone: chart touch and tooltips.
 - The panel and the bot are only reachable while the Mac is awake. `--keep-awake`
   prevents idle sleep on power, not sleep with the lid closed.
