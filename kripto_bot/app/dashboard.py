@@ -21,10 +21,11 @@ import urllib.parse
 
 import pandas as pd
 from flask import Flask, Response, jsonify, render_template, request
+from markupsafe import Markup
 
 from kripto_bot import config
 from kripto_bot import instances, paths
-from kripto_bot.app import manual_close, notify, playground
+from kripto_bot.app import i18n, manual_close, notify, playground
 from kripto_bot.app import reporting
 from kripto_bot import settings
 from kripto_bot.core import strategy
@@ -79,6 +80,15 @@ def _csrf_guard():
 @app.errorhandler(ApiError)
 def _bad_request(e):
     return jsonify({"error": str(e)}), 400
+
+
+@app.context_processor
+def _language():
+    """Templates get _() and the page's language; Turkish pages also get the catalog for app.js.
+    code() marks a value of _() as <code> (other values are escaped)."""
+    lang = i18n.lang_of(request)
+    return {"lang": lang, "_": lambda text, **kw: i18n.translate(text, lang, **kw),
+            "code": lambda text: Markup("<code>{}</code>").format(text), "i18n_catalog": i18n.catalog(lang)}
 
 
 def records(df):

@@ -2,7 +2,7 @@
 {% block title %}{{ name }}{% endblock %}
 {% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
-<nav class="small mb-2"><a href="/instances">Instances</a> / {{ name }}</nav>
+<nav class="small mb-2"><a href="/instances">{{ _("Instances") }}</a> / {{ name }}</nav>
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
     <h1 class="h3 mb-1"><span id="star"></span> {{ name }} <span id="badges"></span></h1>
@@ -11,35 +11,34 @@
   <div class="btn-group" id="actions"></div>
 </div>
 <div class="input-group input-group-sm mb-4" style="max-width: 640px">
-  <span class="input-group-text">Description</span>
+  <span class="input-group-text">{{ _("Description") }}</span>
   <input class="form-control" id="description" maxlength="500">
-  <button class="btn btn-outline-secondary" onclick="saveDescription()">Save</button>
+  <button class="btn btn-outline-secondary" onclick="saveDescription()">{{ _("Save") }}</button>
 </div>
 
 <div class="row g-3 mb-4" id="metrics"></div>
 
 <div class="card mb-4"><div class="card-body">
-  <h6 class="card-title">Return vs equal-weight buy &amp; hold (%)<span id="bh-tip"></span></h6>
+  <h6 class="card-title">{{ _("Return vs equal-weight buy & hold (%)") }}<span id="bh-tip"></span></h6>
   <canvas id="chart" height="90"></canvas>
 </div></div>
 
 <ul class="nav nav-tabs" role="tablist">
-  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t-pos">Positions</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-trades" id="trades-tab">Trades</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-signals" id="signals-tab">Signals</button></li>
-  <li class="nav-item d-none" id="stops-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-stops">Stop events</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-log">Log</button></li>
-  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-setup">Setup</button></li>
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t-pos">{{ _("Positions") }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-trades" id="trades-tab">{{ _("Trades") }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-signals" id="signals-tab">{{ _("Signals") }}</button></li>
+  <li class="nav-item d-none" id="stops-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-stops">{{ _("Stop events") }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-log">{{ _("Log") }}</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-setup">{{ _("Setup") }}</button></li>
 </ul>
 <div class="tab-content border border-top-0 rounded-bottom p-3 mb-4">
   <div class="tab-pane fade show active table-responsive" id="t-pos"><table class="table table-sm" id="positions"></table></div>
   <div class="tab-pane fade table-responsive" id="t-trades" style="max-height: 520px"><table class="table table-sm" id="trades"></table></div>
   <div class="tab-pane fade table-responsive" id="t-signals" style="max-height: 520px"><table class="table table-sm" id="signals"></table></div>
   <div class="tab-pane fade table-responsive" id="t-stops" style="max-height: 520px">
-    <div class="small text-secondary mb-1">Shadow stop: the first 1m candle that reached a trade's stop. Recorded only; the engine
-      closes the trade at the main close at min(open, stop), as in the backtest. Times UTC.</div>
+    <div class="small text-secondary mb-1">{{ _("Shadow stop: the first 1m candle that reached a trade's stop. Recorded only; the engine closes the trade at the main close at min(open, stop), as in the backtest. Times UTC.") }}</div>
     <table class="table table-sm" id="stops"></table></div>
-  <div class="tab-pane fade" id="t-log"><div class="small text-secondary mb-1">Newest first.</div><div class="log bg-body-tertiary p-2 rounded" id="log">…</div></div>
+  <div class="tab-pane fade" id="t-log"><div class="small text-secondary mb-1">{{ _("Newest first.") }}</div><div class="log bg-body-tertiary p-2 rounded" id="log">…</div></div>
   <div class="tab-pane fade" id="t-setup"><pre class="small mb-0" id="setup"></pre></div>
 </div>
 {% endblock %}
@@ -57,32 +56,37 @@ async function loadInstance() {
   const s = INST.summary, paper = INST.mode === "paper";
   document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}`;
   document.getElementById("star").innerHTML = KB.star(INST);
-  document.getElementById("setup-line").textContent =
-    `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.trail ? `trail ${INST.trail}×ATR · ` : ""}${INST.trend_sma ? `trend SMA${INST.trend_sma} · ` : ""}${INST.lower_tf_entry ? "lower-TF entry · " : ""}${INST.lower_tf_exit ? "lower-TF exit · " : ""}${INST.lower_tf_sma ? `lower-TF SMA${INST.lower_tf_sma} · ` : ""}${INST.manual_close ? "manual close · " : ""}${INST.sizing === "equal" ? "" : `${INST.sizing} sizing · `}${INST.symbols.length} symbols · ` +
-    (paper ? `${INST.equity} USDT per symbol` : `${INST.equity} USDT capital`);
+  document.getElementById("setup-line").textContent = [INST.strategy, KB.params(INST.params), INST.timeframe,
+    KB.t("stop {v}", { v: INST.stop }), INST.trail && KB.t("trail {v}×ATR", { v: INST.trail }),
+    INST.trend_sma && KB.t("trend SMA{v}", { v: INST.trend_sma }), INST.lower_tf_entry && KB.t("lower-TF entry"),
+    INST.lower_tf_exit && KB.t("lower-TF exit"), INST.lower_tf_sma && KB.t("lower-TF SMA{v}", { v: INST.lower_tf_sma }),
+    INST.manual_close && KB.t("manual close"), INST.sizing !== "equal" && KB.t("{v} sizing", { v: INST.sizing }),
+    KB.t("{n} symbols", { n: INST.symbols.length }),
+    KB.t(paper ? "{v} USDT per symbol" : "{v} USDT capital", { v: INST.equity })]
+    .filter(Boolean).join(" · ");
   if (document.activeElement.id !== "description") document.getElementById("description").value = INST.description || "";
   document.getElementById("actions").innerHTML = INST.enabled
-    ? `<button class="btn btn-outline-secondary" onclick="act('restart')"><i class="bi bi-arrow-repeat"></i> Restart</button>
-       <button class="btn btn-outline-danger" onclick="act('stop')"><i class="bi bi-stop-fill"></i> Stop</button>`
-    : `<button class="btn btn-success" onclick="act('start')"><i class="bi bi-play-fill"></i> Start</button>
-       <button class="btn btn-outline-danger" onclick="del()"><i class="bi bi-trash"></i> Delete</button>`;
+    ? `<button class="btn btn-outline-secondary" onclick="act('restart')"><i class="bi bi-arrow-repeat"></i> ${KB.t("Restart")}</button>
+       <button class="btn btn-outline-danger" onclick="act('stop')"><i class="bi bi-stop-fill"></i> ${KB.t("[button] Stop")}</button>`
+    : `<button class="btn btn-success" onclick="act('start')"><i class="bi bi-play-fill"></i> ${KB.t("Start")}</button>
+       <button class="btn btn-outline-danger" onclick="del()"><i class="bi bi-trash"></i> ${KB.t("Delete")}</button>`;
   document.getElementById("metrics").innerHTML =
-    metric("Return", KB.pct(s.return_pct), `buy &amp; hold ${KB.pct(s.buy_hold_pct)}`, KB.sign(s.return_pct)) +
-    metric("Sharpe", KB.num(s.sharpe), `buy &amp; hold ${KB.num(s.buy_hold_sharpe)}`) +
-    metric("Max drawdown", KB.num(s.max_dd_pct, 1) + "%", `buy &amp; hold ${KB.num(s.buy_hold_max_dd_pct, 1)}%`) +
-    metric("Closed trades", s.closed_trades, `win rate ${KB.num(s.win_rate_pct, 1)}%`) +
-    metric("Realized PnL", KB.money(s.realized_pnl) + " USDT", "from closed trades", KB.sign(s.realized_pnl)) +
-    metric("Open positions", s.open_positions, `${s.days} days · last ${KB.time(s.last_candle)}`);
-  document.getElementById("trades-tab").textContent = paper ? "Trades" : "Orders";
-  document.getElementById("signals-tab").textContent = paper ? "Signals" : "Events";
+    metric(KB.t("Return"), KB.pct(s.return_pct), KB.t("buy &amp; hold {v}", { v: KB.pct(s.buy_hold_pct) }), KB.sign(s.return_pct)) +
+    metric("Sharpe", KB.num(s.sharpe), KB.t("buy &amp; hold {v}", { v: KB.num(s.buy_hold_sharpe) })) +
+    metric(KB.t("Max drawdown"), KB.num(s.max_dd_pct, 1) + "%", KB.t("buy &amp; hold {v}", { v: KB.num(s.buy_hold_max_dd_pct, 1) + "%" })) +
+    metric(KB.t("Closed trades"), s.closed_trades, KB.t("win rate {v}%", { v: KB.num(s.win_rate_pct, 1) })) +
+    metric(KB.t("Realized PnL"), KB.money(s.realized_pnl) + " USDT", KB.t("from closed trades"), KB.sign(s.realized_pnl)) +
+    metric(KB.t("Open positions"), s.open_positions, KB.t("{days} days · last {time}", { days: s.days, time: KB.time(s.last_candle) }));
+  document.getElementById("trades-tab").textContent = KB.t(paper ? "Trades" : "Orders");
+  document.getElementById("signals-tab").textContent = KB.t(paper ? "Signals" : "Events");
   document.getElementById("setup").textContent = JSON.stringify(INST, null, 2);
 }
 async function loadChart() {
   const d = await KB.api(`/api/instances/${N}/curves`);
   const color = KB.cssVar("--bs-body-color");
   const data = { labels: d.labels.map(KB.time), datasets: [
-    { label: "Strategy", data: d.strategy, borderColor: "#20c997", pointRadius: 0, borderWidth: 2 },
-    { label: "Buy & hold", data: d.buy_hold, borderColor: "#adb5bd", borderDash: [5, 5], pointRadius: 0, borderWidth: 1.5 }] };
+    { label: KB.t("Strategy"), data: d.strategy, borderColor: "#20c997", pointRadius: 0, borderWidth: 2 },
+    { label: KB.t("Buy & hold"), data: d.buy_hold, borderColor: "#adb5bd", borderDash: [5, 5], pointRadius: 0, borderWidth: 1.5 }] };
   if (chart) { chart.data = data; chart.update(); return; }
   chart = new Chart(document.getElementById("chart"), { type: "line", data, options: {
     animation: false, interaction: { mode: "index", intersect: false },
@@ -100,64 +104,64 @@ async function loadTables() {
   const change = r => pxValue("change", r);
   const unrealized = r => pxValue("unrealized", r);
   const priceCols = [
-    ["Price", r => pxCell("price", r), r => r.price],
-    ["Change", r => pxCell("change", r), change],
-    ["Unrealized", r => `<span title="before exit fee and slippage">${pxCell("unrealized", r)}</span>`, unrealized]];
+    [KB.t("Price"), r => pxCell("price", r), r => r.price],
+    [KB.t("Change"), r => pxCell("change", r), change],
+    [KB.t("Unrealized"), r => `<span title="${KB.t("before exit fee and slippage")}">${pxCell("unrealized", r)}</span>`, unrealized]];
   KB.table(document.getElementById("positions"), pos, paper ? [
-    ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Side", r => KB.esc(r.side), r => r.side],
-    ["Entry time", r => KB.time(r.entry_time), r => r.entry_time],
-    ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price], ...priceCols,
-    ["Qty", r => KB.num(r.qty, 6), r => r.qty], ["Stop", r => KB.num(r.stop, 6), r => r.stop],
+    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Side"), r => KB.esc(r.side), r => r.side],
+    [KB.t("Entry time"), r => KB.time(r.entry_time), r => r.entry_time],
+    [KB.t("Entry price"), r => KB.num(r.entry_price, 6), r => r.entry_price], ...priceCols,
+    [KB.t("Qty"), r => KB.num(r.qty, 6), r => r.qty], [KB.t("Stop"), r => KB.num(r.stop, 6), r => r.stop],
     ...(INST.manual_close ? [["", closeButton]] : [])] : [
-    ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Qty", r => KB.num(r.qty, 8), r => r.qty],
-    ["Cost", r => KB.num(r.cost), r => r.cost], ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price],
-    ...priceCols, ["Entry time", r => KB.time(r.entry_time), r => r.entry_time]],
-    "No open positions.", paper ? [2, "desc"] : [7, "desc"]);
+    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Qty"), r => KB.num(r.qty, 8), r => r.qty],
+    [KB.t("Cost"), r => KB.num(r.cost), r => r.cost], [KB.t("Entry price"), r => KB.num(r.entry_price, 6), r => r.entry_price],
+    ...priceCols, [KB.t("Entry time"), r => KB.time(r.entry_time), r => r.entry_time]],
+    KB.t("No open positions."), paper ? [2, "desc"] : [7, "desc"]);
   KB.table(document.getElementById("trades"), trades, paper ? [
-    ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Entry", r => KB.time(r.entry_time), r => r.entry_time],
-    ["Exit", r => KB.time(r.exit_time), r => r.exit_time ?? "9999"],          // open trades count as newest
-    ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price],
-    ["Exit price", r => KB.num(r.exit_price, 6), r => r.exit_price],
-    ["Price", r => r.exit_time ? "" : pxCell("price", r), r => r.price],
-    ["Return", r => r.exit_time ? `<span class="${KB.sign(r.return_pct)}">${KB.pct(r.return_pct)}</span>`
-                                : `<span title="open: change since entry">${pxCell("change", r)}</span>`,
+    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Entry"), r => KB.time(r.entry_time), r => r.entry_time],
+    [KB.t("Exit"), r => KB.time(r.exit_time), r => r.exit_time ?? "9999"],          // open trades count as newest
+    [KB.t("Entry price"), r => KB.num(r.entry_price, 6), r => r.entry_price],
+    [KB.t("Exit price"), r => KB.num(r.exit_price, 6), r => r.exit_price],
+    [KB.t("Price"), r => r.exit_time ? "" : pxCell("price", r), r => r.price],
+    [KB.t("Return"), r => r.exit_time ? `<span class="${KB.sign(r.return_pct)}">${KB.pct(r.return_pct)}</span>`
+                                : `<span title="${KB.t("open: change since entry")}">${pxCell("change", r)}</span>`,
      r => r.exit_time ? r.return_pct : change(r)],
-    ["PnL", r => KB.num(r.pnl), r => r.pnl], ["Reason", r => KB.esc(r.reason ?? "open"), r => r.reason ?? "open"],
+    [KB.t("PnL"), r => KB.num(r.pnl), r => r.pnl], [KB.t("Reason"), r => KB.esc(r.reason ?? KB.t("open")), r => r.reason ?? "open"],
     ...(INST.manual_close ? [["", r => r.exit_time ? "" :
         closeButton({ ...r, close_requested: pos.some(p => p.symbol === r.symbol && p.close_requested) })]] : [])] : [
-    ["Time", r => KB.time(r.created_at), r => r.created_at], ["Symbol", r => KB.esc(r.symbol), r => r.symbol],
-    ["Side", r => KB.esc(r.side), r => r.side], ["Status", r => KB.esc(r.status), r => r.status],
-    ["Filled", r => KB.num(r.filled, 8), r => r.filled], ["Avg price", r => KB.num(r.average, 6), r => r.average],
-    ["Ref price", r => KB.num(r.ref_price, 6), r => r.ref_price], ["Cost", r => KB.num(r.cost), r => r.cost],
-    ["PnL", r => KB.num(r.pnl), r => r.pnl], ["Error", r => KB.esc(r.error ?? ""), r => r.error]],
-    paper ? "No trades yet." : "No orders yet.", paper ? [2, "desc"] : [0, "desc"]);
+    [KB.t("Time"), r => KB.time(r.created_at), r => r.created_at], [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol],
+    [KB.t("Side"), r => KB.esc(r.side), r => r.side], [KB.t("Status"), r => KB.esc(r.status), r => r.status],
+    [KB.t("Filled"), r => KB.num(r.filled, 8), r => r.filled], [KB.t("Avg price"), r => KB.num(r.average, 6), r => r.average],
+    [KB.t("Ref price"), r => KB.num(r.ref_price, 6), r => r.ref_price], [KB.t("Cost"), r => KB.num(r.cost), r => r.cost],
+    [KB.t("PnL"), r => KB.num(r.pnl), r => r.pnl], [KB.t("Error"), r => KB.esc(r.error ?? ""), r => r.error]],
+    KB.t(paper ? "No trades yet." : "No orders yet."), paper ? [2, "desc"] : [0, "desc"]);
   KB.table(document.getElementById("signals"), signals, paper ? [
-    ["Candle", r => KB.time(r.candle_time), r => r.candle_time], ["Symbol", r => KB.esc(r.symbol), r => r.symbol],
-    ["Signal", r => KB.esc(r.signal), r => r.signal], ["RSI", r => KB.num(r.rsi), r => r.rsi],
-    ["Close", r => KB.num(r.close, 6), r => r.close], ["Position", r => KB.esc(r.position), r => r.position],
-    ["Action", r => KB.esc(r.action), r => r.action]] : [
-    ["Time", r => KB.time(r.time), r => r.time], ["Level", r => KB.esc(r.level), r => r.level],
-    ["Symbol", r => KB.esc(r.symbol ?? ""), r => r.symbol], ["Message", r => KB.esc(r.message), r => r.message]],
-    paper ? "No signals yet." : "No events yet.", [0, "desc"]);
+    [KB.t("Candle"), r => KB.time(r.candle_time), r => r.candle_time], [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol],
+    [KB.t("Signal"), r => KB.esc(r.signal), r => r.signal], [KB.t("RSI"), r => KB.num(r.rsi), r => r.rsi],
+    [KB.t("Close"), r => KB.num(r.close, 6), r => r.close], [KB.t("Position"), r => KB.esc(r.position), r => r.position],
+    [KB.t("Action"), r => KB.esc(r.action), r => r.action]] : [
+    [KB.t("Time"), r => KB.time(r.time), r => r.time], [KB.t("Level"), r => KB.esc(r.level), r => r.level],
+    [KB.t("Symbol"), r => KB.esc(r.symbol ?? ""), r => r.symbol], [KB.t("Message"), r => KB.esc(r.message), r => r.message]],
+    KB.t(paper ? "No signals yet." : "No events yet."), [0, "desc"]);
   document.getElementById("stops-item").classList.toggle("d-none", !paper);
   if (paper) {
     const rel = (a, b) => a == null || b == null ? null : (a / b - 1) * 100;
     // detection delay: wall clock at detection minus the 1m candle's close
     const late = r => (Date.parse(r.detected_at) - Date.parse(r.minute_time + "Z") - 60000) / 1000;
     KB.table(document.getElementById("stops"), stops, [
-      ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Hit", r => KB.time(r.minute_time), r => r.minute_time],
-      ["Stop", r => KB.num(r.stop, 6), r => r.stop], ["1m open", r => KB.num(r.minute_open, 6), r => r.minute_open],
-      ["1m low", r => KB.num(r.minute_low, 6), r => r.minute_low], ["Est. fill", r => KB.num(r.est_fill, 6), r => r.est_fill],
-      ["Fill vs stop", r => KB.pct(rel(r.est_fill, r.stop)), r => rel(r.est_fill, r.stop)],
-      ["Noticed after", r => `${Math.max(0, Math.round(late(r)))}s`, r => late(r)],
-      ["Engine exit", r => KB.num(r.exit_price, 6), r => r.exit_price],
-      ["Engine vs est.", r => KB.pct(rel(r.exit_price, r.est_fill)), r => rel(r.exit_price, r.est_fill)],
-      ["Reason", r => KB.esc(r.reason ?? (r.exit_time ? "" : "open")), r => r.reason]],
-      "No stop hits recorded.", [1, "desc"]);
+      [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Hit"), r => KB.time(r.minute_time), r => r.minute_time],
+      [KB.t("Stop"), r => KB.num(r.stop, 6), r => r.stop], [KB.t("1m open"), r => KB.num(r.minute_open, 6), r => r.minute_open],
+      [KB.t("1m low"), r => KB.num(r.minute_low, 6), r => r.minute_low], [KB.t("Est. fill"), r => KB.num(r.est_fill, 6), r => r.est_fill],
+      [KB.t("Fill vs stop"), r => KB.pct(rel(r.est_fill, r.stop)), r => rel(r.est_fill, r.stop)],
+      [KB.t("Noticed after"), r => `${Math.max(0, Math.round(late(r)))}s`, r => late(r)],
+      [KB.t("Engine exit"), r => KB.num(r.exit_price, 6), r => r.exit_price],
+      [KB.t("Engine vs est."), r => KB.pct(rel(r.exit_price, r.est_fill)), r => rel(r.exit_price, r.est_fill)],
+      [KB.t("Reason"), r => KB.esc(r.reason ?? (r.exit_time ? "" : KB.t("open"))), r => r.reason]],
+      KB.t("No stop hits recorded."), [1, "desc"]);
   }
   const logEl = document.getElementById("log");
   logEl.textContent = log.length ? [...log].reverse().join("\n")     // newest line on top
-    : "No log yet (logs are written when the instance runs under run_all.py).";
+    : KB.t("No log yet (logs are written when the instance runs under run_all.py).");
 }
 // ---- current prices: loaded after the tables, then filled in cell by cell
 let PRICES = {};
@@ -185,20 +189,20 @@ async function loadPrices() {
   });
 }
 function closeButton(r) {
-  if (r.close_requested) return '<span class="badge text-bg-warning" title="the instance sells within a minute">closing…</span>';
+  if (r.close_requested) return `<span class="badge text-bg-warning" title="${KB.t("the instance sells within a minute")}">${KB.t("closing…")}</span>`;
   return `<button class="btn btn-sm btn-outline-danger py-0" onclick='closePosition(${JSON.stringify(r.symbol)})'
-    title="Sell at the market price now"><i class="bi bi-x-lg"></i> Close</button>`;
+    title="${KB.t("Sell at the market price now")}"><i class="bi bi-x-lg"></i> ${KB.t("[button] Close")}</button>`;
 }
 let armedClose = {};
 async function closePosition(symbol) {
   if (Date.now() - (armedClose[symbol] || 0) > 5000) {
     armedClose[symbol] = Date.now();
-    KB.toast(`Click Close again within 5 seconds to sell ${symbol} at the market price. ` +
-      "A manual close is recorded as MANUAL and counts in this instance's results.", "warning");
+    KB.toast(KB.t("Click Close again within 5 seconds to sell {symbol} at the market price. " +
+      "A manual close is recorded as MANUAL and counts in this instance's results.", { symbol }), "warning");
     return;
   }
   try { await KB.api(`/api/instances/${N}/close`, { method: "POST", body: { symbol } });
-        KB.toast(`${symbol}: close requested; the instance sells within a minute`); refresh(); }
+        KB.toast(KB.t("{symbol}: close requested; the instance sells within a minute", { symbol })); refresh(); }
   catch (e) { KB.toast(e.message, "danger"); }
 }
 async function refresh() {
@@ -206,17 +210,17 @@ async function refresh() {
   catch (e) { KB.toast(e.message, "danger"); }
 }
 async function act(action) {
-  try { await KB.api(`/api/instances/${N}/action`, { method: "POST", body: { action } }); KB.toast(`${action} requested`); refresh(); }
+  try { await KB.api(`/api/instances/${N}/action`, { method: "POST", body: { action } }); KB.toast(KB.t("{action} requested", { action: KB.t(action) })); refresh(); }
   catch (e) { KB.toast(e.message, "danger"); }
 }
 async function saveDescription() {
   try { await KB.api(`/api/instances/${N}/action`, { method: "POST",
-          body: { action: "describe", description: document.getElementById("description").value } }); KB.toast("Saved"); }
+          body: { action: "describe", description: document.getElementById("description").value } }); KB.toast(KB.t("Saved")); }
   catch (e) { KB.toast(e.message, "danger"); }
 }
 async function del() {
   if (Date.now() - armedDelete > 5000) { armedDelete = Date.now();
-    KB.toast("Click Delete again within 5 seconds. Stored results are kept.", "warning"); return; }
+    KB.toast(KB.t("Click Delete again within 5 seconds. Stored results are kept."), "warning"); return; }
   try { await KB.api(`/api/instances/${N}`, { method: "DELETE" }); location.href = "/instances"; }
   catch (e) { KB.toast(e.message, "danger"); }
 }
