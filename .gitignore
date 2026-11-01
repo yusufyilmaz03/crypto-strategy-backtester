@@ -35,6 +35,9 @@ research_holdout.csv
 CLAUDE.md
 claude/
 
+# Local research notes on other projects
+docs/research/
+
 # Local OHLCV cache
 data/
 
