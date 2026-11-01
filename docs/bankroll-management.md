@@ -1,22 +1,39 @@
-# Bankroll management (analysis written 2026-11-01)
+# Bankroll management (analysis written 2026-11-01, decisions added the same day)
 
 Branch: `phase-4g-bankroll` (from `dev` at 44643d2).
 
-Status: **analysis only, nothing is coded yet.** The open questions at the end need
-answers before the first step starts.
+Status: **analysis and decisions, nothing is coded yet.** This phase is **paper only**.
+The testnet work is listed at the end as a to-do.
 
 ## What was asked
 
-1. Each instance gets a **starting bankroll** (one pool of cash for the instance).
+1. Each instance gets a **starting bankroll**.
 2. On a buy, the signal gets a **strength grade**, and the trade gets a **percentage of
    the bankroll** that depends on that grade.
 3. When the bankroll runs low: a **Telegram notification**, plus a marker on the
    **overview** and on the **instance page**.
 4. On a **very strong signal**, the option to **exit existing positions** to make room,
    choosing which ones by priority.
-5. **Adding money** to the bankroll, with every addition logged.
+5. **Adding money** to the bankroll and **withdrawing** it, with every change logged.
 6. A **history of the bankroll** (ledger).
 7. **Fractional quantities** (e.g. buy 0.003 BTC) instead of whole units.
+
+## Decisions (user, 2026-11-01)
+
+- **One bankroll per instance.** Instances never share money. The bankroll belongs to
+  the instance and is computed and managed inside the instance's own process loop.
+- **Opt-in in the New instance modal.** Existing instances are not affected. A new
+  sizing choice turns the bankroll on, and its settings appear in the modal.
+- **"Low bankroll" is defined by the user** per instance, in the modal.
+- **Withdrawals too.** Deposits and withdrawals only update the bankroll's books;
+  nothing is sent to an exchange.
+- **Stakes are a percentage of the starting bankroll**, with a **minimum and maximum
+  entry amount** set in the modal.
+- **Rotation has two options** in the modal: (1) close only positions that are in
+  profit, (2) allow reducing a position instead of closing it.
+- **Paper only** in this phase. Testnet steps go to the to-do list below.
+- **Strength score:** built from the lower-timeframe and SMA(N) features of earlier
+  phases, plus other sensible inputs.
 
 ## How money works today
 
@@ -29,34 +46,27 @@ answers before the first step starts.
   sleeve that is flat keeps its cash idle.
 - On entry the engine puts its **whole sleeve** into the position:
   `qty = equity / (fill × (1 + fee))` (`core/engine.py`, `Engine._open`). `qty` is a
-  float, so fractional quantities already work (0.003 BTC is normal).
+  float, so fractional quantities already work.
 - `sizing = "inverse_vol"` (`PortfolioRunner` in `trading/run_realtime.py`) is the only
   place where money moves between symbols: once a month every sleeve is resized to
-  weight × total value with `Engine.resize`. Between rebalances the sleeves are
-  independent again.
+  weight × total value with `Engine.resize`.
 - Instance returns (`app/reporting.py`, `curves`) are total equity ÷ (equity × number
-  of symbols) − 1. That formula assumes no money is ever added.
+  of symbols) − 1. That formula assumes no money is ever added or taken out.
 
 ### Testnet
 
 - `Instance.equity` is the **total** capital. `Trader` splits it equally:
-  `allocation = capital / len(symbols)`, kept per symbol in the `accounts` table of the
-  instance's database. Again no sharing between symbols.
-- A buy is a **quote-amount market order** (`market_buy(symbol, quote_amount)`): we say
-  "spend 23.80 USDT" and the exchange returns a fractional base quantity. A sell rounds
-  the quantity with `amount_to_precision` (the symbol's LOT_SIZE step). Orders below the
-  exchange minimum (`min_cost`, about 5 USDT) are skipped; a remainder below it is left
-  as dust.
-- `MAX_ORDER_USDT` caps every order; `RiskGuard` blocks new entries after a daily loss
-  of `DAILY_LOSS_LIMIT_PCT` measured on total equity.
+  `allocation = capital / len(symbols)`, kept per symbol in the `accounts` table.
+- A buy is a **quote-amount market order**: the bot says "spend 23.80 USDT" and the
+  exchange returns a fractional base quantity. A sell rounds the quantity to the
+  symbol's LOT_SIZE step. Orders below the exchange minimum (about 5 USDT) are skipped.
 
 ### Item 7 is already done
 
-Both paper and testnet trade fractional quantities. What is missing is **realism in
-paper**: paper doesn't round to the LOT_SIZE step and has no minimum order. With small
-percentage stakes (for example 1% of 1000 USDT = 10 USDT) the 5 USDT minimum starts to
-matter, so the pool mode should apply both in paper too (step and minimum from
-`load_markets`, cached).
+Paper and testnet both trade fractional quantities. What paper lacks is **realism**: it
+doesn't round to the LOT_SIZE step and has no minimum order. With bankroll stakes the
+minimum matters, so a bankroll instance applies both (step and minimum from
+`load_markets`, cached per symbol; a 5 USDT floor when the market info isn't available).
 
 ## What the running instances tell us
 
@@ -70,262 +80,276 @@ Concurrent open positions per paper instance, counted from `paper.db` on 2026-11
 | telegram-test | 42 | 16 | 6 | 1 | 11 |
 | v9-trail-1d, v9-band-1d | 42 | 5–7 | 4–5 | 4 | 4 |
 
-Two consequences for the design:
+- **Signals arrive in batches.** On a 1d instance every symbol closes at the same moment,
+  and forward-v9 got 41 BUY signals on one close. Processing them one by one would give
+  the cash to whichever symbol comes first in the list. All BUY signals of one candle are
+  therefore **collected, scored, ranked and then funded** in one step.
+- **v9 is often heavily invested.** With stakes of a few percent the bankroll will often
+  have no free cash in a bull phase. That is normal for a trend follower, which is why
+  the low-bankroll setting lets the user pick what "low" means.
+- **v9's BUY signal repeats** on every candle while the close stays above the SMA. A
+  symbol that wasn't funded today is considered again at the next close, once cash is
+  free. Nothing is lost by skipping it once.
 
-- **Signals arrive in batches.** On a 1d instance every symbol's candle closes at the
-  same moment, and forward-v9 got 41 BUY signals on a single close. "First come, first
-  served" would hand the cash to whatever symbol happens to be processed first
-  (alphabetical order). All BUY signals of one candle must be **collected, ranked by
-  strength and then funded**, in one step.
-- **v9 is usually heavily invested.** A median of 22 open positions means a shared
-  pool with stakes of a few percent is fully invested much of the time. "Bankroll low"
-  will then be the normal state of a trend follower in a bull phase, not an alarm (see
-  the low-balance section).
+## Research note
 
-## Research caution (read before choosing the rules)
-
-These rules change **what the strategy earns**, not just how it is displayed. The
-research so far says:
-
-- v9's edge comes from **a few large winners**: win rate 11–24 %, average win around
-  +76 % in period B (`docs/v9-filters-test.md`). Every rule that cut winners failed
-  (X200, E + X, H + E + X).
-- **Rotation failed**: R1 cross-sectional rotation was negative with a deeper drawdown
-  than buy and hold (`docs/phase2b-preregistration.md`). Exiting a position to buy a
-  "stronger" one (item 4) is a form of rotation.
-- v9's signal is **binary** (close above SMA50 or not). There is no strength in it
-  today; a strength score is a new rule.
-- Inverse-volatility sizing passed (`docs/v9-sizing-test.md`), so sizing *can* help,
-  but only the pre-registered version was tested.
-
-So the plan below builds the **mechanics** (pool, ledger, deposits, alerts, UI) so that
-they don't change results by default, and treats the **strength grades** and **exiting
-for a stronger signal** as rules that get a pre-registered backtest on the archive data,
-like every earlier rule. Until then they can still run in paper instances, labeled as
-untested, as was done with the `-ltf-cls` instances.
+The bankroll rules change what an instance earns, not only how it is displayed. Earlier
+tests found that v9's edge comes from a few large winners (win rate 11–24 %), that
+rotation (R1) failed, and that rules which cut winners failed (X200, E + X, H + E + X).
+Option (1) of rotation closes positions that are in profit, which is that kind of rule.
+Bankroll instances therefore run as **untested variants**, like the `-ltf-cls` instances
+were, and are labeled as such. A pre-registered archive test can follow if one of them
+looks worth trusting; it needs the portfolio backtest from step 4 of the plan.
 
 ## Design
 
-### 1. Bankroll pool
+### 1. Instance setup
 
-A new instance setting `capital = "pool"` (the existing behaviour is
-`capital = "per_symbol"`, the default; old instances load as `per_symbol` and must replay
-identically).
+A third value of the existing **Sizing** select: `bankroll`, next to `equal` and
+`inverse_vol`. Choosing it shows a **Bankroll** section in the New instance modal. The
+other sizings hide it, so existing instances and the default stay exactly as today.
 
-- `bankroll` (USDT): the starting cash of the whole instance, not per symbol.
-- The instance owns **one cash balance**. A buy takes its stake out of cash; a sell
-  (signal, stop, trailing, lower-timeframe, manual, rotation) puts the proceeds back.
-- **Reservation:** the stake is decided at the signal close and **reserved** at that
-  moment; the order fills at the next open (unchanged rule). Reserving prevents two
-  decisions from spending the same cash. If the next open has moved, the stake buys a
-  slightly different quantity; the USDT amount stays fixed, as with a quote-amount market
-  order on the exchange.
-- **Engine reuse:** each symbol keeps its `Engine`, but a flat engine holds 0. When an
-  entry is queued, the engine's `equity` is set to the stake (`resize` while flat only
-  moves cash). After a close, the engine's equity goes back to the pool. Engine fill,
-  fee, slippage and stop rules stay the same code.
-- **Processing order:** like `PortfolioRunner` today, all symbols are stepped together
-  per candle time inside one transaction: fill pending orders at the open → exits →
-  collect the new BUY signals → rank → fund → queue.
-- **Pool equity** = free cash + reserved cash + Σ positions marked at the close. This is
-  what the dashboard shows as the instance's equity.
-- **Shared code:** sizing and ranking go in `core/` (e.g. `core/bankroll.py`) and are
-  used by both the paper bot and a new portfolio backtest, as `core/sizing.py` is today.
-  The current research backtests run symbols independently, so a portfolio backtest is
-  needed anyway to test any of these rules.
+| Field | Meaning | Default | Locked after creation |
+|---|---|---|---|
+| Starting bankroll (USDT) | the instance's total cash at the start (the existing Equity field, relabeled "total" for this sizing) | 10 000 | yes |
+| Stake per grade (% of base) | four numbers: Weak, Normal, Strong, Very strong; 0 means "don't buy" | 0 / 3 / 5 / 8 | yes |
+| Min entry (USDT) | smaller stakes are skipped (never below 5) | 10 | yes |
+| Max entry (USDT) | stakes are capped here | empty (no cap) | yes |
+| Score inputs | checkboxes, see section 3 | trend SMA, lower TFs, distance, slope, momentum rank | yes |
+| Rotation | master checkbox, see section 5 | off | yes |
+| ↳ Only close positions in profit | rotation option 1 | off | yes |
+| ↳ Allow reducing a position | rotation option 2 | off | yes |
+| Low bankroll threshold | see section 6 | bankroll value below 70 % | no |
 
-`inverse_vol` and `pool` are different answers to the same question. The first version
-should allow only one of them per instance.
+**Stake base.** "Percent of the starting bankroll" with deposits and withdrawals is read
+as **contributed capital**: starting bankroll + deposits − withdrawals. Profits and
+losses don't change stakes; a deposit raises them. This is an assumption to confirm.
 
-### 2. Stake size and strength grades
+Stake of one entry = base × grade % → capped at Max entry → capped at the free cash →
+skipped if below Min entry (or the market's minimum).
 
-**Percent of what?** "A percentage of the bankroll" has two readings, and they behave
-very differently with 41 signals on one candle:
+Instance validation: `bankroll` is paper only; it can't be combined with `inverse_vol`
+(they are values of the same field); rotation options need rotation on; the four
+percentages must be 0–100 and non-decreasing.
 
-| Base | Stake for a 5 % grade | What happens with 41 signals |
+### 2. The bankroll inside the instance process
+
+- New runner `BankrollRunner` in `trading/run_realtime.py`, next to `PortfolioRunner`.
+  It steps all symbols of the instance together per candle time, inside one
+  transaction, in this order:
+  1. fill the orders queued on the previous candle at this open (exits before entries,
+     so their cash is available),
+  2. stops and everything else `Engine.on_bar` does today,
+  3. collect this close's BUY signals that can queue an entry, score them, rank them by
+     score (ties: symbol name), and fund them from free cash,
+  4. if rotation is on, fund what is still unfunded and graded "very strong" (section 5),
+  5. write the ledger rows, the engine states and the bankroll state.
+- **Engine reuse.** Each symbol keeps its `Engine`, with the same fill, fee, slippage,
+  stop, trailing and lower-timeframe code. A flat engine holds 0 USDT. Funding an entry
+  sets the flat engine's equity to the stake (a cash move only). The engine then queues
+  the entry; if it isn't funded, `on_bar` is told `entry_ok=False` (the hook that rule E
+  already uses). When a trade closes, the proceeds move back to the bankroll's free cash.
+- **Reservation.** The stake is set aside at the signal close and spent at the next
+  open. If the open price moved, the same USDT amount buys a slightly different
+  quantity, as a quote-amount market order would.
+- **Values the instance tracks:** free cash, reserved cash, invested (positions marked
+  at the close), bankroll value = free + reserved + invested, contributed capital.
+- **Cash freed inside a candle** (lower-timeframe exit, manual close) goes to free cash at
+  once and can fund signals from the next close on.
+- **Shared code:** scoring, grading, funding and rotation choice go in `core/bankroll.py`,
+  so a later portfolio backtest uses the same functions, as `core/sizing.py` does for
+  inverse volatility.
+- **Restarts:** the bankroll state (cash, reserved, contributed, low-state flag) is saved
+  with the engine states in the same transaction. `--rebuild-state` for a bankroll
+  instance must replay all symbols together, including deposits, withdrawals and manual
+  closes from the ledger; until that exists it refuses bankroll instances with a clear
+  message.
+
+### 3. Strength score
+
+The score is computed for each BUY signal at its close, from closed candles only (the
+lower-timeframe value is the one closed at that time, `lower_timeframes.signal_at`). Each
+selected input gives 0 to 1 point; the score is the average × 100. Inputs:
+
+| Input | Points | Source / note |
 |---|---|---|
-| % of **free cash** | 5 % of the cash left | Every buy shrinks the next one: the 41st gets 5 % × 0.95⁴⁰ ≈ 0.64 % of the start. Order decides size. |
-| % of **pool equity** (cash + positions) | 5 % of total value | 20 buys use up the cash; the other 21 get nothing. Ranking decides who gets in. |
+| **Trend SMA(N)** | 1 if the close is above SMA(N) | `trend_filter`; N from the modal (default 200) |
+| **Lower timeframes agree** | 0.5 for each lower timeframe that says BUY | `load_signals` / `signal_at` (1d: 4h + 1h, 4h: 1h + 15m); the strategy's signal or the SMA(N) mode, as with E/X |
+| **Distance above the SMA** | (close − SMA) / ATR: linear from 0 at 0 ATR to full at 2 ATR, full up to 4 ATR, 0.5 above 4 ATR (stretched) | the strategy's slow SMA for v9, the trend SMA otherwise |
+| **SMA slope** | change of the SMA over the last 10 candles per candle: 0 when flat or falling, linear up to full at +0.5 % per candle | trend steepness |
+| **Momentum rank** | percentile of the 60-candle return among the instance's symbols at this close | cross-sectional; uses the batch, no extra data |
+| **Relative strength vs BTC** | 1 if the 60-candle return beats BTC's | BTC candles fetched once per close |
+| **Breakout** | 1 if the close is the highest of the last 55 closes | Donchian idea of v10 |
+| **Volume** | volume ÷ its 20-candle mean, full at 1.5 | the candles already have volume |
+| **RSI zone** | 1 between 50 and 70, 0.5 between 70 and 80, 0 above 80 | `RSI` column exists |
+| **Low volatility** | 1 − percentile of ATR % among the instance's symbols | inverse-volatility idea that passed `docs/v9-sizing-test.md` |
 
-Recommendation: **% of pool equity, capped by free cash**, ranked by strength. Stakes
-then don't depend on processing order, and a strong signal gets the same size whether it
-comes first or last.
+Grades from the score (fixed in code for the first version):
 
-Limits that apply to every stake:
+| Grade | Score |
+|---|---|
+| Weak | below 40 |
+| Normal | 40–60 |
+| Strong | 60–80 |
+| Very strong | 80 and above |
 
-- **Minimum order:** 5 USDT (Binance minimum notional). A stake below it is skipped and
-  logged.
-- **Maximum per position:** e.g. 20 % of pool equity, so one symbol can't dominate.
-- **Cash reserve:** e.g. keep 5 % of pool equity in cash, unspendable by normal signals
-  (fees, slippage, and the option in section 4).
-- **Maximum open positions:** optional.
+Notes:
 
-**Strength score.** A function `strength(df) -> float` per strategy, computed only from
-the closed candle and earlier (no lookahead), mapped to grades. Candidates for v9:
+- Inputs that need lower-timeframe candles make the instance load them, as E and X do
+  today, even when E and X are off.
+- The score and grade are written to the `signals` table (new columns) and the ledger,
+  so each grade's later results can be compared.
+- The same function scores **held positions** at every close; rotation compares them.
+- The thresholds and the scaling numbers above are starting values, not tuned on any
+  data. They are fixed when coding starts and written into this document.
 
-| Input | Meaning | Note |
+### 4. Stake and ranking example
+
+Starting bankroll 10 000, stakes 0 / 3 / 5 / 8 %, min 10, max 600, free cash 1 200:
+
+| Signal | Score | Grade | Stake asked | Funded |
+|---|---|---|---|---|
+| SOL | 86 | Very strong | 800 → max 600 | 600 |
+| AVAX | 71 | Strong | 500 | 500 |
+| LINK | 52 | Normal | 300 | 100 left → 100 |
+| DOGE | 45 | Normal | 300 | 0 left → skipped, logged |
+| PEPE | 31 | Weak | 0 | not bought (grade 0 %) |
+
+When the last funded entry would get less than its stake, the rule above funds what is
+left as long as it is above Min entry. An alternative is "all or nothing" per entry. The
+first version uses "what is left".
+
+### 5. Rotation (exiting for a very strong signal)
+
+Runs only when rotation is on and a "very strong" signal is still unfunded after step 3.
+
+Candidates are the open positions that:
+
+- have a **lower current score** than the new signal by at least 20 points,
+- were held at least 3 candles (no churn), and are not already queued to exit,
+- with option 1 on: are **in profit** at this close (unrealized PnL after fees > 0).
+
+Candidates are used in order of the lowest current score first, then the smallest
+unrealized return. At most 2 rotations per candle.
+
+- **Option 2 off:** the candidate is closed completely at the next open (reason
+  `ROTATE`), and the proceeds fund the new entry at the same open.
+- **Option 2 on:** the candidate is reduced only by what the new stake still needs; if
+  the rest would fall below Min entry, it is closed completely instead. This needs a new
+  engine order (partial exit at the next open). A partial exit writes its own row in
+  `trades` (reason `TRIM`, the sold quantity, its share of the entry fee and its PnL),
+  and the open trade keeps the remaining quantity.
+
+The cost of a rotation (two fees and slippage) is visible in the ledger.
+
+### 6. Low bankroll
+
+The user sets the threshold in the modal: a **basis** and a **percentage of contributed
+capital**.
+
+| Basis | Low when | Meaning |
 |---|---|---|
-| (close − SMA50) / ATR | how far above the regime line, in volatility units | a large distance can also mean "late" |
-| slope of SMA50 over n candles | is the trend itself rising | |
-| return over 60 candles | momentum (v8's signal) | |
-| close > SMA200 | long-term trend agrees | S200/E200 passed as filters |
-| 4h and 1h agree | lower timeframes say BUY too | data already loaded for E/X |
-| volume vs its 20-candle mean | participation | not in the indicator set yet |
+| Bankroll value | free + reserved + invested < X % of contributed capital | money was lost |
+| Free cash | free cash < X % of contributed capital | little room for new trades |
 
-Grades and stakes, as a starting point to discuss (not tested):
+States: **OK** and **Low**, plus an automatic **Can't trade** note when free cash is below
+Min entry (information, no alarm when the basis is bankroll value). Leaving Low needs the
+value to be 5 points above the threshold, so a balance moving around it doesn't flip the
+state every candle. The threshold can be changed after creation (it doesn't change
+trades).
 
-| Grade | Score | Stake (% of pool equity) |
-|---|---|---|
-| Weak | below 25th percentile | 2 % (or skip) |
-| Normal | 25th–75th | 4 % |
-| Strong | 75th–95th | 6 % |
-| Very strong | above 95th | 8 % (may trigger section 4) |
+Where it shows:
 
-Percentile thresholds must be fixed from the research period, never from the running
-paper instances, and written down before the test.
+- **Telegram:** a message when the state changes (to Low and back to OK). The
+  supervisor's `Watcher` already polls the databases every 30 s; it reads the bankroll
+  state the same way and keeps its cursor in `notify_state.json`.
+- **Overview card and Instances table:** a yellow "Low" badge next to the mode badge.
+- **Instance page:** a bankroll card above the metrics (free, reserved, invested, value,
+  contributed) with the Low banner and the reason.
+- **Telegram `/status` and instance view:** the same state.
 
-**Sanity check for the code:** with one grade and a stake of 1 / N of pool equity, a
-pool instance must come close to the equal-per-symbol instance (not identical: the pool
-compounds jointly). This is a cheap test that the mechanics are right.
+### 7. Deposits and withdrawals
 
-### 3. Low balance warning
+- **Panel:** "Deposit" and "Withdraw" buttons on the instance page (amount and note).
+  A withdrawal can't exceed the free cash: money in positions has to be sold first.
+- Both only change the books. The panel files a request (new table
+  `bankroll_requests`, like `close_requests`), and the instance's process applies it at
+  its next check (every minute, together with manual close) and writes the ledger row.
+  The process owns the cash, so nothing races with a candle being processed. A stopped
+  instance applies the request when it starts.
+- Telegram commands for these can come later; they are not part of this phase.
+- **Returns must ignore cash flows.** The return becomes a **time-weighted return**: the
+  returns between cash flows are chained, so a deposit isn't profit and a withdrawal
+  isn't a loss. The instance page shows **PnL in USDT** and **net contributed** next to
+  it. Max DD and Sharpe use the time-weighted curve. The B&H comparison stays as it is.
 
-There are two different situations, and only one is a problem:
+### 8. Ledger (bankroll history)
 
-- **Fully invested:** free cash is below the next stake because the money is in
-  positions. Normal for v9; new signals are skipped. Information, not an alarm.
-- **Capital lost:** pool equity is well below the net money put in (starting bankroll +
-  deposits − withdrawals). This is the real warning.
-
-Proposed states, evaluated after every candle:
-
-| State | Condition (defaults to discuss) | Marker |
-|---|---|---|
-| OK | — | none |
-| Fully invested | free cash < minimum order or < the smallest stake | grey "invested" badge |
-| Low | pool equity < 80 % of net deposits | yellow badge |
-| Critical | pool equity < 60 % of net deposits, or free cash and positions can't fund one minimum order | red badge |
-
-- **Telegram:** only on a **change of state**, with a hysteresis (e.g. back to OK only
-  above 85 %), so a balance moving around a threshold doesn't send a message every
-  candle. The supervisor's `Watcher` already polls the databases every 30 s and keeps
-  cursors in `notify_state.json`; it reads the bankroll state the same way.
-- **Overview card and Instances table:** a badge next to the mode badge.
-- **Instance page:** a banner above the metrics with free cash, invested, pool equity
-  and the reason for the state.
-- **Telegram `/status` and the instance view:** the same badge as an icon.
-- Thresholds are instance settings that can be changed later (they don't change trades
-  unless "Critical" also blocks entries, which should be a separate choice).
-
-### 4. Exiting positions for a very strong signal
-
-Only when **all** of these hold:
-
-1. The new signal is graded "very strong" (or above a configured score).
-2. Free cash (without the reserve) can't fund its stake.
-3. A candidate position is clearly weaker: its **current** strength score is lower by at
-   least a margin.
-4. The candidate is not "young": held at least N candles (no churn).
-5. At most K rotations per candle, and the instance option is on (default off).
-
-Priority for choosing what to exit, first match first:
-
-1. Positions whose own signal is already weak (score fell to the lowest grade).
-2. Positions at a loss, the largest loss first.
-3. Positions with the smallest gain since entry.
-4. Never a position above a set gain (e.g. +30 %): v9 lives on its large winners.
-
-Execution: the exit is queued like a signal exit (reason `ROTATE`, a new value next to
-`SIGNAL`, `STOP`, `TRAIL`, `LTF`, `MANUAL`) and fills at the next open, then the new
-entry fills at the same open with the proceeds. The cost of a rotation is two extra fees
-and slippages; it is logged in the ledger. A lighter variant is **trimming** a position
-instead of closing it.
-
-Evidence so far is against this rule (rotation failed, cutting winners failed), so it
-needs its own pre-registered test with the trade-level criteria from
-`docs/v9-filters-test.md` (win rate, profit factor, expectancy, max DD).
-
-### 5. Adding money
-
-- **Panel:** an "Add funds" button on the instance page (amount + note), and optionally
-  a withdrawal. **Telegram:** `/deposit NAME AMOUNT` with a confirm button, like Close.
-- The panel doesn't change the balance itself. It files a request (new table, like
-  `close_requests`), and the instance's own process applies it at its next check and
-  writes the ledger row. The process owns the cash, so nothing races with a candle being
-  processed. A stopped instance applies it when it starts.
-- **Returns must ignore deposits.** Today return = equity ÷ start − 1; after a deposit
-  that would show the deposit as profit. Use a **time-weighted return** (chain the
-  returns between cash flows), and show **net deposits** and **PnL in USDT** separately.
-  Max DD and Sharpe are computed on the time-weighted curve. The daily loss limit on
-  testnet must also exclude deposits.
-- **Testnet and later live:** a deposit is bookkeeping only, and the bot must check that
-  the exchange's free USDT covers the pool's cash (a warning when it doesn't, as
-  `reconcile` does for positions).
-
-### 6. Bankroll history (ledger)
-
-A new table, one row per cash movement, written in the same transaction as the candle:
+New table `bankroll_ledger` in `paper.db`, one row per change of free cash, written in
+the candle's transaction:
 
 | Column | Example |
 |---|---|
 | id, strategy (run key), timeframe | |
-| time | candle time or request time |
-| kind | `INITIAL`, `DEPOSIT`, `WITHDRAW`, `RESERVE`, `BUY`, `SELL`, `RELEASE`, `ROTATE` |
+| time | candle time, or the time a request was applied |
+| kind | `INITIAL`, `DEPOSIT`, `WITHDRAW`, `RESERVE`, `BUY`, `SELL`, `TRIM`, `ROTATE`, `RELEASE`, `SKIP` |
 | symbol, trade_id | for trade rows |
-| amount | signed USDT change of free cash |
+| amount | signed change of free cash (USDT) |
 | fee | |
-| cash_after, reserved_after, equity_after | balances after the row |
-| grade, score | for buys |
-| source | `system`, `panel`, `telegram` |
-| note | free text (deposits), skip reasons |
+| free_after, reserved_after, invested_after, value_after, contributed_after | balances after the row |
+| score, grade | for buys and skips |
+| source | `system` or `panel` |
+| note | deposit notes, skip reasons ("no free cash", "below min entry") |
 
-Plus a "skipped" row (amount 0) when a signal can't be funded, so it is visible why a
-BUY didn't trade.
-
-UI: a "Bankroll" tab on the instance page with the ledger table, and a chart of free
-cash, invested and pool equity with deposit markers.
+The panel shows it in a **Bankroll** tab on the instance page, with a chart of free cash,
+invested and bankroll value, and markers for deposits and withdrawals.
 
 ## How it fits the existing features
 
-- **Locked setup:** `capital`, `bankroll` (starting amount), grade table, rotation
-  options and limits are setup fields (locked after creation). Deposits, withdrawals and
-  the warning thresholds are not.
-- **Existing instances** stay `per_symbol` and must replay identically with the new
-  code (the same check as after every engine change).
-- **inverse_vol:** not combined with `pool` in the first version.
-- **Stop, trailing exit, lower-timeframe exit, manual close:** they close through the
-  engine as today; the proceeds go back to the pool. Cash freed inside a candle (X,
-  manual) can fund signals from the next close on.
-- **`--rebuild-state`:** has to replay the pool and the ledger (deposits included), not
-  each symbol alone.
-- **Testnet:** the pool replaces the equal `allocation` split; buys stay quote-amount
-  orders. This is order-sending code and **needs approval before it is written**. Paper
-  comes first.
+- **Existing instances:** unchanged. They don't get the new fields' effects, and their
+  replay with the new code must stay identical (the usual check after an engine change).
+- **Stop, trailing exit, lower-timeframe exit, manual close:** unchanged; their proceeds
+  go back to free cash.
+- **Trend filter and rule E** still block entries before scoring; the score only ranks
+  what may enter.
+- **Clone** copies the bankroll settings too, but not the ledger.
+- **Instances table and Telegram setup line:** a "B" badge and the stake grades.
 
-## Open questions
+## Remaining questions
 
-1. **Percent of what:** pool equity capped by free cash (recommended) or free cash?
-2. **Strength score:** which inputs for v9? Simple first (one input, e.g. distance above
-   SMA50 in ATR), or a combination?
-3. **Weak signals:** buy with a small stake, or skip?
-4. **Testing:** build the mechanics first and test grades and rotation on the archive
-   with a pre-registration before trusting them (recommended), or run them in paper
-   right away as untested variants?
-5. **"Low bankroll":** does it mean capital lost (equity below deposits) or no free cash
-   for new trades? Which thresholds? Should "Critical" block new entries?
-6. **Rotation:** keep it, or start with trimming / no rotation? Is there a gain above
-   which a position is never exited?
-7. **Withdrawals:** needed too, or deposits only?
-8. **Scope:** paper only in this phase (recommended), testnet after approval?
+1. "Min/max entry price" is read as the **minimum and maximum entry amount in USDT**,
+   not a price filter. Correct?
+2. **Stake base after deposits:** contributed capital (start + deposits − withdrawals),
+   as assumed above, or always the original starting bankroll?
+3. Are the default grade thresholds, score inputs and rotation limits (20 points,
+   3 candles, 2 per candle) acceptable as starting values?
 
-## Proposed order
+## Plan (paper)
 
-1. **Pool and ledger, paper only, one fixed stake** (no grades yet): `core/bankroll.py`,
-   pool runner, ledger table, minimum order and LOT_SIZE rounding, time-weighted
-   returns. Old instances replay identically; the 1 / N sanity check passes.
-2. **Deposits, history, warnings:** request table, panel button and Bankroll tab,
-   Telegram `/deposit`, state badges and notifications.
-3. **Portfolio backtest and strength grades:** pre-register the score and grade table,
-   test on archive periods A and B against the equal-weight pool.
-4. **Rotation:** pre-registered test, same criteria.
-5. **Testnet:** port the pool to `run_testnet.py`, after approval.
+1. **Core:** `core/bankroll.py` (score inputs, grades, funding, rotation choice) with
+   tests; engine partial exit; `BankrollRunner`; `bankroll_ledger` and the saved
+   bankroll state; LOT_SIZE and minimum order for bankroll instances. Check: existing
+   instances replay identically.
+2. **Instance setup:** `sizing = "bankroll"`, the new fields, validation, the modal
+   section, Clone.
+3. **Cash flows:** deposit and withdrawal requests, time-weighted returns, Bankroll tab
+   and card.
+4. **Warnings:** low-bankroll states, Telegram message, badges, `/status`.
+5. **Afterwards:** a portfolio backtest that uses `core/bankroll.py`, for a
+   pre-registered test of any bankroll setup worth trusting.
+
+## To-do for testnet (later, needs approval: order-sending code)
+
+- Replace the equal `allocation` split in `Trader` with the instance bankroll; free
+  cash, reserved and contributed capital in the testnet database.
+- Rank and fund the batch of one close before sending orders; send sells before buys and
+  send a rotation's buy only after its sell is filled, using the actual proceeds.
+- Partial sells for rotation option 2, rounded to LOT_SIZE, with the dust rule.
+- Check the exchange's free USDT against the bankroll's cash on start and before buys
+  (like `reconcile` for positions); a warning when they differ.
+- Deposits and withdrawals stay bookkeeping; the check above shows when the books and
+  the exchange disagree.
+- `RiskGuard`'s daily loss limit computed on the time-weighted return, so a withdrawal
+  doesn't count as a loss.
+- `MAX_ORDER_USDT` still caps every order, on top of Max entry.
+- Rotation and trimming with real orders only after the paper results are reviewed.
