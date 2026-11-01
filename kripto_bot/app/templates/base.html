@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-bs-theme="dark">
+<html lang="{{ lang }}" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -48,10 +48,18 @@
                                     ("playground", "Playground", "graph-up-arrow"), ("backtest", "Backtests", "table"),
                                     ("settings", "Settings", "sliders")] %}
         <li class="nav-item"><a class="nav-link {{ 'active fw-semibold' if page == key }}"
-            href="{{ '/' if key == 'overview' else '/' ~ key }}"><i class="bi bi-{{ icon }}"></i> {{ label }}</a></li>
+            href="{{ '/' if key == 'overview' else '/' ~ key }}"><i class="bi bi-{{ icon }}"></i> {{ _(label) }}</a></li>
         {% endfor %}
       </ul>
-      <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" title="Light / dark"><i class="bi bi-circle-half"></i></button>
+      <div class="d-flex align-items-center gap-2">
+        <div class="btn-group btn-group-sm" role="group" aria-label="{{ _('Language') }}">
+          {% for code in ("tr", "en") %}
+          <button type="button" class="btn {{ 'btn-secondary' if lang == code else 'btn-outline-secondary' }}"
+                  onclick="setLang('{{ code }}')" {{ 'aria-pressed=true' if lang == code }}>{{ code|upper }}</button>
+          {% endfor %}
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" onclick="toggleTheme()" title="{{ _('Light / dark') }}"><i class="bi bi-circle-half"></i></button>
+      </div>
     </div>
   </div>
 </nav>
@@ -60,6 +68,7 @@
 </main>
 <div id="toasts"></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>window.KB_LANG = {{ lang|tojson }}; window.KB_I18N = {{ i18n_catalog|tojson }};</script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>

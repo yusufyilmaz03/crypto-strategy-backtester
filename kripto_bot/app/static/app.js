@@ -1,12 +1,48 @@
 // Shared helpers for the control panel pages.
+// Panel language (app/i18n.py): Turkish pages get the catalog, English texts are their own keys.
+const I18N = window.KB_I18N || {};
 const KB = {
+  // Text in the page's language. vars fill {name} placeholders. Server texts with values in
+  // them ("no instance named 'x'") are found through the catalog's templates. A "[context] "
+  // prefix tells apart English words with two meanings ("[button] Close" vs the Close price).
+  t(text, vars) {
+    let s = I18N[text];
+    if (s == null) s = vars ? String(text ?? "") : KB.matchTemplate(String(text ?? ""));
+    s = s.replace(/^\[\w+\] /, "");
+    return vars ? s.replace(/\{(\w+)\}/g, (m, k) => k in vars ? vars[k] : m) : s;
+  },
+  matchTemplate(text) {
+    if (!text) return text;
+    if (!KB._templates) {
+      const literal = k => k.replace(/\{\w+\}/g, "").length;
+      KB._templates = Object.keys(I18N).filter(k => /\{\w+\}/.test(k))
+        .sort((a, b) => literal(b) - literal(a))            // most specific first
+        .map(k => {
+          const names = [];
+          const re = k.split(/(\{\w+\})/).map(p => {
+            const m = p.match(/^\{(\w+)\}$/);
+            if (m) { names.push(m[1]); return "(.+?)"; }
+            return p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          }).join("");
+          return [new RegExp(`^${re}$`, "s"), names, I18N[k]];
+        });
+    }
+    for (const [re, names, tr] of KB._templates) {
+      const m = text.match(re);
+      if (m) return tr.replace(/\{(\w+)\}/g, (x, k) => {
+        const i = names.indexOf(k);
+        return i < 0 ? x : I18N[m[i + 1]] ?? KB.matchTemplate(m[i + 1]);   // a value may be a text of its own
+      });
+    }
+    return text;
+  },
   // JSON API call; mutating requests carry the CSRF header the server requires.
   async api(url, opts = {}) {
     const o = { ...opts, headers: { "Content-Type": "application/json", "X-Requested-With": "kripto-bot" } };
     if (o.body && typeof o.body !== "string") o.body = JSON.stringify(o.body);
     const r = await fetch(url, o);
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || r.statusText);
+    if (!r.ok) throw new Error(KB.t(data.error || r.statusText));
     return data;
   },
   esc(s) {
@@ -23,21 +59,23 @@ const KB = {
   sign(v) { return v == null || isNaN(v) ? "" : v >= 0 ? "text-success" : "text-danger"; },
   time(t) { return t ? String(t).replace("T", " ").slice(0, 16) : "–"; },
   // What the buy-and-hold benchmark is (reporting.curves).
-  BH_TIP: "Equal-weight buy & hold of the instance's symbols since its first recorded candle: their average " +
-    "price change, compounded candle by candle, without fees. It is what the market did over the same period, " +
-    "so it moves even when the instance holds nothing.",
+  get BH_TIP() {
+    return KB.t("Equal-weight buy & hold of the instance's symbols since its first recorded candle: their average " +
+      "price change, compounded candle by candle, without fees. It is what the market did over the same period, " +
+      "so it moves even when the instance holds nothing.");
+  },
   // A word with a dotted underline whose tooltip explains it (html: the word, already escaped).
   term(html, tip) {
     return `<span class="setup-tip" role="button" tabindex="0" data-bs-toggle="tooltip" data-bs-title="${KB.esc(tip)}">${html}</span>`;
   },
-  params(p) { const e = Object.entries(p || {}); return e.length ? e.map(([k, v]) => `${k}=${v}`).join(", ") : "defaults"; },
+  params(p) { const e = Object.entries(p || {}); return e.length ? e.map(([k, v]) => `${k}=${v}`).join(", ") : KB.t("defaults"); },
   statusBadge(st, enabled) {
     const s = (st && st.state) || "stopped";
     const map = { running: "success", "waiting to restart": "warning", starting: "info", blocked: "danger",
                   stopped: "secondary", "supervisor not running": enabled ? "warning" : "secondary" };
     const label = s === "supervisor not running" && !enabled ? "stopped" : s;
-    const note = st && st.note ? ` title="${KB.esc(st.note)}"` : "";
-    return `<span class="badge text-bg-${map[s] || "secondary"}"${note}>${KB.esc(label)}</span>`;
+    const note = st && st.note ? ` title="${KB.esc(KB.t(st.note))}"` : "";
+    return `<span class="badge text-bg-${map[s] || "secondary"}"${note}>${KB.esc(KB.t(label))}</span>`;
   },
   // A "?" icon whose tooltip explains a setting (id: to change the text later with setTip).
   tip(text, id = "") {
@@ -61,29 +99,31 @@ const KB = {
   // Favorite star of an instance; clicks are handled below (also inside card links).
   star(i) {
     return `<button type="button" class="btn btn-link p-0 border-0 align-baseline kb-star" data-name="${KB.esc(i.name)}"
-      data-favorite="${i.favorite ? 1 : 0}" title="${i.favorite ? "Remove from favorites" : "Add to favorites"}">` +
+      data-favorite="${i.favorite ? 1 : 0}" title="${KB.t(i.favorite ? "Remove from favorites" : "Add to favorites")}">` +
       `<i class="bi ${i.favorite ? "bi-star-fill text-warning" : "bi-star text-secondary"}"></i></button>`;
   },
   // Bankroll instances (sizing "bankroll"): setup in words, the low-bankroll badge and score cells.
   bankrollText(i) {
     if (i.sizing !== "bankroll") return "";
-    return [`bankroll ${KB.money(i.equity)} USDT`, `stakes ${(i.stakes || []).join("/")}%`,
-            `entry ${i.min_entry}–${i.max_entry ?? "∞"} USDT`, `score ${(i.score_inputs || []).join(", ")}`,
-            i.rotation && `rotation${i.rotate_profit_only ? " (profit only)" : ""}${i.rotate_trim ? " (reduce)" : ""}`]
+    return [KB.t("bankroll {v} USDT", { v: KB.money(i.equity) }), KB.t("stakes {v}%", { v: (i.stakes || []).join("/") }),
+            KB.t("entry {lo}–{hi} USDT", { lo: i.min_entry, hi: i.max_entry ?? "∞" }),
+            KB.t("score {v}", { v: (i.score_inputs || []).join(", ") }),
+            i.rotation && KB.t("rotation") + (i.rotate_profit_only ? KB.t(" (profit only)") : "") + (i.rotate_trim ? KB.t(" (reduce)") : "")]
       .filter(Boolean).join(" · ");
   },
   lowBadge(i) {
     const b = i.summary && i.summary.bankroll;
     if (!b || !b.started) return "";
-    const what = b.low_basis === "free" ? "free cash" : "bankroll value";
-    if (b.low) return ` <span class="badge text-bg-warning" title="${KB.esc(`${what} ${KB.num(b.level_pct, 1)}% of the contributed capital, below ${b.low_pct}%`)}">low bankroll</span>`;
-    if (b.cant_trade) return ` <span class="badge text-bg-secondary" title="free cash below the minimum entry: new signals wait for cash">invested</span>`;
+    const what = KB.t(b.low_basis === "free" ? "free cash" : "bankroll value");
+    if (b.low) return ` <span class="badge text-bg-warning" title="${KB.esc(KB.t("{what} {level}% of the contributed capital, below {low}%",
+      { what, level: KB.num(b.level_pct, 1), low: b.low_pct }))}">${KB.t("low bankroll")}</span>`;
+    if (b.cant_trade) return ` <span class="badge text-bg-secondary" title="${KB.t("free cash below the minimum entry: new signals wait for cash")}">${KB.t("invested")}</span>`;
     return "";
   },
   score(v, grade) {
     if (v == null || v === "" || isNaN(v)) return "–";
     const cls = { "Very strong": "text-bg-success", Strong: "text-bg-primary", Normal: "text-bg-secondary", Weak: "text-bg-light" }[grade] || "text-bg-light";
-    return `<span class="badge ${cls}" title="${KB.esc(grade || "")}">${Number(v).toFixed(0)}</span>`;
+    return `<span class="badge ${cls}" title="${KB.esc(KB.t(grade || ""))}">${Number(v).toFixed(0)}</span>`;
   },
   modeBadge(m) { return `<span class="badge ${m === "testnet" ? "text-bg-warning" : "text-bg-primary"}">${KB.esc(m)}</span>`; },
   toast(msg, kind = "success") {
@@ -98,7 +138,7 @@ const KB = {
   // Render rows into a table: cols = [[header, row => html, row => sort value (optional)], ...].
   // Clicking the header of a column with a sort value sorts by it (again: reverses). `sort` is
   // the initial order, [column index, "asc" | "desc"]; a clicked order survives re-renders.
-  table(el, rows, cols, empty = "Nothing here yet.", sort = null) {
+  table(el, rows, cols, empty = KB.t("Nothing here yet."), sort = null) {
     el._sort = el._sort || sort;
     el._args = [rows, cols, empty];
     const s = el._sort, key = s && cols[s[0]] && cols[s[0]][2];
@@ -152,6 +192,12 @@ document.addEventListener("click", async e => {
     window.dispatchEvent(new Event("kb-favorite"));
   } catch (err) { KB.toast(err.message, "danger"); }
 });
+
+// Language switch: a cookie the server reads (i18n.lang_of), then the page renders again.
+window.setLang = lang => {
+  document.cookie = `kb-lang=${lang}; path=/; max-age=31536000; SameSite=Lax`;
+  location.reload();
+};
 
 // Light/dark theme toggle (remembered per browser).
 (function () {

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Overview{% endblock %}
+{% block title %}{{ _("Overview") }}{% endblock %}
 {% block head %}
 <style>
   #sort { width: auto; }
@@ -11,37 +11,37 @@
 {% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="h3 mb-0">Overview</h1>
-  <a class="btn btn-primary btn-sm" href="/instances#new"><i class="bi bi-plus-lg"></i> New instance</a>
+  <h1 class="h3 mb-0">{{ _("Overview") }}</h1>
+  <a class="btn btn-primary btn-sm" href="/instances#new"><i class="bi bi-plus-lg"></i> {{ _("New instance") }}</a>
 </div>
 
 <div class="row g-3 mb-4">
   <div class="col-md-4"><div class="card h-100"><div class="card-body">
-    <div class="d-flex justify-content-between align-items-start gap-2"><h6 class="card-title mb-1">Supervisor</h6><span id="sup-badge"></span></div>
+    <div class="d-flex justify-content-between align-items-start gap-2"><h6 class="card-title mb-1">{{ _("Supervisor") }}</h6><span id="sup-badge"></span></div>
     <p class="small text-secondary mb-0" id="sup-text">…</p>
   </div></div></div>
   <div class="col-md-4"><div class="card h-100"><div class="card-body">
-    <div class="d-flex justify-content-between align-items-start gap-2"><h6 class="card-title mb-1">Kill switch <small class="text-secondary">(testnet / live)</small></h6><span id="kill-badge"></span></div>
+    <div class="d-flex justify-content-between align-items-start gap-2"><h6 class="card-title mb-1">{{ _("Kill switch") }} <small class="text-secondary">({{ _("testnet / live") }})</small></h6><span id="kill-badge"></span></div>
     <div class="btn-group btn-group-sm mt-2" role="group">
-      <button class="btn btn-outline-success" onclick="kill('off')">Off</button>
-      <button class="btn btn-outline-warning" onclick="kill('block')" title="No new entries">Block entries</button>
-      <button class="btn btn-outline-danger" onclick="kill('flatten')" title="Close every position">Flatten</button>
+      <button class="btn btn-outline-success" onclick="kill('off')">{{ _("Off") }}</button>
+      <button class="btn btn-outline-warning" onclick="kill('block')" title="{{ _("No new entries") }}">{{ _("Block entries") }}</button>
+      <button class="btn btn-outline-danger" onclick="kill('flatten')" title="{{ _("Close every position") }}">{{ _("Flatten") }}</button>
     </div>
   </div></div></div>
   <div class="col-md-4"><div class="card h-100"><div class="card-body">
-    <h6 class="card-title mb-1">Order execution</h6>
+    <h6 class="card-title mb-1">{{ _("Order execution") }}</h6>
     <p class="small mb-0" id="mode-text">…</p>
   </div></div></div>
 </div>
 
 <div class="d-flex align-items-center flex-wrap gap-3 mb-3">
-  <h2 class="h5 mb-0">Instances</h2>
+  <h2 class="h5 mb-0">{{ _("Instances") }}</h2>
   <div class="form-check form-switch mb-0">
     <input class="form-check-input" type="checkbox" role="switch" id="show-stopped">
-    <label class="form-check-label small" for="show-stopped">Show stopped</label>
+    <label class="form-check-label small" for="show-stopped">{{ _("Show stopped") }}</label>
   </div>
   <span class="small text-secondary" id="hidden-note"></span>
-  <select class="form-select form-select-sm ms-auto" id="sort" aria-label="Sort instances"></select>
+  <select class="form-select form-select-sm ms-auto" id="sort" aria-label="{{ _("Sort instances") }}"></select>
 </div>
 <div class="row g-3" id="cards"></div>
 {% endblock %}
@@ -51,30 +51,31 @@ async function load() {
   const d = await KB.api("/api/overview");
   const sup = d.supervisor;
   document.getElementById("sup-badge").innerHTML = sup.running
-    ? '<span class="badge text-bg-success">running</span>' : '<span class="badge text-bg-warning">not running</span>';
+    ? `<span class="badge text-bg-success">${KB.t("running")}</span>` : `<span class="badge text-bg-warning">${KB.t("not running")}</span>`;
   document.getElementById("sup-text").innerHTML = sup.running
-    ? `Keeping enabled instances running (pid ${sup.pid}).`
-    : 'Start it with <code>python -m kripto_bot run</code>: it runs every enabled instance and restarts them if they crash.';
+    ? KB.t("Keeping enabled instances running (pid {pid}).", { pid: sup.pid })
+    : KB.t("Start it with {cmd}: it runs every enabled instance and restarts them if they crash.", { cmd: "<code>python -m kripto_bot run</code>" });
   const k = { off: ["success", "off"], block: ["warning", "entries blocked"], flatten: ["danger", "flattening"] }[d.kill_switch];
-  document.getElementById("kill-badge").innerHTML = `<span class="badge text-bg-${k[0]}">${k[1]}</span>`;
+  document.getElementById("kill-badge").innerHTML = `<span class="badge text-bg-${k[0]}">${KB.t(k[1])}</span>`;
   document.getElementById("mode-text").innerHTML =
-    `Mode <b>${KB.esc(d.trading_mode)}</b> · live trading ${d.live_enabled
-      ? '<span class="badge text-bg-danger">ENABLED</span>' : '<span class="badge text-bg-secondary"><i class="bi bi-lock"></i> locked</span>'}
-     <br><span class="text-secondary">Live trading can only be enabled in config.py.</span>`;
+    `${KB.t("Mode")} <b>${KB.esc(d.trading_mode)}</b> · ${KB.t("live trading")} ${d.live_enabled
+      ? `<span class="badge text-bg-danger">${KB.t("ENABLED")}</span>` : `<span class="badge text-bg-secondary"><i class="bi bi-lock"></i> ${KB.t("locked")}</span>`}
+     <br><span class="text-secondary">${KB.t("Live trading can only be enabled in config.py.")}</span>`;
 
   const cards = document.getElementById("cards");
   KB.disposeTips(cards);
   const showStopped = document.getElementById("show-stopped").checked;
   const shown = sortInstances(d.instances.filter(i => showStopped || i.enabled));
   const hidden = d.instances.length - shown.length;
-  document.getElementById("hidden-note").textContent = hidden ? `${hidden} stopped hidden` : "";
+  document.getElementById("hidden-note").textContent = hidden ? KB.t("{n} stopped hidden", { n: hidden }) : "";
   cards.innerHTML = shown.map(i => {
     const s = i.summary;
-    const setup = [i.strategy, KB.params(i.params), i.timeframe, `stop ${i.stop}`, i.trail && `trail ${i.trail}×ATR`,
-                   i.sizing !== "equal" && `${i.sizing} sizing`, i.trend_sma && `trend SMA${i.trend_sma}`,
-                   i.lower_tf_entry && "lower-TF entry", i.lower_tf_exit && "lower-TF exit",
-                   i.lower_tf_sma && `lower-TF SMA${i.lower_tf_sma}`, i.manual_close && "manual close",
-                   KB.bankrollText(i), `${i.symbols.length} symbols`]
+    const setup = [i.strategy, KB.params(i.params), i.timeframe, KB.t("stop {v}", { v: i.stop }),
+                   i.trail && KB.t("trail {v}×ATR", { v: i.trail }),
+                   i.sizing !== "equal" && KB.t("{v} sizing", { v: i.sizing }), i.trend_sma && KB.t("trend SMA{v}", { v: i.trend_sma }),
+                   i.lower_tf_entry && KB.t("lower-TF entry"), i.lower_tf_exit && KB.t("lower-TF exit"),
+                   i.lower_tf_sma && KB.t("lower-TF SMA{v}", { v: i.lower_tf_sma }), i.manual_close && KB.t("manual close"),
+                   KB.bankrollText(i), KB.t("{n} symbols", { n: i.symbols.length })]
       .filter(Boolean).join(" · ");
     const about = KB.esc(setup) + (i.description ? `<br>${KB.esc(i.description)}` : "");
     return `<div class="col-md-6 col-xl-4"><a class="text-decoration-none" href="/instances/${encodeURIComponent(i.name)}">
@@ -84,28 +85,30 @@ async function load() {
              data-bs-title="${KB.esc(about)}"></i></h6>
           <span class="text-nowrap">${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}${KB.lowBadge(i)}</span></div>
         <div class="card-metrics">
-          <div class="metric"><div class="label">Max DD</div><div class="value">${s.max_dd_pct == null ? "–" : KB.num(s.max_dd_pct, 1) + "%"}</div></div>
-          <div class="metric"><div class="label">${KB.term("Buy &amp; hold", KB.BH_TIP)}</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
-          <div class="metric"><div class="label">Realized PnL</div><div class="value ${KB.sign(s.realized_pnl)}"
-            title="from closed trades, USDT">${KB.money(s.realized_pnl)}</div></div>
-          <div class="metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
+          <div class="metric"><div class="label">${KB.t("Max DD")}</div><div class="value">${s.max_dd_pct == null ? "–" : KB.num(s.max_dd_pct, 1) + "%"}</div></div>
+          <div class="metric"><div class="label">${KB.term(KB.t("Buy &amp; hold"), KB.BH_TIP)}</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
+          <div class="metric"><div class="label">${KB.t("Realized PnL")}</div><div class="value ${KB.sign(s.realized_pnl)}"
+            title="${KB.t("from closed trades, USDT")}">${KB.money(s.realized_pnl)}</div></div>
+          <div class="metric"><div class="label">${KB.t("Return")}</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
         </div>
-        <div class="small text-secondary mt-auto pt-3">${s.days} days · ${s.closed_trades} closed trades · ${s.open_positions} open${
-          s.bankroll && s.bankroll.started ? `<br>Bankroll ${KB.money(s.bankroll.value)} · free ${KB.money(s.bankroll.free)} USDT` : ""}</div>
+        <div class="small text-secondary mt-auto pt-3">${KB.t("{days} days · {closed} closed trades · {open} open",
+          { days: s.days, closed: s.closed_trades, open: s.open_positions })}${
+          s.bankroll && s.bankroll.started ? "<br>" + KB.t("Bankroll {value} · free {free} USDT",
+            { value: KB.money(s.bankroll.value), free: KB.money(s.bankroll.free) }) : ""}</div>
       </div></div></a></div>`;
-  }).join("") || `<p class="text-secondary">${d.instances.length ? "No running instances. Turn on Show stopped to see the others." : "No instances yet."}</p>`;
+  }).join("") || `<p class="text-secondary">${KB.t(d.instances.length ? "No running instances. Turn on Show stopped to see the others." : "No instances yet.")}</p>`;
   KB.initTips(cards);
 }
 async function kill(mode) {
   if (mode === "flatten" && !confirmFlatten()) return;
-  try { await KB.api("/api/kill-switch", { method: "POST", body: { mode } }); KB.toast(`Kill switch: ${mode}`); load(); }
+  try { await KB.api("/api/kill-switch", { method: "POST", body: { mode } }); KB.toast(KB.t("Kill switch: {mode}", { mode: KB.t(mode) })); load(); }
   catch (e) { KB.toast(e.message, "danger"); }
 }
 let flattenArmed = 0;
 function confirmFlatten() {   // two clicks within 5s instead of a blocking dialog
   if (Date.now() - flattenArmed < 5000) return true;
   flattenArmed = Date.now();
-  KB.toast("Click Flatten again within 5 seconds to close every testnet/live position.", "warning");
+  KB.toast(KB.t("Click Flatten again within 5 seconds to close every testnet/live position."), "warning");
   return false;
 }
 // Sort options: [label, value of an instance, direction]. Instances without a value (no data
@@ -127,7 +130,7 @@ function sortInstances(rows) {
   return [...rows].sort((a, b) => cmp(key(a), key(b)));
 }
 const SORT_KEY = "kb-overview-sort", sortEl = document.getElementById("sort");
-sortEl.innerHTML = Object.entries(SORTS).map(([k, [label]]) => `<option value="${k}">${label}</option>`).join("");
+sortEl.innerHTML = Object.entries(SORTS).map(([k, [label]]) => `<option value="${k}">${KB.t(label)}</option>`).join("");
 try { if (SORTS[localStorage.getItem(SORT_KEY)]) sortEl.value = localStorage.getItem(SORT_KEY); } catch (e) {}
 sortEl.addEventListener("change", () => {
   try { localStorage.setItem(SORT_KEY, sortEl.value); } catch (e) {}
