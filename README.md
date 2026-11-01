@@ -206,7 +206,26 @@ Trade messages, the daily summary and its hour can be switched on the Settings p
 
 The bot also answers commands from that chat (and no other): `/status` lists every instance, `/instance` opens one with buttons for its positions, signals and trades. Instances with manual close get a Close button per position; it asks for confirmation and then files the same request as the panel's Close button. While the supervisor runs it reads the bot's updates, so stop it before running `telegram-setup`.
 
-**The panel on a phone:** with [Tailscale](https://tailscale.com) on the Mac and the phone, run `tailscale serve --bg 5002` on the Mac and open the `https://….ts.net` address it prints. Only your own devices can reach it; set `DASHBOARD_PASSWORD` anyway. Details in `docs/telegram-commands-and-mobile.md`.
+Messages and command answers use Telegram's HTML formatting, with lists as small monospace tables sized for a phone screen.
+
+## The panel on a phone
+
+The panel keeps listening on the Mac's 127.0.0.1. [Tailscale](https://tailscale.com) puts an HTTPS address in front of it that only your own devices can open:
+
+1. Install Tailscale on the Mac and the phone and log in with the same account on both.
+2. In the Tailscale admin console, turn on MagicDNS and HTTPS certificates (DNS page, once).
+3. Set `DASHBOARD_PASSWORD` in `.env` and run `python -m kripto_bot service restart`.
+4. On the Mac run `tailscale serve --bg 5002` (App Store / standalone app: `/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg 5002`). It prints the address, `https://<mac>.<tailnet>.ts.net`.
+5. On the phone, with Tailscale connected, open that address and log in with any user name and the password. Add it to the home screen.
+
+How the pieces fit:
+
+- `service install` only manages the supervisor (panel, bots, notifier, Telegram commands). Tailscale is a separate app with its own login item; the `serve` setting is stored by Tailscale and survives restarts of both. If the supervisor is down, the address answers with an error until it is back.
+- The password is checked only when `DASHBOARD_PASSWORD` is set. It is read from `.env` when the supervisor starts, so changing it needs a `service restart`. The user name is ignored. Without a password the panel also refuses to listen beyond 127.0.0.1 (`DASHBOARD_HOST`).
+- Traffic from the phone goes through Tailscale's encrypted tunnel and HTTPS; nothing is reachable from the home network or the internet. Don't use `tailscale funnel`, which would make the address public. To stop serving: `tailscale serve --https=443 off`.
+- The Mac has to be awake: with the lid closed neither the panel nor the bots run.
+
+More background in `docs/telegram-commands-and-mobile.md`.
 
 ## Notes and limitations
 
