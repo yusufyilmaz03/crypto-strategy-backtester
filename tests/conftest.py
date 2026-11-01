@@ -70,6 +70,12 @@ def isolated_paths(tmp_path, monkeypatch):
     from kripto_bot.app import dashboard, notify, playground, reporting, run_all
     from kripto_bot.trading import store
 
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)    # the .env of this Mac is no test setting
+    try:                                                         # ... also when the panel reloads config
+        import dotenv
+        monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: False)
+    except ImportError:
+        pass
     rt = tmp_path / "runtime"
     rt.mkdir()
     for mod, attr, name in [(store, "DB_FILE", "paper.db"), (instances, "INSTANCES_FILE", "instances.json"),
