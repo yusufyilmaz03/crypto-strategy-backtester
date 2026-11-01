@@ -2,8 +2,8 @@
 
 Branch: `phase-4g-bankroll` (from `dev` at 44643d2).
 
-Status: **analysis and decisions, nothing is coded yet.** This phase is **paper only**.
-The testnet work is listed at the end as a to-do.
+Status: **implemented for paper (2026-11-01)**, see "As implemented" below. The
+testnet work is listed at the end as a to-do.
 
 ## What was asked
 
@@ -33,7 +33,11 @@ The testnet work is listed at the end as a to-do.
   profit, (2) allow reducing a position instead of closing it.
 - **Paper only** in this phase. Testnet steps go to the to-do list below.
 - **Strength score:** built from the lower-timeframe and SMA(N) features of earlier
-  phases, plus other sensible inputs.
+  phases, plus other sensible inputs. The scores are shown in the tables too.
+- **Confirmed later the same day:** min/max entry are USDT amounts; the stake base
+  follows deposits and withdrawals (contributed capital); the default values below are
+  accepted. Rotation uses the free cash first and sells positions only for what is
+  still missing.
 
 ## How money works today
 
@@ -315,28 +319,56 @@ invested and bankroll value, and markers for deposits and withdrawals.
 - **Clone** copies the bankroll settings too, but not the ledger.
 - **Instances table and Telegram setup line:** a "B" badge and the stake grades.
 
-## Remaining questions
+## As implemented (paper, 2026-11-01)
 
-1. "Min/max entry price" is read as the **minimum and maximum entry amount in USDT**,
-   not a price filter. Correct?
-2. **Stake base after deposits:** contributed capital (start + deposits − withdrawals),
-   as assumed above, or always the original starting bankroll?
-3. Are the default grade thresholds, score inputs and rotation limits (20 points,
-   3 candles, 2 per candle) acceptable as starting values?
+Code: `core/bankroll.py` (scores, grades, stakes, funding, rotation choice, low state,
+time-weighted return), `trading/run_realtime.py` (`BankrollRunner`, `BankrollRequests`,
+`market_rules`), engine additions in `core/engine.py`, tables in `trading/store.py`,
+setup fields in `instances.py`, panel and Telegram views. Tests: `tests/test_bankroll.py`,
+`tests/test_bankroll_app.py`.
 
-## Plan (paper)
+Details that the design above left open:
 
-1. **Core:** `core/bankroll.py` (score inputs, grades, funding, rotation choice) with
-   tests; engine partial exit; `BankrollRunner`; `bankroll_ledger` and the saved
-   bankroll state; LOT_SIZE and minimum order for bankroll instances. Check: existing
-   instances replay identically.
-2. **Instance setup:** `sizing = "bankroll"`, the new fields, validation, the modal
-   section, Clone.
-3. **Cash flows:** deposit and withdrawal requests, time-weighted returns, Bankroll tab
-   and card.
-4. **Warnings:** low-bankroll states, Telegram message, badges, `/status`.
-5. **Afterwards:** a portfolio backtest that uses `core/bankroll.py`, for a
-   pre-registered test of any bankroll setup worth trusting.
+- **Rotation order.** A Very strong signal that can't get its full stake doesn't take the
+  partial stake at once. Free cash is used first; positions are sold only for the part
+  that is still missing. Without a rotation plan the entry gets the free cash that is left
+  (if it is above the minimum entry). The ledger note says how much came from each, e.g.
+  "150.00 from free cash + 700.00 expected from rotating out AAA/USDT".
+- **After a rotation** the sold symbol waits like after a trailing exit: it isn't bought
+  back until its BUY signal resets or the close makes a new high.
+- **A partial exit** (reason `TRIM`) is its own row in `trades` with the sold quantity, and
+  counts as a closed trade in the win rate and realized PnL. The open trade's quantity is
+  updated.
+- **Lot size and minimum order.** Quantities are rounded down to the market's step from
+  Binance's market info; the unused cents go back to free cash as a `RELEASE` ledger row.
+  An entry whose rounded notional is below the market's minimum isn't opened; its stake
+  goes back at the end of the candle (`RELEASE`, with the reason).
+- **Ledger kinds:** `INITIAL`, `DEPOSIT`, `WITHDRAW`, `RESERVE` (stake set aside for the
+  next open), `RELEASE` (unused stake back), `SELL` (any full exit), `ROTATE` (a position
+  chosen for rotation; the sale itself is the next open's `ROTATE` row with the cash),
+  `TRIM`, `SKIP` (a BUY that couldn't be funded, amount 0). There is no separate `BUY`
+  row: the fill doesn't change free cash.
+- **Low-bankroll badge** on the panel compares with the threshold directly; the Telegram
+  message uses the 5-point hysteresis, so it doesn't repeat around the threshold.
+- **The lower-timeframe score input** needs a 4h or 1d instance (the modal disables it
+  otherwise); it loads the lower timeframes like E and X do. `rs_btc` fetches BTC's candles
+  when BTC isn't one of the instance's symbols.
+- **Not done:** `--rebuild-state` refuses bankroll instances (their symbols share one cash
+  balance, so they can't be replayed one by one).
+
+Checks:
+
+- Existing instances are unchanged: `forward-v9`, `v2-test-1d`, `v4-1d-tight`,
+  `v4-1d-t-btc-eth`, `v9-trail-1d` and `v9-band-1d` were replayed from a copy of `paper.db`
+  with the new code and matched exactly. The paper loop of the old (`dev`) and new code
+  gave identical signals, trades, equity, weights and engine states on 12 symbols × 400
+  cached days for v9, trailing, band, v4 tight stop, v2, trend filter 200 and inverse
+  volatility.
+- A bankroll instance ran over 400 cached days (12 symbols, all inputs except the lower
+  timeframes, rotation with trimming, a deposit on the way) and on the last five live days
+  (with the lower-timeframe and rs_btc inputs): the ledger always added up to the free cash,
+  free cash never went below 0, and the deposit didn't change the time-weighted return.
+- Not checked in a browser yet.
 
 ## To-do for testnet (later, needs approval: order-sending code)
 

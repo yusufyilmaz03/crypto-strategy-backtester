@@ -16,6 +16,7 @@ import hmac
 import importlib
 import json
 import logging
+import math
 import os
 import urllib.parse
 
@@ -27,12 +28,14 @@ from kripto_bot import instances, paths
 from kripto_bot.app import manual_close, notify, playground
 from kripto_bot.app import reporting
 from kripto_bot import settings
-from kripto_bot.core import strategy
+from kripto_bot.core import bankroll, strategy
 from kripto_bot.core.lower_timeframes import LOWER_TIMEFRAMES
+from kripto_bot.trading import store
 
 app = Flask(__name__)
 
 BACKTEST_FILE = paths.results("multi_backtest_strategies.csv")
+DEFAULT_BANKROLL = 10_000.0     # New instance modal: starting bankroll of sizing "bankroll"
 CSRF_HEADER = ("X-Requested-With", "kripto-bot")
 LOOPBACK = ("127.0.0.1", "::1")
 PROXY_HEADERS = ("X-Forwarded-For", "X-Forwarded-Host", "Forwarded")
@@ -96,7 +99,8 @@ def _instance_view(inst):
     d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop", "trail", "sizing",
                                        "lower_tf_entry", "lower_tf_exit", "lower_tf_sma", "trend_sma", "manual_close",
                                        "equity", "enabled", "favorite", "description",
-                                       "created_at", "run_key")}
+                                       "created_at", "run_key", "stakes", "min_entry", "max_entry", "score_inputs",
+                                       "rotation", "rotate_profit_only", "rotate_trim", "low_basis", "low_pct")}
     d["symbols"] = inst.symbol_list
     d["custom_symbols"] = bool(inst.symbols)
     d["status"] = reporting.service_status(inst.name)
@@ -197,6 +201,13 @@ def api_strategies():
         "stops": dict(config.STOPLOSS_CONFIG), "lower_timeframes": LOWER_TIMEFRAMES,
         "symbols": list(config.SYMBOLS), "default_equity": config.INITIAL_EQUITY,
         "default_capital": config.TRADING_CAPITAL_USDT,
+        "bankroll": {"grades": bankroll.GRADES, "grade_from": bankroll.GRADE_FROM,
+                     "default_stakes": bankroll.DEFAULT_STAKES, "default_min_entry": bankroll.DEFAULT_MIN_ENTRY,
+                     "min_order": bankroll.MIN_ORDER, "inputs": bankroll.INPUTS,
+                     "default_inputs": bankroll.DEFAULT_INPUTS, "low_bases": bankroll.LOW_BASES,
+                     "default_low_pct": bankroll.DEFAULT_LOW_PCT, "default_bankroll": DEFAULT_BANKROLL,
+                     "rotate": {"margin": bankroll.ROTATE_MARGIN, "min_hold": bankroll.ROTATE_MIN_HOLD,
+                                "max": bankroll.ROTATE_MAX}},
     })
 
 
@@ -230,8 +241,10 @@ def api_instance_action(name):
         inst = instances.update(name, description=str(d.get("description", ""))[:500])
     elif action == "favorite":
         inst = instances.update(name, favorite=bool(d.get("favorite")))
+    elif action == "low":
+        inst = instances.update(name, low_basis=d.get("low_basis"), low_pct=d.get("low_pct"))
     else:
-        raise ApiError("action must be start, stop, restart, describe or favorite")
+        raise ApiError("action must be start, stop, restart, describe, favorite or low")
     return jsonify(_instance_view(inst))
 
 
@@ -241,6 +254,35 @@ def api_instance_curves(name):
     return jsonify({"labels": [t.isoformat() for t in strat.index],
                     "strategy": [round(float(v), 4) for v in strat],
                     "buy_hold": [None if pd.isna(v) else round(float(v), 4) for v in bh]})
+
+
+@app.route("/api/instances/<name>/bankroll", methods=["POST"])
+def api_instance_bankroll(name):
+    """File a deposit or withdrawal; the instance's process applies it (books only, no
+    money moves on an exchange)."""
+    inst = _inst(name)
+    d = request.get_json(silent=True) or {}
+    kind = d.get("kind")
+    if inst.sizing != "bankroll":
+        raise ApiError(f"{inst.name} has no bankroll")
+    if kind not in ("deposit", "withdraw"):
+        raise ApiError("kind must be deposit or withdraw")
+    try:
+        amount = float(d.get("amount"))
+    except (TypeError, ValueError):
+        raise ApiError("amount must be a number")
+    if not 0 < amount <= 10_000_000 or math.isnan(amount):
+        raise ApiError("amount must be above 0 and at most 10,000,000 USDT")
+    view = reporting.bankroll_view(inst)
+    if kind == "withdraw" and view.get("started") and amount > view["free"] + 1e-9:
+        raise ApiError(f"only {view['free']:.2f} USDT is free; money in positions can't be withdrawn")
+    paper = store.PaperStore()
+    try:
+        paper.request_bankroll(inst.run_key, inst.timeframe, kind, amount, str(d.get("note") or "")[:200], "panel")
+    finally:
+        paper.close()
+    when = "within a minute" if inst.enabled else "when the instance starts"
+    return jsonify({"requested": kind, "amount": amount, "applied": when})
 
 
 @app.route("/api/instances/<name>/close", methods=["POST"])
@@ -265,6 +307,13 @@ def api_instance_table(name, table):
         return jsonify(records(reporting.signals(inst)))
     if table == "stops":
         return jsonify(records(reporting.stop_events(inst).iloc[::-1]))
+    if table == "ledger":
+        return jsonify(records(reporting.ledger(inst)))
+    if table == "requests":
+        return jsonify(records(reporting.bankroll_requests(inst)))
+    if table == "snapshots":
+        snaps = reporting.snapshots(inst)
+        return jsonify(records(snaps.assign(time=snaps["time"].dt.strftime("%Y-%m-%dT%H:%M:%S")) if not snaps.empty else snaps))
     if table == "log":
         return jsonify(reporting.log_tail(inst.name, int(request.args.get("lines", 200))))
     raise ApiError(f"unknown table {table}")

@@ -64,6 +64,27 @@ const KB = {
       data-favorite="${i.favorite ? 1 : 0}" title="${i.favorite ? "Remove from favorites" : "Add to favorites"}">` +
       `<i class="bi ${i.favorite ? "bi-star-fill text-warning" : "bi-star text-secondary"}"></i></button>`;
   },
+  // Bankroll instances (sizing "bankroll"): setup in words, the low-bankroll badge and score cells.
+  bankrollText(i) {
+    if (i.sizing !== "bankroll") return "";
+    return [`bankroll ${KB.money(i.equity)} USDT`, `stakes ${(i.stakes || []).join("/")}%`,
+            `entry ${i.min_entry}–${i.max_entry ?? "∞"} USDT`, `score ${(i.score_inputs || []).join(", ")}`,
+            i.rotation && `rotation${i.rotate_profit_only ? " (profit only)" : ""}${i.rotate_trim ? " (reduce)" : ""}`]
+      .filter(Boolean).join(" · ");
+  },
+  lowBadge(i) {
+    const b = i.summary && i.summary.bankroll;
+    if (!b || !b.started) return "";
+    const what = b.low_basis === "free" ? "free cash" : "bankroll value";
+    if (b.low) return ` <span class="badge text-bg-warning" title="${KB.esc(`${what} ${KB.num(b.level_pct, 1)}% of the contributed capital, below ${b.low_pct}%`)}">low bankroll</span>`;
+    if (b.cant_trade) return ` <span class="badge text-bg-secondary" title="free cash below the minimum entry: new signals wait for cash">invested</span>`;
+    return "";
+  },
+  score(v, grade) {
+    if (v == null || v === "" || isNaN(v)) return "–";
+    const cls = { "Very strong": "text-bg-success", Strong: "text-bg-primary", Normal: "text-bg-secondary", Weak: "text-bg-light" }[grade] || "text-bg-light";
+    return `<span class="badge ${cls}" title="${KB.esc(grade || "")}">${Number(v).toFixed(0)}</span>`;
+  },
   modeBadge(m) { return `<span class="badge ${m === "testnet" ? "text-bg-warning" : "text-bg-primary"}">${KB.esc(m)}</span>`; },
   toast(msg, kind = "success") {
     const box = document.getElementById("toasts");

@@ -43,7 +43,8 @@ COMMANDS = [("status", "All instances at a glance"),
             ("instance", "Positions, signals and trades of one instance"),
             ("help", "What this bot can do")]
 ACTIONS = ("buy/sell/trail: at the next open · holding: in a position · waiting: after an early exit · "
-           "blocked: by a filter · ignored: no position to sell")
+           "blocked: by a filter · ignored: no position to sell · no cash: bankroll couldn't fund it · "
+           "rotate: sold for a stronger signal · Sc: strength score")
 HELP = ("<b>Crypto Tester Bot</b>\n"
         "/status: all instances at a glance\n"
         "/instance: pick an instance for its positions, signals and trades\n"
@@ -94,8 +95,23 @@ def _settings(inst):
              inst.trail and f"trail {inst.trail}×ATR", inst.trend_sma and f"trend SMA{inst.trend_sma}",
              inst.lower_tf_entry and "lower-TF entry", inst.lower_tf_exit and "lower-TF exit",
              inst.lower_tf_sma and f"lower-TF SMA{inst.lower_tf_sma}", inst.manual_close and "manual close",
-             inst.sizing != "equal" and f"{inst.sizing} sizing", f"{len(inst.symbol_list)} symbols"]
+             inst.sizing not in ("equal", "bankroll") and f"{inst.sizing} sizing", _bankroll_setup(inst),
+             f"{len(inst.symbol_list)} symbols"]
     return " · ".join(p for p in parts if p)
+
+
+def _bankroll_setup(inst):
+    if inst.sizing != "bankroll":
+        return None
+    rot = inst.rotation and ("rotation" + (" (profit only)" if inst.rotate_profit_only else "")
+                             + (" (reduce)" if inst.rotate_trim else ""))
+    return " · ".join(p for p in [f"bankroll {inst.equity:g} USDT", f"stakes {'/'.join(f'{x:g}' for x in inst.stakes or [])}%",
+                                  f"entry {inst.min_entry:g}-{'∞' if inst.max_entry is None else f'{inst.max_entry:g}'} USDT",
+                                  f"score {', '.join(inst.score_inputs or [])}", rot] if p)
+
+
+def _score(x):
+    return "–" if _missing(x) else f"{x:.0f}"
 
 
 def _when(t, inst):
@@ -109,9 +125,10 @@ def _action(text):
     """What the engine did with a signal (run_realtime.describe_action), in a word."""
     text = text or ""
     for start, word in [("ignored (long-only)", "ignored"), ("ignored (already", "holding"),
-                        ("ignored (waiting", "waiting"), ("ignored", "blocked"), ("enter", "buy"),
-                        ("exit", "sell"), ("trailing", "trail"), ("lower-timeframe exit", "LTF exit"),
-                        ("manual", "manual")]:
+                        ("ignored (waiting", "waiting"), ("ignored (not funded", "no cash"),
+                        ("ignored", "blocked"), ("enter", "buy"), ("exit", "sell"), ("trailing", "trail"),
+                        ("lower-timeframe exit", "LTF exit"), ("manual", "manual"), ("rotation", "rotate"),
+                        ("reduce", "reduce")]:
         if text.startswith(start):
             return word
     return text[:10]
@@ -296,6 +313,15 @@ class CommandBot:
                                 [[str(s["days"]), str(s["open_positions"]), str(s["closed_trades"]), win,
                                   _money(s["realized_pnl"])]], "rrrrr"))
             lines.append("PnL: realized, closed trades, USDT.")
+        b = s.get("bankroll")
+        if b and b.get("started"):
+            lines.append(_table(["Bankroll", "USDT"], [["Value", notify._money0(b["value"])],
+                                                        ["Free", notify._money0(b["free"])],
+                                                        ["Contributed", notify._money0(b["contributed"])],
+                                                        ["PnL", _money(b["pnl"])]], "lr"))
+            if b["low"]:
+                what = "free cash" if b["low_basis"] == "free" else "value"
+                lines.append(f"⚠️ Low bankroll: {what} {b['level_pct']:.1f}% of contributed (below {b['low_pct']:g}%).")
         keyboard = [[_button(f"Positions ({s['open_positions']})", f"p|{inst.name}"),
                      _button("Signals", f"s|{inst.name}"), _button("Trades", f"t|{inst.name}")],
                     [_button("↻ Refresh", f"i|{inst.name}"), _button("« Instances", "l")]]
@@ -307,6 +333,7 @@ class CommandBot:
             return f"<b>{_e(inst.name)}</b>: no open positions.", self._back(inst)
         prices = self.prices(set(pos["symbol"]))
         rows, stops, closable, requested = [], [], [], False
+        bank = inst.sizing == "bankroll"
         for _, p in pos.head(MAX_POSITIONS).iterrows():
             now = prices.get(p["symbol"])
             change = (now / p["entry_price"] - 1) * 100 if now and p["entry_price"] else None
@@ -316,17 +343,19 @@ class CommandBot:
                 base += "*"
             elif inst.mode == "paper" and inst.manual_close:
                 closable.append(p["symbol"])
-            rows.append([base, _price(p["entry_price"]), _price(now), _p1(change)])
+            rows.append([base, _price(p["entry_price"]), _price(now), _p1(change)]
+                        + ([_score(p.get("score_now"))] if bank else []))
             if p.get("stop") is not None and not pd.isna(p.get("stop")):
                 stops.append(f"{_base(p['symbol'])} {_price(p['stop'])}")
-        parts = [f"<b>{_e(inst.name)}</b> · {len(pos)} open", _table(["Symbol", "Entry", "Now", "Δ%"], rows)]
+        parts = [f"<b>{_e(inst.name)}</b> · {len(pos)} open",
+                 _table(["Symbol", "Entry", "Now", "Δ%"] + (["Sc"] if bank else []), rows)]
         if len(pos) > MAX_POSITIONS:
             parts.append(f"… and {len(pos) - MAX_POSITIONS} more on the panel")
         if stops:
             parts.append("Stops: " + _e(", ".join(stops)))
         if requested:
             parts.append("* close requested")
-        parts.append("Δ%: last price vs entry, before fees.")
+        parts.append("Δ%: last price vs entry, before fees." + (" Sc: score at the last close." if bank else ""))
         buttons = [_button(f"Close {_base(s)}", f"c|{self._target(inst.name, s)}") for s in closable]
         keyboard = [buttons[k:k + 3] for k in range(0, len(buttons), 3)]
         keyboard.append([_button("↻ Refresh", f"p|{inst.name}")] + self._back(inst)[0])
@@ -345,8 +374,11 @@ class CommandBot:
             return f"<b>{_e(inst.name)}</b>: no signals yet.", self._back(inst)
         title = f"<b>{_e(inst.name)}</b> · last {'signals' if inst.mode == 'paper' else 'events'} (newest first)"
         if inst.mode == "paper":
-            rows = [[_when(r.candle_time, inst), _base(r.symbol), r.signal, _action(r.action)] for r in df.itertuples()]
-            return "\n".join([title, _table(["Candle", "Symbol", "Sig", "Action"], rows, "llll"), ACTIONS]), \
+            bank = inst.sizing == "bankroll" and "score" in df.columns
+            rows = [[_when(r.candle_time, inst), _base(r.symbol), r.signal]
+                    + ([_score(r.score)] if bank else []) + [_action(r.action)] for r in df.itertuples()]
+            heads = ["Candle", "Symbol", "Sig"] + (["Sc"] if bank else []) + ["Action"]
+            return "\n".join([title, _table(heads, rows, "lll" + ("r" if bank else "") + "l"), ACTIONS]), \
                 self._back(inst)
         rows = [f"{_date(r.time)} {r.level}{' ' + r.symbol if r.symbol else ''}: {r.message}" for r in df.itertuples()]
         return "\n".join([title] + [_e(r) for r in rows]), self._back(inst)
@@ -392,7 +424,7 @@ class CommandBot:
 
     # ----- /status
     def status_text(self):
-        rows, down, stopped = [], [], []
+        rows, down, stopped, low = [], [], [], []
         items = instances.load_all(self.instances_path).values()
         for inst in items:
             if not inst.enabled:
@@ -402,10 +434,14 @@ class CommandBot:
             if state != "running":
                 down.append(f"{inst.name} ({state})")
             s = reporting.summary(inst, self.paper_db)
+            if (s.get("bankroll") or {}).get("low"):
+                low.append(inst.name)
             rows.append([("*" if inst.favorite else " ") + _short(inst.name, 15), _p1(s["return_pct"]),
                          _p1(s["buy_hold_pct"]), str(s["open_positions"])])
         parts = [f"<b>📊 Status {pd.Timestamp(self.clock(), unit='s', tz='UTC'):%Y-%m-%d %H:%M} UTC</b>"]
         parts.append(_table([" Instance", "Ret%", "B&H%", "Open"], rows) if rows else "No running instances.")
+        if low:
+            parts.append("⚠️ Low bankroll: " + _e(", ".join(low)))
         if any(i.favorite for i in items if i.enabled):
             parts.append("* favorite")
         if down:

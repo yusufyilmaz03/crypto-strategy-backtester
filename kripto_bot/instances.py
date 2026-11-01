@@ -11,6 +11,7 @@ setup; to try something else, create another instance.
 """
 import inspect
 import json
+import math
 import os
 import re
 from dataclasses import asdict, dataclass, field
@@ -18,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 import pandas as pd
 
 from kripto_bot import config, paths
-from kripto_bot.core import strategy
+from kripto_bot.core import bankroll, strategy
 from kripto_bot.core.lower_timeframes import LOWER_TIMEFRAMES
 from kripto_bot.settings import SYMBOL_RE
 
@@ -26,11 +27,15 @@ INSTANCES_FILE = paths.runtime("instances.json")
 
 MODES = ["paper", "testnet"]
 SIZINGS = {"equal": "Equal capital per symbol, never rebalanced",
-           "inverse_vol": "Monthly rebalanced to 1/volatility weights (docs/v9-sizing-test.md)"}
+           "inverse_vol": "Monthly rebalanced to 1/volatility weights (docs/v9-sizing-test.md)",
+           "bankroll": "One bankroll for the instance: each BUY is scored and gets its grade's % of the "
+                       "bankroll, strongest first, while cash lasts (docs/bankroll-management.md). Untested variant."}
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,59}$")
 SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing",
-                "lower_tf_entry", "lower_tf_exit", "lower_tf_sma", "trend_sma", "manual_close"]
+                "lower_tf_entry", "lower_tf_exit", "lower_tf_sma", "trend_sma", "manual_close",
+                "stakes", "min_entry", "max_entry", "score_inputs", "rotation", "rotate_profit_only", "rotate_trim"]
+EDITABLE = ["enabled", "description", "restart_requested_at", "favorite", "low_basis", "low_pct"]
 SMA_LENGTHS = (10, 250)    # trend filter and SMA mode; the paper bot fetches 300 candles
 
 
@@ -48,13 +53,23 @@ class Instance:
     stop: str = "none"                 # key of config.STOPLOSS_CONFIG
     trail: float | None = None         # trailing exit at the highest close - ATR * trail; None = off
     symbols: list | None = None        # None = config.SYMBOLS
-    equity: float = 1000.0             # paper: per symbol; testnet: total capital
+    equity: float = 1000.0             # paper: per symbol (bankroll: the starting bankroll); testnet: total capital
     sizing: str = "equal"              # key of SIZINGS
     lower_tf_entry: bool = False       # rule E: enter only if the lower timeframes say BUY too
     lower_tf_exit: bool = False        # rule X: exit inside the candle when they all say SELL
     lower_tf_sma: int | None = None    # E and X read close vs SMA(n) on the lower timeframes; None: the strategy's signal
     trend_sma: int | None = None       # trend filter: enter only above SMA(n) of the closes; None = off
     manual_close: bool = False         # positions can be closed from the panel (reason MANUAL)
+    # sizing "bankroll" only (docs/bankroll-management.md)
+    stakes: list | None = None         # % of the contributed capital per grade (Weak, Normal, Strong, Very strong)
+    min_entry: float | None = None     # USDT; smaller stakes aren't bought
+    max_entry: float | None = None     # USDT; stakes are capped here (None: no cap)
+    score_inputs: list | None = None   # keys of bankroll.INPUTS
+    rotation: bool = False             # a very strong signal without cash may sell weaker positions
+    rotate_profit_only: bool = False   # ... only positions in profit
+    rotate_trim: bool = False          # ... reducing them instead of closing when that is enough
+    low_basis: str = "value"           # low-bankroll warning: key of bankroll.LOW_BASES (not part of the setup)
+    low_pct: float = bankroll.DEFAULT_LOW_PCT  # ... below this % of the contributed capital
     enabled: bool = False              # should run_all.py keep it running?
     favorite: bool = False             # pinned on the panel; not part of the setup
     run_key: str = ""                  # paper: key in paper.db; testnet: database file in runtime/
@@ -69,7 +84,22 @@ class Instance:
     def engine_config(self):
         from dataclasses import replace
         return replace(config.engine_config(), atr_multiplier=config.STOPLOSS_CONFIG[self.stop],
-                       trail_atr=self.trail, initial_equity=self.equity)
+                       trail_atr=self.trail, initial_equity=0.0 if self.sizing == "bankroll" else self.equity)
+
+    def bankroll_config(self):
+        """Settings of a bankroll instance (sizing "bankroll") for core/bankroll.py."""
+        eng = config.engine_config()
+        slow = None
+        if self.strategy == "v9":       # its regime SMA; other strategies use the trend SMA
+            slow = self.params.get("slow", {p["name"]: p["default"] for p in param_spec("v9")}.get("slow"))
+        return bankroll.BankrollConfig(
+            stakes=tuple(self.stakes or bankroll.DEFAULT_STAKES),
+            min_entry=bankroll.DEFAULT_MIN_ENTRY if self.min_entry is None else self.min_entry,
+            max_entry=self.max_entry, inputs=tuple(self.score_inputs or bankroll.DEFAULT_INPUTS),
+            score_sma=int(slow or self.trend_sma or bankroll.SCORE_SMA),
+            trend_sma=int(self.trend_sma or bankroll.TREND_SMA),
+            rotation=self.rotation, profit_only=self.rotate_profit_only, trim=self.rotate_trim,
+            fee_rate=eng.fee_rate, slippage_bps=eng.slippage_bps)
 
     @property
     def db_path(self):
@@ -137,7 +167,8 @@ def validate(inst, existing):
             raise InstanceError("trailing exit must be between 0.5 and 20 ATR")
         if inst.mode != "paper":
             raise InstanceError("only paper instances can use a trailing exit for now")
-    for f in ("lower_tf_entry", "lower_tf_exit", "manual_close", "favorite"):
+    for f in ("lower_tf_entry", "lower_tf_exit", "manual_close", "favorite", "rotation", "rotate_profit_only",
+              "rotate_trim"):
         value = getattr(inst, f)
         if value in ("true", "false"):
             value = value == "true"
@@ -171,6 +202,7 @@ def validate(inst, existing):
         raise InstanceError(f"sizing must be one of {', '.join(SIZINGS)}")
     if inst.sizing != "equal" and inst.mode != "paper":
         raise InstanceError("only paper instances can use portfolio sizing for now")
+    _validate_bankroll(inst)
     if inst.symbols:
         inst.symbols = [s.strip().upper() for s in inst.symbols if s.strip()]
         bad = [s for s in inst.symbols if not SYMBOL_RE.match(s)]
@@ -189,6 +221,57 @@ def validate(inst, existing):
             raise InstanceError(f"only one testnet instance can run at a time ({others[0]} is running): "
                                 "they share one exchange account")
     return inst
+
+
+def _number(value, what, low=None, high=None, empty_ok=True):
+    if value in ("", None):
+        if empty_ok:
+            return None
+        raise InstanceError(f"{what} is required")
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise InstanceError(f"{what} must be a number")
+    if math.isnan(v) or (low is not None and v < low) or (high is not None and v > high):
+        raise InstanceError(f"{what} must be from {low} to {high}" if high is not None else f"{what} must be at least {low}")
+    return v
+
+
+def _validate_bankroll(inst):
+    """Bankroll settings: only with sizing "bankroll", which fills in their defaults."""
+    inst.low_pct = _number(inst.low_pct, "low-bankroll threshold", 0, 100, empty_ok=False)
+    if inst.low_basis not in bankroll.LOW_BASES:
+        raise InstanceError(f"low-bankroll basis must be one of {', '.join(bankroll.LOW_BASES)}")
+    if inst.sizing != "bankroll":
+        used = [f for f in ("stakes", "min_entry", "max_entry", "score_inputs") if getattr(inst, f) not in (None, [], "")]
+        used += [f for f in ("rotation", "rotate_profit_only", "rotate_trim") if getattr(inst, f)]
+        if used:
+            raise InstanceError(f"{', '.join(used)} need sizing 'bankroll'")
+        inst.stakes = inst.min_entry = inst.max_entry = inst.score_inputs = None
+        return
+    stakes = bankroll.DEFAULT_STAKES if inst.stakes in (None, []) else inst.stakes
+    if len(stakes) != len(bankroll.GRADES):
+        raise InstanceError(f"stakes: one percentage for each grade ({', '.join(bankroll.GRADES)})")
+    inst.stakes = [_number(v, f"stake for {g}", 0, 100, empty_ok=False) for v, g in zip(stakes, bankroll.GRADES)]
+    if any(b < a for a, b in zip(inst.stakes, inst.stakes[1:])):
+        raise InstanceError("stakes must not get smaller for a stronger grade")
+    if not any(inst.stakes):
+        raise InstanceError("at least one grade needs a stake above 0%")
+    inst.min_entry = _number(inst.min_entry, "minimum entry", bankroll.MIN_ORDER)
+    if inst.min_entry is None:
+        inst.min_entry = bankroll.DEFAULT_MIN_ENTRY
+    inst.max_entry = _number(inst.max_entry, "maximum entry", bankroll.MIN_ORDER)
+    if inst.max_entry is not None and inst.max_entry < inst.min_entry:
+        raise InstanceError("maximum entry must not be below the minimum entry")
+    inputs = list(bankroll.DEFAULT_INPUTS) if inst.score_inputs in (None, []) else list(inst.score_inputs)
+    bad = [i for i in inputs if i not in bankroll.INPUTS]
+    if bad:
+        raise InstanceError(f"unknown score inputs: {', '.join(map(str, bad))}")
+    if "lower_tf" in inputs and inst.timeframe not in LOWER_TIMEFRAMES:
+        raise InstanceError(f"the lower-timeframe score input needs a {' or '.join(LOWER_TIMEFRAMES)} timeframe")
+    inst.score_inputs = [i for i in bankroll.INPUTS if i in inputs]       # canonical order, no repeats
+    if (inst.rotate_profit_only or inst.rotate_trim) and not inst.rotation:
+        raise InstanceError("the rotation options need rotation")
 
 
 # ---------- storage ----------
@@ -260,7 +343,7 @@ def update(name, path=None, **changes):
         raise InstanceError(f"{', '.join(locked)} can't be changed after creation; create a new instance")
     inst = items[name]
     for k, v in changes.items():
-        if k not in ("enabled", "description", "restart_requested_at", "favorite"):
+        if k not in EDITABLE:
             raise InstanceError(f"field '{k}' can't be changed")
         setattr(inst, k, v)
     validate(inst, items)

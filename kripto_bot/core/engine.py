@@ -58,7 +58,7 @@ class Trade:
     fees: float
     pnl: float
     return_pct: float
-    reason: str                    # "SIGNAL" | "STOP" | "TRAIL" | "LTF" | "MANUAL" | "END"
+    reason: str                    # "SIGNAL" | "STOP" | "TRAIL" | "LTF" | "MANUAL" | "ROTATE" | "TRIM" | "END"
     entry_rsi: float | None = None
 
 
@@ -82,6 +82,11 @@ class Engine:
         self.equity_curve: list[tuple] = []         # (time, marked-to-market equity)
         self.on_open = on_open
         self.on_close = on_close
+        # bankroll instances only (trading/run_realtime.BankrollRunner); the defaults change nothing
+        self.lot_step = None                        # quantities are rounded down to this step
+        self.min_cost = None                        # an entry below this notional isn't opened
+        self.leftover = 0.0                         # cash the last entry didn't use (lot rounding)
+        self.released = 0.0                         # cash the last partial exit (TRIM) brought
 
     # ---------- fills ----------
     def _slip(self, price, side, entering):
@@ -104,10 +109,22 @@ class Engine:
         _, side, atr, _ = self.pending
         return self._stop_for(side, self._slip(open_, side, entering=True), atr)
 
+    def _round(self, qty):
+        if not self.lot_step:
+            return qty
+        digits = max(0, -math.floor(math.log10(self.lot_step) + 1e-9)) + 2     # Binance steps are powers of ten
+        return round(math.floor(qty / self.lot_step + 1e-9) * self.lot_step, digits)   # 6444.4, not 6444.400000000001
+
     def _open(self, side, price, time, atr, rsi):
         fill = self._slip(price, side, entering=True)
         fee_rate = self.config.fee_rate
         qty = self.equity / (fill * (1 + fee_rate))
+        if self.lot_step or self.min_cost:
+            qty = self._round(qty)
+            if qty <= 0 or qty * fill < (self.min_cost or 0.0):
+                return                                  # too small to buy: the cash stays with the engine
+            cost = qty * fill * (1 + fee_rate)
+            self.leftover, self.equity = self.equity - cost, cost
         self.position = Position(
             trade_id=uuid.uuid4().hex[:8], side=side, qty=qty, entry_time=time,
             entry_price=fill, entry_fee=qty * fill * fee_rate, equity_before=self.equity,
@@ -135,6 +152,44 @@ class Engine:
         if self.on_close:
             self.on_close(trade)
         return trade
+
+    def _trim(self, price, time, fraction):
+        """Sell `fraction` of the long position at `price` (partial exit, reason TRIM).
+        The sold part is recorded as its own trade; the position keeps the rest."""
+        p = self.position
+        if fraction >= 1:
+            return self._close(price, time, "ROTATE")
+        fill = self._slip(price, p.side, entering=False)
+        qty = self._round(p.qty * fraction)
+        if qty <= 0:
+            return None
+        f = qty / p.qty
+        entry_fee, basis = p.entry_fee * f, p.equity_before * f
+        exit_fee = qty * fill * self.config.fee_rate
+        pnl = qty * (fill - p.entry_price) - entry_fee - exit_fee
+        trade = Trade(
+            trade_id=uuid.uuid4().hex[:8], symbol=self.symbol, side=p.side,
+            entry_time=p.entry_time, exit_time=time, entry_price=p.entry_price, exit_price=fill,
+            qty=qty, fees=entry_fee + exit_fee, pnl=pnl, return_pct=100 * pnl / basis,
+            reason="TRIM", entry_rsi=p.signal_rsi,
+        )
+        p.qty -= qty
+        p.entry_fee -= entry_fee
+        p.equity_before -= basis
+        self.equity -= basis
+        self.released = basis + pnl
+        self.trades.append(trade)
+        if self.on_close:
+            self.on_close(trade)
+        return trade
+
+    def queue_entry(self, atr=None, rsi=None):
+        """Queue a long entry at the next open (the bankroll decides entries itself)."""
+        self.pending = ("ENTER", "LONG", _num(atr), _num(rsi))
+
+    def queue_exit(self, reason, fraction=1.0):
+        """Queue selling the position (or `fraction` of it) at the next open."""
+        self.pending = ("EXIT", reason) if fraction >= 1 else ("TRIM", float(fraction))
 
     def marked_equity(self, price):
         p = self.position
@@ -171,9 +226,14 @@ class Engine:
         if order[0] == "EXIT" and self.position is not None:
             reason = order[1] if len(order) > 1 else "SIGNAL"
             peak = self.position.high
+            entry = self.position.entry_price
             self._close(open_, time, reason)
             if reason == "TRAIL":
                 self.reentry_above = peak
+            elif reason == "ROTATE":       # as after a trailing exit: no buying straight back
+                self.reentry_above = peak if peak is not None else entry
+        elif order[0] == "TRIM" and self.position is not None:
+            self._trim(open_, time, order[1])
         elif order[0] == "ENTER" and self.position is None:
             _, side, sig_atr, sig_rsi = order
             self._open(side, open_, time, sig_atr, sig_rsi)

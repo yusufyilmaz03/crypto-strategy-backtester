@@ -49,7 +49,30 @@ CREATE TABLE IF NOT EXISTS close_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT, strategy TEXT, timeframe TEXT, symbol TEXT,
     requested_at TEXT, done_at TEXT, result TEXT
 );
+CREATE TABLE IF NOT EXISTS bankroll_state (
+    strategy TEXT, timeframe TEXT, state TEXT NOT NULL, updated_at TEXT NOT NULL,
+    PRIMARY KEY (strategy, timeframe)
+);
+CREATE TABLE IF NOT EXISTS bankroll_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, strategy TEXT, timeframe TEXT, time TEXT, kind TEXT,
+    symbol TEXT, trade_id TEXT, amount REAL, fee REAL, free_after REAL, reserved_after REAL,
+    invested_after REAL, value_after REAL, contributed_after REAL, score REAL, grade TEXT,
+    source TEXT, note TEXT
+);
+CREATE TABLE IF NOT EXISTS bankroll_snapshots (
+    strategy TEXT, timeframe TEXT, time TEXT, free REAL, reserved REAL, invested REAL,
+    value REAL, contributed REAL, twr REAL,
+    PRIMARY KEY (strategy, timeframe, time)
+);
+CREATE TABLE IF NOT EXISTS bankroll_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, strategy TEXT, timeframe TEXT, kind TEXT, amount REAL,
+    note TEXT, source TEXT, requested_at TEXT, done_at TEXT, result TEXT
+);
 """
+
+# columns added after the first release: (table, column, type)
+ADDED_COLUMNS = [("equity", "close", "REAL"), ("signals", "score", "REAL"), ("signals", "grade", "TEXT"),
+                 ("trades", "score", "REAL"), ("trades", "grade", "TEXT")]
 
 
 class AlreadyRunning(RuntimeError):
@@ -92,10 +115,10 @@ class PaperStore:
         path = path or DB_FILE
         self.conn = _connect(path)
         self.conn.executescript(SCHEMA)
-        # databases created before the close column existed
-        cols = [r[1] for r in self.conn.execute("PRAGMA table_info(equity)")]
-        if "close" not in cols:
-            self.conn.execute("ALTER TABLE equity ADD COLUMN close REAL")
+        # databases created before these columns existed
+        for table, col, kind in ADDED_COLUMNS:
+            if col not in [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")]:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {kind}")
         self.conn.commit()
 
     def close(self):
@@ -127,12 +150,25 @@ class PaperStore:
              pd.Timestamp.now(tz="UTC").isoformat()))
 
     # ---------- logs ----------
-    def trade_opened(self, strategy, timeframe, symbol, p):
+    def trade_opened(self, strategy, timeframe, symbol, p, score=None, grade=None):
+        """score, grade: the bankroll's strength score of the signal that opened it."""
         self.conn.execute(
             "INSERT OR REPLACE INTO trades (trade_id, symbol, strategy, timeframe, side, entry_time,"
-            " entry_price, qty, entry_rsi, stop) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " entry_price, qty, entry_rsi, stop, score, grade) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (p.trade_id, symbol, strategy, timeframe, p.side, _t(p.entry_time), p.entry_price,
-             p.qty, _f(p.signal_rsi), _f(p.stop)))
+             p.qty, _f(p.signal_rsi), _f(p.stop), _f(score), grade))
+
+    def trade_partial(self, strategy, timeframe, t, open_trade_id, qty_left, score=None, grade=None):
+        """A partial exit (reason TRIM): the sold part as its own closed trade, and the
+        open trade's quantity reduced to what is left."""
+        self.conn.execute(
+            "INSERT INTO trades (trade_id, symbol, strategy, timeframe, side, entry_time, exit_time,"
+            " entry_price, exit_price, qty, fees, pnl, return_pct, reason, entry_rsi, score, grade)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (t.trade_id, t.symbol, strategy, timeframe, t.side, _t(t.entry_time), _t(t.exit_time),
+             t.entry_price, t.exit_price, t.qty, t.fees, t.pnl, t.return_pct, t.reason, _f(t.entry_rsi),
+             _f(score), grade))
+        self.conn.execute("UPDATE trades SET qty=? WHERE trade_id=?", (float(qty_left), open_trade_id))
 
     def trade_closed(self, t):
         self.conn.execute(
@@ -140,12 +176,13 @@ class PaperStore:
             " WHERE trade_id=?",
             (_t(t.exit_time), t.exit_price, t.fees, t.pnl, t.return_pct, t.reason, t.trade_id))
 
-    def log_signal(self, strategy, timeframe, symbol, candle_time, signal, rsi, close, position, action):
+    def log_signal(self, strategy, timeframe, symbol, candle_time, signal, rsi, close, position, action,
+                   score=None, grade=None):
         self.conn.execute(
             "INSERT INTO signals (candle_time, symbol, strategy, timeframe, signal, rsi, close,"
-            " position, action) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " position, action, score, grade) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (_t(candle_time), symbol, strategy, timeframe, signal, _f(rsi), _f(close),
-             position or "NONE", action))
+             position or "NONE", action, _f(score), grade))
 
     def log_equity(self, strategy, timeframe, symbol, time, equity, close=None):
         """Marked-to-market equity and the candle's close (for buy-and-hold comparisons)."""
@@ -196,6 +233,51 @@ class PaperStore:
 
     def finish_close_request(self, request_id, result):
         self.conn.execute("UPDATE close_requests SET done_at=?, result=? WHERE id=?",
+                          (pd.Timestamp.now(tz="UTC").isoformat(), result, request_id))
+
+    # ---------- bankroll (sizing "bankroll") ----------
+    def load_bankroll(self, strategy, timeframe):
+        row = self.conn.execute("SELECT state FROM bankroll_state WHERE strategy=? AND timeframe=?",
+                                (strategy, timeframe)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def save_bankroll(self, strategy, timeframe, state):
+        self.conn.execute("INSERT OR REPLACE INTO bankroll_state VALUES (?, ?, ?, ?)",
+                          (strategy, timeframe, json.dumps(state), pd.Timestamp.now(tz="UTC").isoformat()))
+
+    def log_ledger(self, strategy, timeframe, time, kind, amount, balances, symbol=None, trade_id=None,
+                   fee=None, score=None, grade=None, source="system", note=None):
+        """One change of the bankroll's free cash (amount: signed USDT; 0 for a skipped
+        signal). balances: {free, reserved, invested, value, contributed} after it."""
+        b = balances
+        self.conn.execute(
+            "INSERT INTO bankroll_ledger (strategy, timeframe, time, kind, symbol, trade_id, amount, fee,"
+            " free_after, reserved_after, invested_after, value_after, contributed_after, score, grade,"
+            " source, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (strategy, timeframe, _t(time), kind, symbol, trade_id, float(amount), _f(fee), b["free"],
+             b["reserved"], b["invested"], b["value"], b["contributed"], _f(score), grade, source, note))
+
+    def log_snapshot(self, strategy, timeframe, time, b, twr):
+        self.conn.execute("INSERT OR REPLACE INTO bankroll_snapshots VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                          (strategy, timeframe, _t(time), b["free"], b["reserved"], b["invested"],
+                           b["value"], b["contributed"], float(twr)))
+
+    def request_bankroll(self, strategy, timeframe, kind, amount, note="", source="panel"):
+        """File a deposit or withdrawal for the instance's process to apply."""
+        cur = self.conn.execute(
+            "INSERT INTO bankroll_requests (strategy, timeframe, kind, amount, note, source, requested_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (strategy, timeframe, kind, float(amount), note, source, pd.Timestamp.now(tz="UTC").isoformat()))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def bankroll_requests(self, strategy, timeframe):
+        """Waiting requests: [(id, kind, amount, note, source)]."""
+        return self.conn.execute("SELECT id, kind, amount, note, source FROM bankroll_requests WHERE strategy=?"
+                                 " AND timeframe=? AND done_at IS NULL ORDER BY id", (strategy, timeframe)).fetchall()
+
+    def finish_bankroll_request(self, request_id, result):
+        self.conn.execute("UPDATE bankroll_requests SET done_at=?, result=? WHERE id=?",
                           (pd.Timestamp.now(tz="UTC").isoformat(), result, request_id))
 
     def last_rebalance(self, strategy, timeframe):

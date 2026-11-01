@@ -28,6 +28,30 @@
       <div class="col-md-6"><label class="form-label"><span id="equity-label">Equity per symbol (USDT)</span>{{ tip("", "tip-equity") }}</label>
         <input class="form-control" name="equity" type="number" min="10" step="any" id="equity"></div>
       <div class="col-md-6"><label class="form-label">Sizing{{ tip("", "tip-sizing") }}</label><select class="form-select" id="sizing"></select></div>
+      <div class="col-12 d-none" id="bankroll-box"><div class="border rounded p-3 bg-body-tertiary">
+        <div class="d-flex align-items-baseline gap-2 mb-2"><h6 class="mb-0">Bankroll</h6>
+          <span class="small text-secondary">Untested variant (docs/bankroll-management.md)</span></div>
+        <div class="row g-3">
+          <div class="col-12"><label class="form-label">Stake per grade (% of the bankroll){{ tip("Each BUY signal gets a strength score (0-100) from the inputs below and a grade from it. The entry gets this % of the contributed capital (starting bankroll + deposits − withdrawals; profits and losses don't change it). 0 = don't buy that grade. Signals of one close are funded strongest first while free cash lasts.") }}</label>
+            <div class="row g-2" id="stakes"></div></div>
+          <div class="col-6 col-md-3"><label class="form-label small mb-0">Min entry (USDT){{ tip("Smaller stakes are not bought. Never below the exchange minimum of 5 USDT.") }}</label>
+            <input class="form-control form-control-sm" type="number" min="5" step="any" id="min-entry"></div>
+          <div class="col-6 col-md-3"><label class="form-label small mb-0">Max entry (USDT){{ tip("Stakes are capped here. Empty = no cap.") }}</label>
+            <input class="form-control form-control-sm" type="number" min="5" step="any" id="max-entry" placeholder="no cap"></div>
+          <div class="col-6 col-md-3"><label class="form-label small mb-0">Low bankroll when{{ tip("Bankroll value: cash + reserved stakes + open positions at the last close. Free cash: cash not in positions. You get a Telegram message and a badge when it falls below the % of the contributed capital. Can be changed later on the instance page.") }}</label>
+            <select class="form-select form-select-sm" id="low-basis"></select></div>
+          <div class="col-6 col-md-3"><label class="form-label small mb-0">is below (% of contributed)</label>
+            <input class="form-control form-control-sm" type="number" min="0" max="100" step="any" id="low-pct"></div>
+          <div class="col-12"><label class="form-label">Score inputs{{ tip("", "tip-inputs") }}</label><div class="row g-1" id="score-inputs"></div></div>
+          <div class="col-12"><label class="form-label">Rotation{{ tip("", "tip-rotation") }}</label>
+            <div class="form-check"><input class="form-check-input" type="checkbox" id="rotation">
+              <label class="form-check-label" for="rotation">A very strong signal without enough cash may sell weaker positions</label></div>
+            <div class="ms-4">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="rotate-profit">
+                <label class="form-check-label" for="rotate-profit">Only close positions that are in profit</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="rotate-trim">
+                <label class="form-check-label" for="rotate-trim">Allow reducing a position instead of closing it</label></div></div></div>
+        </div></div></div>
       <div class="col-md-6"><label class="form-label">Trailing exit (ATR ×){{ tip("Sell at the next open when the close falls this many ATRs below the highest close since entry. Empty = off. Paper only.") }}</label>
         <input class="form-control" type="number" min="0.5" max="20" step="any" id="trail" placeholder="off"></div>
       <div class="col-md-6"><label class="form-label">Symbols{{ tip("All default symbols: the list in config.SYMBOLS. Custom: your own list, e.g. BTC/USDT, ETH/USDT.") }}</label>
@@ -62,7 +86,8 @@ let META, ROWS = [];
 async function load() {
   const rows = ROWS = await KB.api("/api/instances");
   KB.table(document.getElementById("list"), rows, [
-    ["Name", i => `${KB.star(i)} ${KB.modeBadge(i.mode)} <a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a>`],
+    ["Name", i => `${KB.star(i)} ${KB.modeBadge(i.mode)} <a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a>`
+      + KB.lowBadge(i)],
     ["Status", i => KB.statusBadge(i.status, i.enabled)],
     ["Setup", i => `<span class="setup-tip" data-bs-toggle="tooltip" data-bs-title="${KB.esc(setupText(i))}">${KB.esc(i.strategy)}</span>`],
     ["TF", i => KB.esc(i.timeframe) + (i.lower_tf_entry || i.lower_tf_exit
@@ -83,7 +108,8 @@ function setupText(i) {
   return [KB.params(i.params), `stop ${i.stop}`, i.trail && `trail ${i.trail}×ATR`,
           i.sizing !== "equal" && `${i.sizing} sizing`, i.trend_sma && `trend SMA${i.trend_sma}`,
           i.lower_tf_entry && "lower-TF entry", i.lower_tf_exit && "lower-TF exit",
-          i.lower_tf_sma && `lower-TF SMA${i.lower_tf_sma}`, i.manual_close && "manual close"].filter(Boolean).join(" · ");
+          i.lower_tf_sma && `lower-TF SMA${i.lower_tf_sma}`, i.manual_close && "manual close",
+          KB.bankrollText(i)].filter(Boolean).join(" · ");
 }
 function actions(i) {
   const n = encodeURIComponent(i.name);
@@ -111,6 +137,23 @@ async function initForm() {
   document.getElementById("stop").innerHTML = Object.entries(META.stops)
     .map(([k, v]) => opt(k, v == null ? `${k} (exit on signals only)` : `${k} (ATR × ${v})`)).join("");
   document.getElementById("sizing").innerHTML = Object.entries(META.sizings).map(([k, v]) => opt(k, k)).join("");
+  const B = META.bankroll;
+  document.getElementById("stakes").innerHTML = B.grades.map((g, k) => {
+    const lo = k ? B.grade_from[k - 1] : 0, hi = B.grade_from[k];
+    return `<div class="col-6 col-md-3"><label class="form-label small mb-0">${KB.esc(g)}
+      <span class="text-secondary">${hi == null ? `≥ ${lo}` : `${lo}–${hi}`}</span></label>
+      <input class="form-control form-control-sm" type="number" min="0" max="100" step="any" data-stake="${k}"></div>`;
+  }).join("");
+  document.getElementById("score-inputs").innerHTML = Object.entries(B.inputs).map(([k, text]) =>
+    `<div class="col-6 col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" data-input="${k}" id="in-${k}">
+      <label class="form-check-label small" for="in-${k}">${KB.esc(k)}</label>${KB.tip(text)}</div></div>`).join("");
+  document.getElementById("low-basis").innerHTML = Object.entries(B.low_bases).map(([k, v]) => opt(k, v)).join("");
+  KB.setTip("tip-inputs", "Each selected input gives 0 to 1 point at the signal's close (closed candles only); " +
+    "the score is their average × 100. Hover an input for what it measures.");
+  KB.setTip("tip-rotation", `Only for a Very strong signal that can't get its full stake: the free cash is used first, ` +
+    `and only the rest is freed by selling positions whose current score is at least ${B.rotate.margin} points lower ` +
+    `and that were held at least ${B.rotate.min_hold} candles, weakest first (at most ${B.rotate.max} per candle). ` +
+    "They are sold at the next open, where the new entry also fills.");
   resetForm();
 }
 function resetForm() {
@@ -121,9 +164,32 @@ function resetForm() {
   document.getElementById("timeframe").value = "1d";
   document.getElementById("strategy").value = "v9";
   document.getElementById("symbols-box").classList.add("d-none");
-  renderParams(); modeChanged();
+  renderParams(); modeChanged(); resetBankroll();
   KB.initTips(form);
 }
+function resetBankroll(i = null) {
+  const B = META.bankroll;
+  document.querySelectorAll("[data-stake]").forEach(el => el.value = (i?.stakes || B.default_stakes)[el.dataset.stake]);
+  document.getElementById("min-entry").value = i?.min_entry ?? B.default_min_entry;
+  document.getElementById("max-entry").value = i?.max_entry ?? "";
+  const inputs = i?.score_inputs || B.default_inputs;
+  document.querySelectorAll("[data-input]").forEach(el => el.checked = inputs.includes(el.dataset.input));
+  document.getElementById("rotation").checked = !!i?.rotation;
+  document.getElementById("rotate-profit").checked = !!i?.rotate_profit_only;
+  document.getElementById("rotate-trim").checked = !!i?.rotate_trim;
+  document.getElementById("low-basis").value = i?.low_basis || "value";
+  document.getElementById("low-pct").value = i?.low_pct ?? B.default_low_pct;
+  rotationChanged(); lowerChanged();
+}
+function rotationChanged() {
+  const on = document.getElementById("rotation").checked;
+  for (const id of ["rotate-profit", "rotate-trim"]) {
+    const el = document.getElementById(id);
+    if (!on) el.checked = false;
+    el.disabled = !on;
+  }
+}
+document.getElementById("rotation").addEventListener("change", rotationChanged);
 // Open the form filled with an existing instance's setup, to create a variant of it.
 function cloneInstance(encodedName) {
   const i = ROWS.find(r => r.name === decodeURIComponent(encodedName));
@@ -138,6 +204,7 @@ function cloneInstance(encodedName) {
   if (!document.getElementById("trend-sma").disabled) set("trend-sma", i.trend_sma ?? "");
   if (!document.getElementById("stop").disabled) set("stop", i.stop);
   if (!document.getElementById("sizing").disabled) { set("sizing", i.sizing); sizingChanged(); }
+  if (i.sizing === "bankroll") { resetBankroll(i); set("equity", i.equity); }
   for (const [id, on] of [["ltf-entry", i.lower_tf_entry], ["ltf-exit", i.lower_tf_exit], ["manual-close", i.manual_close]]) {
     const el = document.getElementById(id);
     el.checked = !el.disabled && !!on;
@@ -151,8 +218,20 @@ function cloneInstance(encodedName) {
   bootstrap.Modal.getOrCreateInstance(document.getElementById("newModal")).show();
 }
 document.getElementById("newModal").addEventListener("hidden.bs.modal", resetForm);
+let lastSizing = "equal";
 function sizingChanged() {
-  KB.setTip("tip-sizing", META.sizings[document.getElementById("sizing").value] || "");
+  const sizing = document.getElementById("sizing").value, bank = sizing === "bankroll";
+  const testnet = document.getElementById("mode").value === "testnet";
+  KB.setTip("tip-sizing", META.sizings[sizing] || "");
+  document.getElementById("bankroll-box").classList.toggle("d-none", !bank);
+  if (!testnet) {
+    document.getElementById("equity-label").textContent = bank ? "Starting bankroll (USDT, total)" : "Equity per symbol (USDT)";
+    KB.setTip("tip-equity", bank ? "The instance's whole cash at the start, shared by its symbols. Money can be added or withdrawn later on the instance page (books only)."
+      : "USDT given to each symbol; the instance's return is over all symbols together.");
+    if (bank !== (lastSizing === "bankroll"))
+      document.getElementById("equity").value = bank ? META.bankroll.default_bankroll : META.default_equity;
+  }
+  lastSizing = sizing;
 }
 document.getElementById("sizing").addEventListener("change", sizingChanged);
 function renderParams() {
@@ -187,6 +266,7 @@ function modeChanged() {
   document.getElementById("sizing").disabled = testnet;
   if (testnet) document.getElementById("trail").value = "";
   document.getElementById("trail").disabled = testnet;
+  lastSizing = "equal";
   sizingChanged(); lowerChanged();
 }
 function lowerChanged() {
@@ -200,6 +280,8 @@ function lowerChanged() {
   const sma = document.getElementById("ltf-sma");
   if (!ok) sma.value = "";
   sma.disabled = !ok;
+  const ltfInput = document.getElementById("in-lower_tf");      // the score input needs 4h or 1d too
+  if (ltfInput) { if (!lower) ltfInput.checked = false; ltfInput.disabled = !lower; }
   KB.setTip("tip-ltf", ok
     ? `Uses ${lower.join(" + ")} with the same strategy. E: a BUY at the ${tf} close enters only if both say BUY too. ` +
       `X: sells inside the candle as soon as both say SELL (docs/intrabar-watch.md).`
@@ -211,6 +293,19 @@ document.getElementById("timeframe").addEventListener("change", lowerChanged);
 document.getElementById("symbol-mode").addEventListener("change", e =>
   document.getElementById("symbols-box").classList.toggle("d-none", e.target.value !== "custom"));
 
+function bankrollBody() {
+  if (document.getElementById("sizing").value !== "bankroll") return {};
+  return {
+    stakes: [...document.querySelectorAll("[data-stake]")].map(el => el.value),
+    min_entry: document.getElementById("min-entry").value || null,
+    max_entry: document.getElementById("max-entry").value || null,
+    score_inputs: [...document.querySelectorAll("[data-input]:checked")].map(el => el.dataset.input),
+    rotation: document.getElementById("rotation").checked,
+    rotate_profit_only: document.getElementById("rotate-profit").checked,
+    rotate_trim: document.getElementById("rotate-trim").checked,
+    low_basis: document.getElementById("low-basis").value, low_pct: document.getElementById("low-pct").value,
+  };
+}
 document.getElementById("form").addEventListener("submit", async e => {
   e.preventDefault();
   const f = new FormData(e.target), err = document.getElementById("form-error");
@@ -222,7 +317,7 @@ document.getElementById("form").addEventListener("submit", async e => {
     lower_tf_entry: document.getElementById("ltf-entry").checked, lower_tf_exit: document.getElementById("ltf-exit").checked,
     manual_close: document.getElementById("manual-close").checked,
     lower_tf_sma: document.getElementById("ltf-sma").value || null, trend_sma: document.getElementById("trend-sma").value || null,
-    equity: f.get("equity"), description: f.get("description"), params,
+    equity: f.get("equity"), description: f.get("description"), params, ...bankrollBody(),
     symbols: document.getElementById("symbol-mode").value === "custom"
       ? f.get("symbols").split(/[\s,]+/).filter(Boolean) : null };
   try {

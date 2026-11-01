@@ -32,6 +32,8 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   waits for the next close and never trades a missed candle.
 - **Exchange-side stop / OCO orders** before going live (testnet refuses instances with
   a stop today).
+- **Bankroll on testnet**: the steps are listed in `docs/bankroll-management.md`
+  ("To-do for testnet"). Paper only until the paper bankroll instances have been reviewed.
 
 ## Telegram and panel (ideas, not started)
 
@@ -40,6 +42,14 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   every 30 s. Checking every few seconds would make it near instant.
 - **`/kill` command in Telegram** (off / block entries / flatten, with a confirmation like
   Close). Flatten closes testnet positions, so ask for approval before writing it.
+
+## Bankroll (paper, 2026-11-01)
+
+- Look at the panel pages of a bankroll instance in a browser (New instance modal,
+  bankroll card, Bankroll tab, Deposit / Withdraw) and on the phone width.
+- Bankroll instances are untested variants: compare them descriptively, with the trade
+  metrics, before trusting any stake grades or rotation (a pre-registered test needs a
+  portfolio backtest built on `core/bankroll.py`).
 
 ## Maintenance
 

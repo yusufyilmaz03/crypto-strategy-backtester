@@ -252,6 +252,24 @@ def format_events(inst, events):
     return "\n".join(rows + more)
 
 
+def _money0(x):
+    return "–" if _missing(x) else f"{x:,.0f}" if abs(x) >= 1000 else f"{x:.2f}"
+
+
+def format_bankroll(inst, view):
+    """Low-bankroll state changed (view: reporting.bankroll_view)."""
+    what = "free cash" if view["low_basis"] == "free" else "bankroll value"
+    if view["low"]:
+        head = _head("⚠️", inst, ": low bankroll")
+        line = f"The {what} is {view['level_pct']:.1f}% of the contributed capital, below {view['low_pct']:g}%."
+    else:
+        head = _head("✅", inst, ": bankroll recovered")
+        line = f"The {what} is back at {view['level_pct']:.1f}% of the contributed capital (threshold {view['low_pct']:g}%)."
+    rows = [["Value", _money0(view["value"])], ["Free", _money0(view["free"])], ["Invested", _money0(view["invested"])],
+            ["Contributed", _money0(view["contributed"])], ["PnL", _signed(view["pnl"])]]
+    return "\n".join([head, esc(line), table(["Bankroll", "USDT"], rows, "lr")])
+
+
 def format_summary(items, kill_state, day):
     rows = [[("*" if inst.favorite else " ") + short(inst.name, 10), _signed(s["return_pct"], 1),
              _signed(s["buy_hold_pct"], 1), "–" if _missing(s["max_dd_pct"]) else f"{s['max_dd_pct']:.1f}",
@@ -401,6 +419,20 @@ class Watcher:
         cur["stop_id"] = stops[-1]["id"] if stops else cur.get("stop_id", 0)
         if not first and stops and option("NOTIFY_TRADES"):
             self.sender.send(format_stops(inst, stops))
+        if inst.sizing == "bankroll":
+            self._bankroll(inst, cur)
+
+    def _bankroll(self, inst, cur):
+        """A message when the bankroll becomes low, and when it recovers (with the
+        hysteresis of core/bankroll.low_state, so a value near the threshold doesn't
+        flip it every candle). Also when it is low the first time it is seen."""
+        was = cur.get("bankroll_low")
+        view = reporting.bankroll_view(inst, self.paper_db, was_low=bool(was))
+        if not view or not view.get("started"):
+            return
+        cur["bankroll_low"] = view["low"]
+        if view["low"] != bool(was) and (view["low"] or was):
+            self.sender.send(format_bankroll(inst, view))
 
     def _testnet(self, inst):
         cur = self._cursors(inst)

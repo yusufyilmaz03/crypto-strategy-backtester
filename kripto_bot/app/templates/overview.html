@@ -74,7 +74,7 @@ async function load() {
                    i.sizing !== "equal" && `${i.sizing} sizing`, i.trend_sma && `trend SMA${i.trend_sma}`,
                    i.lower_tf_entry && "lower-TF entry", i.lower_tf_exit && "lower-TF exit",
                    i.lower_tf_sma && `lower-TF SMA${i.lower_tf_sma}`, i.manual_close && "manual close",
-                   `${i.symbols.length} symbols`]
+                   KB.bankrollText(i), `${i.symbols.length} symbols`]
       .filter(Boolean).join(" · ");
     const about = KB.esc(setup) + (i.description ? `<br>${KB.esc(i.description)}` : "");
     return `<div class="col-md-6 col-xl-4"><a class="text-decoration-none" href="/instances/${encodeURIComponent(i.name)}">
@@ -82,7 +82,7 @@ async function load() {
         <div class="d-flex justify-content-between align-items-start gap-2 mb-3"><h6 class="mb-0 text-body text-break">${KB.star(i)} ${KB.esc(i.name)}
           <i class="bi bi-exclamation-circle text-secondary small ms-1" data-bs-toggle="tooltip" data-bs-html="true"
              data-bs-title="${KB.esc(about)}"></i></h6>
-          <span class="text-nowrap">${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}</span></div>
+          <span class="text-nowrap">${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}${KB.lowBadge(i)}</span></div>
         <div class="card-metrics">
           <div class="metric"><div class="label">Max DD</div><div class="value">${s.max_dd_pct == null ? "–" : KB.num(s.max_dd_pct, 1) + "%"}</div></div>
           <div class="metric"><div class="label">${KB.term("Buy &amp; hold", KB.BH_TIP)}</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>
@@ -90,7 +90,8 @@ async function load() {
             title="from closed trades, USDT">${KB.money(s.realized_pnl)}</div></div>
           <div class="metric"><div class="label">Return</div><div class="value ${KB.sign(s.return_pct)}">${KB.pct(s.return_pct)}</div></div>
         </div>
-        <div class="small text-secondary mt-auto pt-3">${s.days} days · ${s.closed_trades} closed trades · ${s.open_positions} open</div>
+        <div class="small text-secondary mt-auto pt-3">${s.days} days · ${s.closed_trades} closed trades · ${s.open_positions} open${
+          s.bankroll && s.bankroll.started ? `<br>Bankroll ${KB.money(s.bankroll.value)} · free ${KB.money(s.bankroll.free)} USDT` : ""}</div>
       </div></div></a></div>`;
   }).join("") || `<p class="text-secondary">${d.instances.length ? "No running instances. Turn on Show stopped to see the others." : "No instances yet."}</p>`;
   KB.initTips(cards);

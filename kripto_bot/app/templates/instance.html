@@ -16,6 +16,7 @@
   <button class="btn btn-outline-secondary" onclick="saveDescription()">Save</button>
 </div>
 
+<div class="d-none mb-4" id="bankroll-card"></div>
 <div class="row g-3 mb-4" id="metrics"></div>
 
 <div class="card mb-4"><div class="card-body">
@@ -28,6 +29,7 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-trades" id="trades-tab">Trades</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-signals" id="signals-tab">Signals</button></li>
   <li class="nav-item d-none" id="stops-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-stops">Stop events</button></li>
+  <li class="nav-item d-none" id="bankroll-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-bankroll" id="bankroll-tab">Bankroll</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-log">Log</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-setup">Setup</button></li>
 </ul>
@@ -39,9 +41,32 @@
     <div class="small text-secondary mb-1">Shadow stop: the first 1m candle that reached a trade's stop. Recorded only; the engine
       closes the trade at the main close at min(open, stop), as in the backtest. Times UTC.</div>
     <table class="table table-sm" id="stops"></table></div>
+  <div class="tab-pane fade" id="t-bankroll">
+    <form class="row g-2 align-items-end mb-3" id="low-form" style="max-width: 640px">
+      <div class="col-sm-5"><label class="form-label small mb-0">Low bankroll when</label><select class="form-select form-select-sm" id="low-basis">
+        <option value="value">Bankroll value (cash + positions)</option><option value="free">Free cash</option></select></div>
+      <div class="col-sm-4"><label class="form-label small mb-0">is below (% of contributed)</label>
+        <input class="form-control form-control-sm" type="number" min="0" max="100" step="any" id="low-pct"></div>
+      <div class="col-sm-3"><button class="btn btn-sm btn-outline-secondary w-100" type="submit">Save threshold</button></div>
+    </form>
+    <div class="small text-secondary mb-2" id="requests"></div>
+    <div class="card mb-3"><div class="card-body"><h6 class="card-title">Bankroll (USDT)</h6><canvas id="bankroll-chart" height="80"></canvas></div></div>
+    <div class="table-responsive" style="max-height: 520px"><table class="table table-sm" id="ledger"></table></div>
+  </div>
   <div class="tab-pane fade" id="t-log"><div class="small text-secondary mb-1">Newest first.</div><div class="log bg-body-tertiary p-2 rounded" id="log">…</div></div>
   <div class="tab-pane fade" id="t-setup"><pre class="small mb-0" id="setup"></pre></div>
 </div>
+<div class="modal fade" id="fundsModal" tabindex="-1"><div class="modal-dialog"><form class="modal-content" id="funds-form">
+  <div class="modal-header"><h5 class="modal-title" id="funds-title">Deposit</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <p class="small text-secondary" id="funds-help"></p>
+    <label class="form-label">Amount (USDT)</label><input class="form-control mb-2" type="number" min="0.01" step="any" id="funds-amount" required>
+    <label class="form-label">Note</label><input class="form-control" maxlength="200" id="funds-note">
+    <div class="alert alert-danger mt-3 d-none" id="funds-error"></div>
+  </div>
+  <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+    <button class="btn btn-primary" type="submit" id="funds-submit">Deposit</button></div>
+</form></div></div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -55,11 +80,13 @@ function metric(label, value, sub, cls = "") {
 async function loadInstance() {
   INST = await KB.api(`/api/instances/${N}`);
   const s = INST.summary, paper = INST.mode === "paper";
-  document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}`;
+  const bank = INST.sizing === "bankroll";
+  document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}${KB.lowBadge(INST)}`;
   document.getElementById("star").innerHTML = KB.star(INST);
   document.getElementById("setup-line").textContent =
-    `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.trail ? `trail ${INST.trail}×ATR · ` : ""}${INST.trend_sma ? `trend SMA${INST.trend_sma} · ` : ""}${INST.lower_tf_entry ? "lower-TF entry · " : ""}${INST.lower_tf_exit ? "lower-TF exit · " : ""}${INST.lower_tf_sma ? `lower-TF SMA${INST.lower_tf_sma} · ` : ""}${INST.manual_close ? "manual close · " : ""}${INST.sizing === "equal" ? "" : `${INST.sizing} sizing · `}${INST.symbols.length} symbols · ` +
-    (paper ? `${INST.equity} USDT per symbol` : `${INST.equity} USDT capital`);
+    `${INST.strategy} · ${KB.params(INST.params)} · ${INST.timeframe} · stop ${INST.stop} · ${INST.trail ? `trail ${INST.trail}×ATR · ` : ""}${INST.trend_sma ? `trend SMA${INST.trend_sma} · ` : ""}${INST.lower_tf_entry ? "lower-TF entry · " : ""}${INST.lower_tf_exit ? "lower-TF exit · " : ""}${INST.lower_tf_sma ? `lower-TF SMA${INST.lower_tf_sma} · ` : ""}${INST.manual_close ? "manual close · " : ""}${INST.sizing === "equal" || bank ? "" : `${INST.sizing} sizing · `}${INST.symbols.length} symbols · ` +
+    (bank ? KB.bankrollText(INST) : paper ? `${INST.equity} USDT per symbol` : `${INST.equity} USDT capital`);
+  renderBankroll(s.bankroll);
   if (document.activeElement.id !== "description") document.getElementById("description").value = INST.description || "";
   document.getElementById("actions").innerHTML = INST.enabled
     ? `<button class="btn btn-outline-secondary" onclick="act('restart')"><i class="bi bi-arrow-repeat"></i> Restart</button>
@@ -67,7 +94,8 @@ async function loadInstance() {
     : `<button class="btn btn-success" onclick="act('start')"><i class="bi bi-play-fill"></i> Start</button>
        <button class="btn btn-outline-danger" onclick="del()"><i class="bi bi-trash"></i> Delete</button>`;
   document.getElementById("metrics").innerHTML =
-    metric("Return", KB.pct(s.return_pct), `buy &amp; hold ${KB.pct(s.buy_hold_pct)}`, KB.sign(s.return_pct)) +
+    metric(bank ? KB.term("Return", "Time-weighted: deposits and withdrawals are not return.") : "Return",
+           KB.pct(s.return_pct), `buy &amp; hold ${KB.pct(s.buy_hold_pct)}`, KB.sign(s.return_pct)) +
     metric("Sharpe", KB.num(s.sharpe), `buy &amp; hold ${KB.num(s.buy_hold_sharpe)}`) +
     metric("Max drawdown", KB.num(s.max_dd_pct, 1) + "%", `buy &amp; hold ${KB.num(s.buy_hold_max_dd_pct, 1)}%`) +
     metric("Closed trades", s.closed_trades, `win rate ${KB.num(s.win_rate_pct, 1)}%`) +
@@ -76,6 +104,100 @@ async function loadInstance() {
   document.getElementById("trades-tab").textContent = paper ? "Trades" : "Orders";
   document.getElementById("signals-tab").textContent = paper ? "Signals" : "Events";
   document.getElementById("setup").textContent = JSON.stringify(INST, null, 2);
+}
+function renderBankroll(b) {
+  const card = document.getElementById("bankroll-card"), bank = INST.sizing === "bankroll";
+  card.classList.toggle("d-none", !bank);
+  document.getElementById("bankroll-item").classList.toggle("d-none", !bank);
+  if (!bank) return;
+  if (document.activeElement.id !== "low-pct") {
+    document.getElementById("low-basis").value = INST.low_basis;
+    document.getElementById("low-pct").value = INST.low_pct;
+  }
+  const box = (label, value, cls = "", tip = "") => `<div class="col-6 col-md-4 col-xl-2"><div class="metric">
+    <div class="label">${tip ? KB.term(label, tip) : label}</div><div class="value ${cls}">${value}</div></div></div>`;
+  const what = b && b.low_basis === "free" ? "Free cash" : "Bankroll value";
+  const alert = !b || !b.started ? "" : b.low
+    ? `<div class="alert alert-warning py-2 mb-2"><i class="bi bi-exclamation-triangle"></i> <b>Low bankroll:</b> ${what} is
+       ${KB.num(b.level_pct, 1)}% of the contributed capital, below the ${b.low_pct}% threshold.</div>`
+    : b.cant_trade ? `<div class="alert alert-secondary py-2 mb-2">Fully invested: free cash is below the minimum entry, so new signals wait for cash.</div>` : "";
+  const pending = b && b.pending_requests ? ` <span class="badge text-bg-info">${b.pending_requests} request(s) waiting</span>` : "";
+  card.innerHTML = `${alert}<div class="card"><div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+      <h6 class="card-title mb-0">Bankroll${pending}</h6>
+      <div class="btn-group btn-group-sm"><button class="btn btn-outline-success" onclick="openFunds('deposit')"><i class="bi bi-plus-lg"></i> Deposit</button>
+        <button class="btn btn-outline-secondary" onclick="openFunds('withdraw')"><i class="bi bi-dash-lg"></i> Withdraw</button></div></div>
+    ${b && b.started ? `<div class="row g-3">
+      ${box("Value", KB.money(b.value), "", "Free cash + reserved stakes + open positions at the last close (before the exit fee).")}
+      ${box("Free cash", KB.money(b.free))}
+      ${box("Reserved", KB.money(b.reserved), "", "Stakes set aside for entries at the next open.")}
+      ${box("Invested", KB.money(b.invested))}
+      ${box("Contributed", KB.money(b.contributed), "", "Starting bankroll + deposits − withdrawals. Stakes are a % of this.")}
+      ${box("PnL", KB.money(b.pnl), KB.sign(b.pnl), "Value − contributed, USDT.")}</div>
+      <div class="small text-secondary mt-2">As of ${KB.time(b.time)} UTC.</div>`
+    : `<div class="small text-secondary">Starts with ${KB.money(b ? b.start : INST.equity)} USDT when the instance first runs.</div>`}
+  </div></div>`;
+  KB.initTips(card);
+}
+function openFunds(kind) {
+  const dep = kind === "deposit";
+  FUNDS = kind;
+  document.getElementById("funds-title").textContent = dep ? "Deposit" : "Withdraw";
+  document.getElementById("funds-submit").textContent = dep ? "Deposit" : "Withdraw";
+  document.getElementById("funds-help").textContent = (dep ? "Adds cash to the bankroll" : "Takes free cash out of the bankroll") +
+    ": books only, nothing moves on an exchange. The instance applies it " + (INST.enabled ? "within a minute" : "when it starts") +
+    " and logs it in the Bankroll tab. Stakes follow the contributed capital; the return stays time-weighted." +
+    (dep ? "" : " Money in positions can't be withdrawn.");
+  document.getElementById("funds-amount").value = "";
+  document.getElementById("funds-note").value = "";
+  document.getElementById("funds-error").classList.add("d-none");
+  bootstrap.Modal.getOrCreateInstance(document.getElementById("fundsModal")).show();
+}
+let FUNDS = "deposit";
+document.getElementById("funds-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const err = document.getElementById("funds-error");
+  try {
+    const r = await KB.api(`/api/instances/${N}/bankroll`, { method: "POST", body: { kind: FUNDS,
+      amount: document.getElementById("funds-amount").value, note: document.getElementById("funds-note").value } });
+    bootstrap.Modal.getInstance(document.getElementById("fundsModal")).hide();
+    KB.toast(`${FUNDS} of ${KB.money(r.amount)} USDT requested; applied ${r.applied}`); refresh();
+  } catch (ex) { err.textContent = ex.message; err.classList.remove("d-none"); }
+});
+document.getElementById("low-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  try { await KB.api(`/api/instances/${N}/action`, { method: "POST", body: { action: "low",
+          low_basis: document.getElementById("low-basis").value, low_pct: document.getElementById("low-pct").value } });
+        KB.toast("Threshold saved"); refresh(); }
+  catch (ex) { KB.toast(ex.message, "danger"); }
+});
+let bankChart;
+function renderBankrollChart(snaps) {
+  const color = KB.cssVar("--bs-body-color");
+  const data = { labels: snaps.map(r => KB.time(r.time)), datasets: [
+    { label: "Value", data: snaps.map(r => r.value), borderColor: "#20c997", pointRadius: 0, borderWidth: 2 },
+    { label: "Invested", data: snaps.map(r => r.invested), borderColor: "#0d6efd", pointRadius: 0, borderWidth: 1.5 },
+    { label: "Free cash", data: snaps.map(r => r.free), borderColor: "#adb5bd", pointRadius: 0, borderWidth: 1.5 },
+    { label: "Contributed", data: snaps.map(r => r.contributed), borderColor: "#fd7e14", borderDash: [5, 5], pointRadius: 0, borderWidth: 1.5, stepped: true }] };
+  if (bankChart) { bankChart.data = data; bankChart.update(); return; }
+  bankChart = new Chart(document.getElementById("bankroll-chart"), { type: "line", data, options: {
+    animation: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { labels: { color } } },
+    scales: { x: { ticks: { color, maxTicksLimit: 10 } }, y: { ticks: { color } } } } });
+}
+function renderLedger(ledger, requests) {
+  const kinds = { INITIAL: "success", DEPOSIT: "success", WITHDRAW: "warning", RESERVE: "primary", SELL: "secondary",
+                  RELEASE: "secondary", ROTATE: "danger", TRIM: "danger", SKIP: "light" };
+  document.getElementById("requests").innerHTML = requests.length
+    ? "Waiting to be applied: " + requests.map(r => `${KB.esc(r.kind)} ${KB.money(r.amount)} USDT${r.note ? ` (${KB.esc(r.note)})` : ""}`).join(", ")
+    : "";
+  KB.table(document.getElementById("ledger"), ledger, [
+    ["Time", r => KB.time(r.time), r => r.time], ["Kind", r => `<span class="badge text-bg-${kinds[r.kind] || "secondary"}">${KB.esc(r.kind)}</span>`, r => r.kind],
+    ["Symbol", r => KB.esc(r.symbol ?? ""), r => r.symbol], ["Amount", r => `<span class="${r.amount ? KB.sign(r.amount) : ""}">${KB.num(r.amount)}</span>`, r => r.amount],
+    ["Score", r => KB.score(r.score, r.grade), r => r.score],
+    ["Free after", r => KB.num(r.free_after), r => r.free_after], ["Value after", r => KB.num(r.value_after), r => r.value_after],
+    ["Contributed", r => KB.num(r.contributed_after), r => r.contributed_after],
+    ["Source", r => KB.esc(r.source ?? ""), r => r.source], ["Note", r => KB.esc(r.note ?? ""), r => r.note]],
+    "No bankroll changes yet.", null);
 }
 async function loadChart() {
   const d = await KB.api(`/api/instances/${N}/curves`);
@@ -91,8 +213,12 @@ async function loadChart() {
 }
 async function loadTables() {
   const paper = INST.mode === "paper";
-  const [pos, trades, signals, log, stops] = await Promise.all(["positions", "trades", "signals", "log", ...(paper ? ["stops"] : [])]
-    .map(t => KB.api(`/api/instances/${N}/${t}`)));
+  const bank = INST.sizing === "bankroll";
+  const [pos, trades, signals, log, stops, ledger, requests, snaps] = await Promise.all(
+    ["positions", "trades", "signals", "log", ...(paper ? ["stops"] : [null]), ...(bank ? ["ledger", "requests", "snapshots"] : [])]
+    .map(t => t ? KB.api(`/api/instances/${N}/${t}`) : null));
+  if (bank) { renderLedger(ledger, requests); renderBankrollChart(snaps); }
+  const scoreCol = (label, key, grade) => bank ? [[label, r => KB.score(r[key], r[grade]), r => r[key]]] : [];
   // Columns: [header, cell html, sort value]. Newest first by default; click a header to re-sort.
   // Prices come separately (loadPrices): open rows show the last known price until then.
   pos.forEach(r => r.price = PRICES[r.symbol] ?? null);
@@ -108,6 +234,9 @@ async function loadTables() {
     ["Entry time", r => KB.time(r.entry_time), r => r.entry_time],
     ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price], ...priceCols,
     ["Qty", r => KB.num(r.qty, 6), r => r.qty], ["Stop", r => KB.num(r.stop, 6), r => r.stop],
+    ...(bank ? [["Cost", r => KB.money(r.qty * r.entry_price), r => r.qty * r.entry_price]] : []),
+    ...scoreCol(KB.term("Score", "Strength score of the signal that opened it"), "score", "grade"),
+    ...scoreCol(KB.term("Now", "Score at the last close (rotation compares this)"), "score_now", null),
     ...(INST.manual_close ? [["", closeButton]] : [])] : [
     ["Symbol", r => KB.esc(r.symbol), r => r.symbol], ["Qty", r => KB.num(r.qty, 8), r => r.qty],
     ["Cost", r => KB.num(r.cost), r => r.cost], ["Entry price", r => KB.num(r.entry_price, 6), r => r.entry_price],
@@ -123,6 +252,7 @@ async function loadTables() {
                                 : `<span title="open: change since entry">${pxCell("change", r)}</span>`,
      r => r.exit_time ? r.return_pct : change(r)],
     ["PnL", r => KB.num(r.pnl), r => r.pnl], ["Reason", r => KB.esc(r.reason ?? "open"), r => r.reason ?? "open"],
+    ...scoreCol("Score", "score", "grade"),
     ...(INST.manual_close ? [["", r => r.exit_time ? "" :
         closeButton({ ...r, close_requested: pos.some(p => p.symbol === r.symbol && p.close_requested) })]] : [])] : [
     ["Time", r => KB.time(r.created_at), r => r.created_at], ["Symbol", r => KB.esc(r.symbol), r => r.symbol],
@@ -135,6 +265,7 @@ async function loadTables() {
     ["Candle", r => KB.time(r.candle_time), r => r.candle_time], ["Symbol", r => KB.esc(r.symbol), r => r.symbol],
     ["Signal", r => KB.esc(r.signal), r => r.signal], ["RSI", r => KB.num(r.rsi), r => r.rsi],
     ["Close", r => KB.num(r.close, 6), r => r.close], ["Position", r => KB.esc(r.position), r => r.position],
+    ...scoreCol("Score", "score", "grade"),
     ["Action", r => KB.esc(r.action), r => r.action]] : [
     ["Time", r => KB.time(r.time), r => r.time], ["Level", r => KB.esc(r.level), r => r.level],
     ["Symbol", r => KB.esc(r.symbol ?? ""), r => r.symbol], ["Message", r => KB.esc(r.message), r => r.message]],
@@ -220,7 +351,7 @@ async function del() {
   try { await KB.api(`/api/instances/${N}`, { method: "DELETE" }); location.href = "/instances"; }
   catch (e) { KB.toast(e.message, "danger"); }
 }
-window.addEventListener("kb-theme", () => { chart?.destroy(); chart = null; loadChart(); });
+window.addEventListener("kb-theme", () => { chart?.destroy(); chart = null; bankChart?.destroy(); bankChart = null; refresh(); });
 window.addEventListener("kb-favorite", loadInstance);
 document.getElementById("bh-tip").innerHTML = KB.tip(KB.BH_TIP);
 KB.initTips(document.getElementById("bh-tip"));

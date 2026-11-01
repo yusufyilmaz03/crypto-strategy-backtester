@@ -98,7 +98,7 @@ python -m kripto_bot run   # dashboard + every enabled bot instance; open http:/
 The panel has:
 
 - **Overview**: supervisor and kill switch status, every instance with return, buy-and-hold and drawdown.
-- **Instances**: create named strategy setups (paper or testnet; paper ones can use inverse-volatility sizing, rebalanced monthly), start/stop/restart them, and see each one's equity vs buy-and-hold, positions, trades, signals and live log. Several paper instances can run in parallel; one testnet instance at a time (they share one exchange account). An instance's setup is fixed after creation.
+- **Instances**: create named strategy setups (paper or testnet; paper ones can use inverse-volatility sizing, rebalanced monthly, or a bankroll: one cash balance per instance where each BUY gets a strength score and its grade's share of the bankroll, with optional rotation, deposits, withdrawals, a ledger and a low-bankroll warning, see [docs/bankroll-management.md](docs/bankroll-management.md)), start/stop/restart them, and see each one's equity vs buy-and-hold, positions, trades, signals and live log. Several paper instances can run in parallel; one testnet instance at a time (they share one exchange account). An instance's setup is fixed after creation.
 - **Playground**: backtest any symbol, timeframe, strategy, parameters and stop on a candlestick chart with trade markers and indicator overlays. Runs are logged; unused holdout data is left out unless requested.
 - **Settings**: costs, risk limits, symbol list and research settings with validation (stored in `settings.json`). API keys and the live trading switch can't be changed from the panel.
 - **Backtests**: results of the grid backtest.

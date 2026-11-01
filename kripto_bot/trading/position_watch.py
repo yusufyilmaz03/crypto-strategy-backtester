@@ -241,9 +241,10 @@ class Watches:
             w.check()
 
 
-def for_instance(inst, runners, store):
-    """The intraday watches an instance needs, or None."""
-    watches = []
+def for_instance(inst, runners, store, extra=None):
+    """The intraday watches an instance needs, or None. extra: more watches (the
+    bankroll's deposits and withdrawals)."""
+    watches = list(extra or [])
     if inst.manual_close:
         watches.append(ManualClose(runners, store, inst.run_key, inst.timeframe))
     if eligible(inst):

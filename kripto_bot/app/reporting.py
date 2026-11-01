@@ -9,7 +9,7 @@ import time
 import pandas as pd
 
 from kripto_bot import config, paths
-from kripto_bot.core import data
+from kripto_bot.core import bankroll, data
 from kripto_bot.core.metrics import max_drawdown_pct
 from kripto_bot.trading import store
 
@@ -43,9 +43,39 @@ def equity_frame(inst, paper_db=None):
     return df
 
 
+def _bh(df):
+    closes = df.pivot_table(index="time", columns="symbol", values="close").sort_index()
+    if closes.empty or closes.isna().all().all():
+        return pd.Series(dtype=float)
+    # forward-fill explicitly: pandas < 3 padded by default (with a FutureWarning), pandas 3 doesn't
+    return ((1 + closes.ffill().pct_change(fill_method=None).mean(axis=1, skipna=True).fillna(0)).cumprod() - 1) * 100
+
+
+def snapshots(inst, paper_db=None):
+    """Bankroll instances: free, reserved, invested, value, contributed and the
+    time-weighted return index after every candle."""
+    if inst.sizing != "bankroll":
+        return pd.DataFrame()
+    df = _query(paper_db or store.DB_FILE, "SELECT * FROM bankroll_snapshots WHERE strategy=? AND timeframe=? ORDER BY time",
+                (inst.run_key, inst.timeframe))
+    if not df.empty:
+        df["time"] = pd.to_datetime(df["time"], utc=True).dt.tz_localize(None)
+    return df
+
+
 def curves(inst, paper_db=None):
-    """(strategy return %, equal-weight buy-and-hold return %) indexed by candle time."""
+    """(strategy return %, equal-weight buy-and-hold return %) indexed by candle time.
+    A bankroll instance's return is time-weighted: deposits and withdrawals aren't return."""
     df = equity_frame(inst, paper_db)
+    if inst.sizing == "bankroll":
+        snaps = snapshots(inst, paper_db)
+        if snaps.empty:
+            return pd.Series(dtype=float), pd.Series(dtype=float)
+        strat = pd.Series((snaps["twr"].values - 1) * 100, index=pd.Index(snaps["time"], name="time"))
+        bh = _bh(df) if not df.empty else pd.Series(dtype=float)
+        if len(bh):     # from the bankroll's start, which is the candle before the first recorded one
+            bh = pd.concat([pd.Series([0.0], index=[strat.index[0]]), bh]).groupby(level=0).last()
+        return strat, bh.reindex(strat.index)
     if df.empty:
         return pd.Series(dtype=float), pd.Series(dtype=float)
     wide = df.pivot_table(index="time", columns="symbol", values="equity").sort_index().ffill()
@@ -55,12 +85,9 @@ def curves(inst, paper_db=None):
     idle = max(n - wide.shape[1], 0)
     total = wide.fillna(per_symbol).sum(axis=1) + idle * per_symbol
     strat = (total / start_total - 1) * 100
-    closes = df.pivot_table(index="time", columns="symbol", values="close").sort_index()
-    if closes.empty or closes.isna().all().all():
+    bh = _bh(df)
+    if bh.empty:
         bh = pd.Series(index=strat.index, dtype=float)
-    else:
-        # forward-fill explicitly: pandas < 3 padded by default (with a FutureWarning), pandas 3 doesn't
-        bh = ((1 + closes.ffill().pct_change(fill_method=None).mean(axis=1, skipna=True).fillna(0)).cumprod() - 1) * 100
     return strat, bh.reindex(strat.index)
 
 
@@ -80,12 +107,19 @@ def trades(inst, paper_db=None):
     return _query(inst.db_path, "SELECT * FROM orders ORDER BY created_at")
 
 
+POSITION_COLUMNS = ["symbol", "side", "entry_time", "entry_price", "stop", "qty", "score", "grade"]
+
+
 def positions(inst, paper_db=None):
     if inst.mode == "paper":
         db = paper_db or store.DB_FILE
-        pos = _query(db, "SELECT symbol, side, entry_time, entry_price, stop, qty FROM trades "
-                         "WHERE strategy=? AND timeframe=? AND exit_time IS NULL ORDER BY symbol",
+        # SELECT *: databases from before the score columns existed must still show positions
+        pos = _query(db, "SELECT * FROM trades WHERE strategy=? AND timeframe=? AND exit_time IS NULL ORDER BY symbol",
                      (inst.run_key, inst.timeframe))
+        pos = pos[[c for c in POSITION_COLUMNS if c in pos.columns]] if not pos.empty else pos
+        if not pos.empty and inst.sizing == "bankroll":
+            now = (bankroll_state(inst, paper_db) or {}).get("scores", {})
+            pos["score_now"] = pos["symbol"].map(now)
         # separate query: databases from before close_requests existed must still show positions
         asked = _query(db, "SELECT symbol FROM close_requests WHERE strategy=? AND timeframe=? AND done_at IS NULL",
                        (inst.run_key, inst.timeframe))
@@ -108,12 +142,66 @@ def stop_events(inst, paper_db=None):
                   (inst.run_key, inst.timeframe))
 
 
+SIGNAL_COLUMNS = ["candle_time", "symbol", "signal", "rsi", "close", "position", "action", "score", "grade"]
+
+
 def signals(inst, limit=500, paper_db=None):
     if inst.mode == "paper":
-        return _query(paper_db or store.DB_FILE, "SELECT candle_time, symbol, signal, rsi, close, position, action FROM signals "
-                                "WHERE strategy=? AND timeframe=? ORDER BY id DESC LIMIT ?",
-                      (inst.run_key, inst.timeframe, limit))
+        df = _query(paper_db or store.DB_FILE, "SELECT * FROM signals WHERE strategy=? AND timeframe=? ORDER BY id DESC LIMIT ?",
+                    (inst.run_key, inst.timeframe, limit))
+        return df[[c for c in SIGNAL_COLUMNS if c in df.columns]] if not df.empty else df
     return _query(inst.db_path, "SELECT time, level, symbol, message FROM events ORDER BY id DESC LIMIT ?", (limit,))
+
+
+def bankroll_state(inst, paper_db=None):
+    """The bankroll's saved state (free cash, contributed capital, scores...), or None."""
+    if inst.sizing != "bankroll":
+        return None
+    df = _query(paper_db or store.DB_FILE, "SELECT state FROM bankroll_state WHERE strategy=? AND timeframe=?",
+                (inst.run_key, inst.timeframe))
+    return json.loads(df["state"].iloc[0]) if not df.empty else None
+
+
+def ledger(inst, limit=1000, paper_db=None):
+    if inst.sizing != "bankroll":
+        return pd.DataFrame()
+    return _query(paper_db or store.DB_FILE, "SELECT * FROM bankroll_ledger WHERE strategy=? AND timeframe=? "
+                  "ORDER BY id DESC LIMIT ?", (inst.run_key, inst.timeframe, limit))
+
+
+def bankroll_requests(inst, paper_db=None):
+    """Deposits and withdrawals the instance hasn't applied yet."""
+    if inst.sizing != "bankroll":
+        return pd.DataFrame()
+    return _query(paper_db or store.DB_FILE, "SELECT id, kind, amount, note, requested_at FROM bankroll_requests "
+                  "WHERE strategy=? AND timeframe=? AND done_at IS NULL ORDER BY id", (inst.run_key, inst.timeframe))
+
+
+def bankroll_view(inst, paper_db=None, was_low=False):
+    """Current balances of a bankroll instance and its low-bankroll state, or None.
+    The balances are the later of the last ledger row and the last candle snapshot
+    (a close inside a candle or a deposit changes them between candles)."""
+    if inst.sizing != "bankroll":
+        return None
+    db = paper_db or store.DB_FILE
+    out = {"started": False, "start": float(inst.equity), "low_basis": inst.low_basis, "low_pct": inst.low_pct,
+           "pending_requests": int(len(bankroll_requests(inst, paper_db)))}
+    snap = _query(db, "SELECT time, free, reserved, invested, value, contributed FROM bankroll_snapshots "
+                      "WHERE strategy=? AND timeframe=? ORDER BY time DESC LIMIT 1", (inst.run_key, inst.timeframe))
+    led = _query(db, "SELECT time, free_after AS free, reserved_after AS reserved, invested_after AS invested,"
+                     " value_after AS value, contributed_after AS contributed FROM bankroll_ledger"
+                     " WHERE strategy=? AND timeframe=? ORDER BY id DESC LIMIT 1", (inst.run_key, inst.timeframe))
+    rows = [d.iloc[0] for d in (snap, led) if not d.empty]
+    if not rows:
+        return out
+    last = max(rows, key=lambda r: pd.Timestamp(r["time"]))      # ties: the snapshot (written last)
+    b = {k: float(last[k]) for k in ("free", "reserved", "invested", "value", "contributed")}
+    out.update(b, started=True, time=pd.Timestamp(last["time"]).isoformat(), pnl=b["value"] - b["contributed"])
+    out["level_pct"] = 100 * (b["value"] if inst.low_basis == "value" else b["free"]) / b["contributed"] \
+        if b["contributed"] > 0 else None
+    out["low"] = bankroll.low_state(inst.low_basis, inst.low_pct, b["value"], b["free"], b["contributed"], was_low)
+    out["cant_trade"] = b["free"] < max(inst.min_entry or 0.0, bankroll.MIN_ORDER)
+    return out
 
 
 def summary(inst, paper_db=None):
@@ -139,6 +227,7 @@ def summary(inst, paper_db=None):
         if len(closed):
             out["win_rate_pct"] = float((closed["pnl"] > 0).mean() * 100)
             out["realized_pnl"] = float(closed["pnl"].sum())
+    out["bankroll"] = bankroll_view(inst, paper_db)
     return out
 
 
