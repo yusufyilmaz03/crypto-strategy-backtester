@@ -228,8 +228,9 @@ def run_loop_until_sleep(monkeypatch, runners, start_ms, timeframe="1d", portfol
 
     monkeypatch.setattr(run_realtime, "wait_until", wait_until)
     monkeypatch.setattr(run_realtime, "sleep_until_next_close", sleep_until_next_close)
+    monkeypatch.setattr(run_realtime, "set_exit_only", lambda *a, **k: None)
     with pytest.raises(StopLoop):
-        run_realtime.run_loop(type("Inst", (), {"timeframe": timeframe}), runners, portfolio)
+        run_realtime.run_loop(type("Inst", (), {"timeframe": timeframe, "name": "t"}), runners, portfolio)
     return waits
 
 
@@ -267,3 +268,40 @@ def test_portfolio_failures_retry_the_whole_portfolio(monkeypatch):
     p = Portfolio()
     waits = run_loop_until_sleep(monkeypatch, [FlakyRunner("BAD/USDT")], AFTER_CLOSE, portfolio=p)
     assert waits == [60] and p.calls == 2
+
+
+def test_exit_only_blocks_entries_and_keeps_exits(tmp_path, feed):
+    """Exit only switched on mid-run: no new trade opens after it, the open one still closes."""
+    store = PaperStore(str(tmp_path / "paper.db"))
+    runner = run_realtime.SymbolRunner("X/USDT", "5m", "v5", EngineConfig(atr_multiplier=None), store)
+    runner.update()
+    while runner.engine.position is None:          # run until a position is open
+        feed.n += 1
+        runner.update()
+    held = runner.engine.position.trade_id
+    switched_at = FULL.timestamp.iloc[feed.n - 1]
+    runner.exit_only = True
+    feed.n = len(FULL)
+    runner.update()
+    entries = [t for t in runner.engine.trades if t.entry_time > switched_at]
+    assert entries == [] and runner.engine.position is None
+    assert held in [t.trade_id for t in runner.engine.trades]          # closed by its own rule
+    actions = store.read("signals").action
+    assert (actions == "ignored (exit only)").any()
+
+
+def test_set_exit_only_reads_the_instance(tmp_path, capsys):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    runners = [run_realtime.SymbolRunner(s, "1d", "v9", EngineConfig(), store) for s in ("A/USDT", "B/USDT")]
+    portfolio = run_realtime.PortfolioRunner(runners, None, "k", "1d")
+    inst = type("I", (), {"exit_only": True})
+    run_realtime.set_exit_only("x", runners, portfolio, load=lambda name: inst)
+    assert all(r.exit_only for r in runners) and portfolio.exit_only
+    assert "Exit only on" in capsys.readouterr().out
+
+    def broken(name):
+        raise ValueError("bad json")
+    run_realtime.set_exit_only("x", runners, portfolio, load=broken)    # keeps the last value
+    assert all(r.exit_only for r in runners)
+    portfolio.rebalance(FULL.timestamp.iloc[0], {})                      # no rebalance in exit only
+    assert "No rebalance" in capsys.readouterr().out

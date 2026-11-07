@@ -15,7 +15,8 @@ each close of the finest lower timeframe it sells the position if every lower ti
 says SELL. This one does change the position, with the same decision SymbolRunner.step
 makes for candles the watcher missed, so a restart can't change the trades.
 
-ManualClose sells a position when the panel or Telegram asks for it (close_requests in paper.db).
+ManualClose sells a position when the panel or Telegram asks for it (close_requests in paper.db):
+the Close button of an instance with manual close, or Flatten on any paper instance.
 """
 import pandas as pd
 
@@ -245,8 +246,8 @@ def for_instance(inst, runners, store, extra=None):
     """The intraday watches an instance needs, or None. extra: more watches (the
     bankroll's deposits and withdrawals)."""
     watches = list(extra or [])
-    if inst.manual_close:
-        watches.append(ManualClose(runners, store, inst.run_key, inst.timeframe))
+    # every paper instance: the Close button needs the manual close setting, Flatten doesn't
+    watches.append(ManualClose(runners, store, inst.run_key, inst.timeframe))
     if eligible(inst):
         watches.append(StopWatch(runners, store, inst.run_key, inst.timeframe))
         print("👀 Shadow stop on: open positions are checked against their stop every minute "

@@ -34,6 +34,8 @@ LOG_DIR = paths.LOG_DIR
 STATUS_FILE = paths.runtime("status.json")
 PALETTE = ["\033[36m", "\033[35m", "\033[32m", "\033[34m", "\033[91m", "\033[96m"]
 DASHBOARD_COLOR = "\033[33m"
+CONTEXT_COLOR = "\033[90m"
+FIXED_SERVICES = ("dashboard", "market-context")   # not instances: always running
 RESET = "\033[0m"
 MIN_BACKOFF_S, MAX_BACKOFF_S = 5, 300
 STABLE_AFTER_S = 600       # a run this long resets the backoff
@@ -146,7 +148,7 @@ def instance_command(inst):
 
 class Supervisor:
     def __init__(self, with_dashboard=True, instances_path=None, log_dir=None, status_file=None, watcher=None,
-                 echo=True):
+                 echo=True, with_context=None):
         log_dir = log_dir or LOG_DIR
         self.echo = echo
         status_file = status_file or STATUS_FILE
@@ -162,6 +164,10 @@ class Supervisor:
         if with_dashboard:
             self.services["dashboard"] = Service("dashboard", [sys.executable, "-u", "-m", "kripto_bot.app.dashboard"],
                                                  log_dir, DASHBOARD_COLOR, on_exit, echo)
+        if with_dashboard if with_context is None else with_context:
+            self.services["market-context"] = Service(
+                "market-context", [sys.executable, "-u", "-m", "kripto_bot.core.market_context", "--loop"],
+                log_dir, CONTEXT_COLOR, on_exit, echo)
 
     def _desired(self):
         try:
@@ -191,7 +197,7 @@ class Supervisor:
                 svc.emit("restart requested from the dashboard", event=True)
                 svc.stop()
                 svc.next_start = 0.0
-        for name in [n for n in self.services if n != "dashboard" and n not in desired]:
+        for name in [n for n in self.services if n not in FIXED_SERVICES and n not in desired]:
             self.services.pop(name).stop()
 
     def write_status(self):
@@ -217,7 +223,7 @@ class Supervisor:
     def run(self, poll_s=1.0, should_stop=lambda: False):
         if self.watcher:
             self.reconcile()
-            self.watcher.started([n for n in self.services if n != "dashboard"])
+            self.watcher.started([n for n in self.services if n not in FIXED_SERVICES])
         try:
             while not should_stop():
                 self.tick()

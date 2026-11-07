@@ -749,4 +749,16 @@ TR = {
     "{label}: must be at most {max}": "{label}: en fazla {max} olmalı",
     "unknown setting {key}": "bilinmeyen ayar {key}",
     "{label} can't be changed from the dashboard": "{label} panelden değiştirilemez",
+    # exit only and flatten (instance page)
+    "exit only": "sadece çıkış",
+    "Exit only": "Sadece çıkış",
+    "Allow entries": "Girişlere izin ver",
+    "Allow new entries again": "Yeni girişlere tekrar izin ver",
+    "No new entries: open positions close by their rules": "Yeni giriş yok: açık pozisyonlar kendi kurallarıyla kapanır",
+    "Sell every open position at the market, then exit only": "Bütün açık pozisyonları piyasadan sat, sonra sadece çıkış",
+    "Exit only on: no new entries from the next close": "Sadece çıkış açık: bir sonraki kapanıştan itibaren yeni giriş yok",
+    "Entries allowed again from the next close": "Bir sonraki kapanıştan itibaren girişlere tekrar izin var",
+    "Click Flatten again within 5 seconds: every open position is sold at the market and the instance goes to exit only.":
+        "5 saniye içinde Hepsini kapat'a tekrar tıkla: bütün açık pozisyonlar piyasadan satılır ve instance sadece çıkışa geçer.",
+    "{n} position(s) to sell within a minute; exit only on": "{n} pozisyon bir dakika içinde satılacak; sadece çıkış açık",
 }

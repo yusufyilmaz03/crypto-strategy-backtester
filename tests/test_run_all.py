@@ -58,6 +58,21 @@ def sup(tmp_path, monkeypatch):
         svc.stop()
 
 
+def test_fixed_services_are_not_stopped_by_reconcile(tmp_path):
+    path = str(tmp_path / "instances.json")
+    instances.load_all(path)
+    s = Supervisor(with_dashboard=False, with_context=True, instances_path=path, log_dir=str(tmp_path),
+                   status_file=str(tmp_path / "status.json"))
+    try:
+        assert "market-context" in s.services
+        s.services["market-context"].cmd = SLEEP
+        s.reconcile()
+        assert "market-context" in s.services
+    finally:
+        for svc in s.services.values():
+            svc.stop()
+
+
 def test_supervisor_follows_instances(sup, tmp_path):
     s, path = sup
     s.tick()

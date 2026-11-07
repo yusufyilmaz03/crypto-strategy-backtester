@@ -70,7 +70,7 @@
 {% block scripts %}
 <script>
 const NAME = {{ name|tojson }}, N = encodeURIComponent(NAME);
-let INST, chart, armedDelete = 0;
+let INST, chart, armedDelete = 0, armedFlatten = 0;
 
 function metric(label, value, sub, cls = "") {
   return `<div class="col-6 col-md-3 col-xl"><div class="card h-100"><div class="card-body metric">
@@ -80,7 +80,8 @@ async function loadInstance() {
   INST = await KB.api(`/api/instances/${N}`);
   const s = INST.summary, paper = INST.mode === "paper";
   const bank = INST.sizing === "bankroll";
-  document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}${KB.lowBadge(INST)}`;
+  document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}${KB.lowBadge(INST)}`
+    + (INST.exit_only ? ` <span class="badge text-bg-warning" title="${KB.esc(KB.t("No new entries: open positions close by their rules"))}">${KB.t("exit only")}</span>` : "");
   document.getElementById("star").innerHTML = KB.star(INST);
   document.getElementById("setup-line").textContent = [INST.strategy, KB.params(INST.params), INST.timeframe,
     KB.t("stop {v}", { v: INST.stop }), INST.trail && KB.t("trail {v}×ATR", { v: INST.trail }),
@@ -92,8 +93,13 @@ async function loadInstance() {
     .filter(Boolean).join(" · ");
   renderBankroll(s.bankroll);
   if (document.activeElement.id !== "description") document.getElementById("description").value = INST.description || "";
+  const wind = paper && INST.enabled ? (INST.exit_only
+      ? `<button class="btn btn-outline-success" onclick="exitOnly(false)" title="${KB.esc(KB.t("Allow new entries again"))}"><i class="bi bi-box-arrow-in-right"></i> ${KB.t("Allow entries")}</button>`
+      : `<button class="btn btn-outline-warning" onclick="exitOnly(true)" title="${KB.esc(KB.t("No new entries: open positions close by their rules"))}"><i class="bi bi-box-arrow-right"></i> ${KB.t("Exit only")}</button>`)
+    + `<button class="btn btn-outline-danger" onclick="flatten()" title="${KB.esc(KB.t("Sell every open position at the market, then exit only"))}"><i class="bi bi-x-octagon"></i> ${KB.t("Flatten")}</button>` : "";
   document.getElementById("actions").innerHTML = INST.enabled
     ? `<button class="btn btn-outline-secondary" onclick="act('restart')"><i class="bi bi-arrow-repeat"></i> ${KB.t("Restart")}</button>
+       ${wind}
        <button class="btn btn-outline-danger" onclick="act('stop')"><i class="bi bi-stop-fill"></i> ${KB.t("[button] Stop")}</button>`
     : `<button class="btn btn-success" onclick="act('start')"><i class="bi bi-play-fill"></i> ${KB.t("Start")}</button>
        <button class="btn btn-outline-danger" onclick="del()"><i class="bi bi-trash"></i> ${KB.t("Delete")}</button>`;
@@ -343,6 +349,18 @@ async function refresh() {
 }
 async function act(action) {
   try { await KB.api(`/api/instances/${N}/action`, { method: "POST", body: { action } }); KB.toast(KB.t("{action} requested", { action: KB.t(action) })); refresh(); }
+  catch (e) { KB.toast(e.message, "danger"); }
+}
+async function exitOnly(on) {
+  try { await KB.api(`/api/instances/${N}/action`, { method: "POST", body: { action: "exit_only", exit_only: on } });
+        KB.toast(KB.t(on ? "Exit only on: no new entries from the next close" : "Entries allowed again from the next close")); refresh(); }
+  catch (e) { KB.toast(e.message, "danger"); }
+}
+async function flatten() {
+  if (Date.now() - armedFlatten > 5000) { armedFlatten = Date.now();
+    KB.toast(KB.t("Click Flatten again within 5 seconds: every open position is sold at the market and the instance goes to exit only."), "warning"); return; }
+  try { const r = await KB.api(`/api/instances/${N}/action`, { method: "POST", body: { action: "flatten" } });
+        KB.toast(KB.t("{n} position(s) to sell within a minute; exit only on", { n: r.flatten.length })); refresh(); }
   catch (e) { KB.toast(e.message, "danger"); }
 }
 async function saveDescription() {

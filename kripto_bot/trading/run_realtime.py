@@ -58,6 +58,7 @@ class SymbolRunner:
         self.step_delta = pd.Timedelta(milliseconds=timeframe_ms(timeframe))
         self.lower_tf_entry, self.lower_tf_exit = lower_tf_entry, lower_tf_exit
         self.trend_sma = trend_sma         # trend filter length (None: off)
+        self.exit_only = False             # set by run_loop from the instance: BUYs don't enter
         self.lower = None                  # lower-timeframe candles and signals of the last prepare()
         self.score_lower = False           # the bankroll's score reads the lower timeframes too
         self.bankroll = None               # BankrollRunner of a bankroll instance
@@ -159,6 +160,8 @@ class SymbolRunner:
         blocked = lower_timeframes.entry_block(sig, period + self.step_delta,
                                                self.lower if self.lower_tf_entry else None,
                                                bool(row["above_trend"]) if self.trend_sma else None)
+        if blocked is None and sig == "BUY" and self.exit_only:
+            blocked = "exit only"
         self.engine.on_bar(period, row["open"], row["high"], row["low"],
                            row["close"], sig, row["ATR"], row["RSI"], entry_ok=blocked is None and not defer_entry)
         return blocked
@@ -216,12 +219,17 @@ class PortfolioRunner:
     trades the difference at the close with fee and slippage. Candle times are processed
     in order across symbols, each time in one transaction together with its rebalance."""
 
+    exit_only = False      # set by run_loop: no rebalance (it could add to positions)
+
     def __init__(self, runners, store, key, timeframe, lookback=sizing.LOOKBACK):
         self.runners, self.store, self.key, self.timeframe = runners, store, key, timeframe
         self.lookback = lookback
 
     def rebalance(self, t, closes):
         """closes: {symbol: close Series ending at t}."""
+        if self.exit_only:
+            print(f"⚖️  No rebalance at {_fmt_time(t)}: exit only")
+            return
         price = {s: float(c.iloc[-1]) for s, c in closes.items()}
         engines = {r.symbol: r.engine for r in self.runners if r.symbol in closes}
         marked = {s: e.marked_equity(price[s]) for s, e in engines.items()}
@@ -766,12 +774,31 @@ def main(instance_name="forward-v9", rebuild=False):
     run_loop(inst, runners, portfolio, watch)
 
 
+def set_exit_only(name, runners, portfolio=None, load=None):
+    """Read the instance's exit-only switch (set on the panel while it runs) before a close is
+    processed. An entry decided at an earlier close still fills at its open."""
+    from kripto_bot import instances
+    try:
+        on = bool((load or instances.get)(name).exit_only)
+    except Exception as e:                  # keep the last value if instances.json can't be read
+        print(f"[EXIT ONLY] can't read the instance: {type(e).__name__}: {e}")
+        return
+    if runners and on != runners[0].exit_only:
+        print("🚪 Exit only on: no new entries, open positions close by their rules\n" if on
+              else "🚪 Exit only off: entries allowed again\n")
+    for r in runners:
+        r.exit_only = on
+    if portfolio is not None:
+        portfolio.exit_only = on
+
+
 def run_loop(inst, runners, portfolio=None, watch=None):
     """Update at every close. When an update fails (e.g. no network right after the
     computer wakes up), retry the failed symbols soon instead of a whole candle later."""
     todo, retry_s = runners, RETRY_S
     on_minute = watch.check if watch else None
     while True:
+        set_exit_only(inst.name, runners, portfolio)
         if watch:
             watch.check()          # the last minutes of the candle that just closed
         failed = update_runners(todo, portfolio)

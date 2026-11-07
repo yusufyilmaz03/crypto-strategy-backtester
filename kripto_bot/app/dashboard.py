@@ -108,7 +108,7 @@ def _inst(name):
 def _instance_view(inst):
     d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop", "trail", "sizing",
                                        "lower_tf_entry", "lower_tf_exit", "lower_tf_sma", "trend_sma", "manual_close",
-                                       "equity", "enabled", "favorite", "description",
+                                       "equity", "enabled", "favorite", "exit_only", "description",
                                        "created_at", "run_key", "stakes", "min_entry", "max_entry", "score_inputs",
                                        "rotation", "rotate_profit_only", "rotate_trim", "low_basis", "low_pct")}
     d["symbols"] = inst.symbol_list
@@ -253,8 +253,15 @@ def api_instance_action(name):
         inst = instances.update(name, favorite=bool(d.get("favorite")))
     elif action == "low":
         inst = instances.update(name, low_basis=d.get("low_basis"), low_pct=d.get("low_pct"))
+    elif action == "exit_only":
+        inst = instances.update(name, exit_only=bool(d.get("exit_only")))
+    elif action == "flatten":
+        # exit only first, so the instance doesn't buy back what it sells
+        asked = manual_close.flatten(_inst(name))
+        inst = instances.update(name, exit_only=True)
+        return jsonify({**_instance_view(inst), "flatten": asked})
     else:
-        raise ApiError("action must be start, stop, restart, describe, favorite or low")
+        raise ApiError("action must be start, stop, restart, describe, favorite, low, exit_only or flatten")
     return jsonify(_instance_view(inst))
 
 

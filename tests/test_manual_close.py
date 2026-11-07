@@ -107,10 +107,11 @@ def test_price_errors_are_retried(tmp_path, capsys):
 
 
 def test_manual_close_is_an_instance_setting(tmp_path):
+    """The watcher runs on every paper instance (Flatten needs it); the setting gates the Close button."""
     store = PaperStore(str(tmp_path / "p.db"))
-    w = position_watch.for_instance(instances.Instance(name="p", timeframe="5m", manual_close=True), [], store)
-    assert [type(x).__name__ for x in w.watches] == ["ManualClose"]
-    assert position_watch.for_instance(instances.Instance(name="p", timeframe="5m"), [], store) is None
+    for mc in (True, False):
+        w = position_watch.for_instance(instances.Instance(name="p", timeframe="5m", manual_close=mc), [], store)
+        assert [type(x).__name__ for x in w.watches] == ["ManualClose"]
     path = str(tmp_path / "i.json")
     assert instances.create({"name": "mc", "manual_close": True}, path).manual_close is True
     assert instances.create({"name": "plain"}, path).manual_close is False
@@ -151,6 +152,33 @@ def test_close_endpoint(client):
     assert client.post("/api/instances/forward-v9/close", json={"symbol": "X/USDT"}).status_code == 403   # CSRF
     pos = client.get("/api/instances/pp/positions").get_json()
     assert pos[0]["close_requested"] is True
+
+
+def test_flatten_and_exit_only_endpoints(client):
+    """Flatten works without the manual close setting, asks for open positions and entries
+    filled at the open, and switches exit only on; exit only can be switched back off."""
+    inst = instances.create({"name": "fl", "symbols": ["X/USDT", "Y/USDT", "Z/USDT"], "enabled": True})
+    store = _open_position(inst)
+    e = _engine(position=False, pending=("ENTER", "LONG"))
+    store.save_state("Y/USDT", inst.run_key, inst.timeframe, e.to_state(), LAST)
+    store.save_state("Z/USDT", inst.run_key, inst.timeframe, _engine(position=False).to_state(), LAST)
+    store.conn.commit()
+    r = client.post("/api/instances/fl/action", json={"action": "flatten"}, headers=H)
+    assert r.status_code == 200 and r.get_json()["flatten"] == ["X/USDT", "Y/USDT"]
+    assert r.get_json()["exit_only"] is True
+    assert sorted(s for _, s in store.close_requests(inst.run_key, inst.timeframe)) == ["X/USDT", "Y/USDT"]
+    again = client.post("/api/instances/fl/action", json={"action": "flatten"}, headers=H)
+    assert again.get_json()["flatten"] == []                          # already asked
+    off = client.post("/api/instances/fl/action", json={"action": "exit_only", "exit_only": False}, headers=H)
+    assert off.get_json()["exit_only"] is False
+
+    instances.create({"name": "idle", "symbols": ["X/USDT"]})
+    refused = client.post("/api/instances/idle/action", json={"action": "flatten"}, headers=H)
+    assert refused.status_code == 400 and "start the instance" in refused.get_json()["error"]
+    tn = client.post("/api/instances/testnet-v9/action", json={"action": "flatten"}, headers=H)
+    assert tn.status_code == 400 and "paper" in tn.get_json()["error"]
+    tn = client.post("/api/instances/testnet-v9/action", json={"action": "exit_only", "exit_only": True}, headers=H)
+    assert tn.status_code == 400 and "paper" in tn.get_json()["error"]
 
 
 def test_prices_come_separately_from_the_tables(client, monkeypatch):

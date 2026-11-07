@@ -35,7 +35,7 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,59}$")
 SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing",
                 "lower_tf_entry", "lower_tf_exit", "lower_tf_sma", "trend_sma", "manual_close",
                 "stakes", "min_entry", "max_entry", "score_inputs", "rotation", "rotate_profit_only", "rotate_trim"]
-EDITABLE = ["enabled", "description", "restart_requested_at", "favorite", "low_basis", "low_pct"]
+EDITABLE = ["enabled", "description", "restart_requested_at", "favorite", "low_basis", "low_pct", "exit_only"]
 SMA_LENGTHS = (10, 250)    # trend filter and SMA mode; the paper bot fetches 300 candles
 
 
@@ -72,6 +72,7 @@ class Instance:
     low_pct: float = bankroll.DEFAULT_LOW_PCT  # ... below this % of the contributed capital
     enabled: bool = False              # should run_all.py keep it running?
     favorite: bool = False             # pinned on the panel; not part of the setup
+    exit_only: bool = False            # paper: no new entries, open positions close by their rules (not part of the setup)
     run_key: str = ""                  # paper: key in paper.db; testnet: database file in runtime/
     description: str = ""
     created_at: str = ""
@@ -154,6 +155,8 @@ def validate(inst, existing):
         raise InstanceError(f"timeframe must be one of {', '.join(TIMEFRAMES)}")
     if inst.stop not in config.STOPLOSS_CONFIG:
         raise InstanceError(f"stop must be one of {', '.join(config.STOPLOSS_CONFIG)}")
+    if inst.exit_only and inst.mode != "paper":
+        raise InstanceError("exit only is for paper instances (the testnet loop sends orders)")
     if inst.mode == "testnet" and config.STOPLOSS_CONFIG[inst.stop] is not None:
         raise InstanceError("testnet instances can't use a stop yet (exchange-side stop orders aren't implemented)")
     if inst.trail in ("", None):
