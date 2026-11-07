@@ -229,6 +229,7 @@ def run_loop_until_sleep(monkeypatch, runners, start_ms, timeframe="1d", portfol
     monkeypatch.setattr(run_realtime, "wait_until", wait_until)
     monkeypatch.setattr(run_realtime, "sleep_until_next_close", sleep_until_next_close)
     monkeypatch.setattr(run_realtime, "set_exit_only", lambda *a, **k: None)
+    monkeypatch.setattr(run_realtime, "auto_stop", lambda *a, **k: False)
     with pytest.raises(StopLoop):
         run_realtime.run_loop(type("Inst", (), {"timeframe": timeframe, "name": "t"}), runners, portfolio)
     return waits
@@ -305,3 +306,28 @@ def test_set_exit_only_reads_the_instance(tmp_path, capsys):
     assert all(r.exit_only for r in runners)
     portfolio.rebalance(FULL.timestamp.iloc[0], {})                      # no rebalance in exit only
     assert "No rebalance" in capsys.readouterr().out
+
+
+def test_auto_stop_waits_for_the_last_position(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    runners = [run_realtime.SymbolRunner(s, "1d", "v9", EngineConfig(), store) for s in ("A/USDT", "B/USDT")]
+    calls = []
+
+    class Stopped(Exception):
+        pass
+
+    def wait():
+        raise Stopped
+
+    update = lambda name, **kw: calls.append((name, kw))
+    assert run_realtime.auto_stop("x", runners, update=update, wait=wait) is False     # not in exit only
+    for r in runners:
+        r.exit_only = True
+    runners[1].engine.pending = ("ENTER", "LONG")                                     # an entry fills at the open
+    assert run_realtime.auto_stop("x", runners, update=update, wait=wait) is False and calls == []
+    runners[1].engine.pending = None
+    with pytest.raises(Stopped):
+        run_realtime.auto_stop("x", runners, update=update, wait=wait)
+    name, kw = calls[0]
+    assert name == "x" and kw["enabled"] is False and kw["exit_only"] is False
+    assert kw["stopped_reason"] == run_realtime.AUTO_STOP_REASON and kw["stopped_at"]

@@ -86,7 +86,7 @@ async function load() {
   const rows = ROWS = await KB.api("/api/instances");
   KB.table(document.getElementById("list"), rows, [
     [KB.t("Name"), i => `${KB.star(i)} ${KB.modeBadge(i.mode)} <a href="/instances/${encodeURIComponent(i.name)}">${KB.esc(i.name)}</a>`
-      + KB.lowBadge(i)],
+      + KB.lowBadge(i) + KB.exitBadge(i)],
     [KB.t("Status"), i => KB.statusBadge(i.status, i.enabled)],
     [KB.t("Setup"), i => `<span class="setup-tip" data-bs-toggle="tooltip" data-bs-title="${KB.esc(setupText(i))}">${KB.esc(i.strategy)}</span>`],
     ["TF", i => KB.esc(i.timeframe) + (i.lower_tf_entry || i.lower_tf_exit

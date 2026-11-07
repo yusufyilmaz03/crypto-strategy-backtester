@@ -233,3 +233,15 @@ def test_supervisor_reports_exits(tmp_path):
     svc.proc.wait()
     svc.check()
     assert exits and exits[0][:2] == ("demo", 3)
+
+
+def test_an_instance_that_stopped_itself_is_reported_once(setup):
+    w, rec, paper, _, clock = setup
+    w.poll(force=True)                                    # first look: nothing to report
+    rec.messages.clear()
+    instances.update("fwd", w.instances_path, enabled=False, stopped_reason="exit only and no open positions",
+                     stopped_at="2026-11-08T10:00:00+00:00")
+    w.poll(force=True)
+    assert len(rec.messages) == 1 and "fwd</b> stopped itself: exit only and no open positions" in rec.messages[0]
+    w.poll(force=True)
+    assert len(rec.messages) == 1

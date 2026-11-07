@@ -7,6 +7,7 @@
   <div>
     <h1 class="h3 mb-1"><span id="star"></span> {{ name }} <span id="badges"></span></h1>
     <div class="text-secondary" id="setup-line">…</div>
+    <div class="small text-warning-emphasis d-none" id="stopped-line"></div>
   </div>
   <div class="btn-group" id="actions"></div>
 </div>
@@ -80,8 +81,11 @@ async function loadInstance() {
   INST = await KB.api(`/api/instances/${N}`);
   const s = INST.summary, paper = INST.mode === "paper";
   const bank = INST.sizing === "bankroll";
-  document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}${KB.lowBadge(INST)}`
-    + (INST.exit_only ? ` <span class="badge text-bg-warning" title="${KB.esc(KB.t("No new entries: open positions close by their rules"))}">${KB.t("exit only")}</span>` : "");
+  document.getElementById("badges").innerHTML = `${KB.modeBadge(INST.mode)} ${KB.statusBadge(INST.status, INST.enabled)}${KB.lowBadge(INST)}${KB.exitBadge(INST)}`;
+  const stopped = document.getElementById("stopped-line");
+  stopped.classList.toggle("d-none", !(INST.stopped_reason && !INST.enabled));
+  stopped.textContent = INST.stopped_reason ? KB.t("Stopped itself at {time} UTC: {reason}. Start trades normally again.",
+    { time: KB.time(INST.stopped_at), reason: KB.t(INST.stopped_reason) }) : "";
   document.getElementById("star").innerHTML = KB.star(INST);
   document.getElementById("setup-line").textContent = [INST.strategy, KB.params(INST.params), INST.timeframe,
     KB.t("stop {v}", { v: INST.stop }), INST.trail && KB.t("trail {v}×ATR", { v: INST.trail }),

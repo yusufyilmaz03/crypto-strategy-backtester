@@ -200,3 +200,11 @@ def test_favorite_can_change_any_time(client):
     assert instances.get("fav-me").favorite is True
     assert _post(client, "/api/instances/fav-me/action", {"action": "favorite", "favorite": False}).get_json()["favorite"] is False
     assert instances.get("fav-me").enabled is False            # nothing else changed
+
+
+def test_start_clears_the_self_stop_reason(client):
+    _post(client, "/api/instances", {"name": "wound-down"})
+    instances.update("wound-down", stopped_reason="exit only and no open positions", stopped_at="2026-11-08T10:00:00")
+    assert client.get("/api/instances/wound-down").get_json()["stopped_reason"]
+    r = _post(client, "/api/instances/wound-down/action", {"action": "start"}).get_json()
+    assert r["enabled"] and r["stopped_reason"] is None and r["stopped_at"] is None and r["exit_only"] is False

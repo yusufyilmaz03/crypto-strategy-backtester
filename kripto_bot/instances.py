@@ -35,7 +35,8 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,59}$")
 SETUP_FIELDS = ["mode", "strategy", "params", "timeframe", "stop", "trail", "symbols", "equity", "sizing",
                 "lower_tf_entry", "lower_tf_exit", "lower_tf_sma", "trend_sma", "manual_close",
                 "stakes", "min_entry", "max_entry", "score_inputs", "rotation", "rotate_profit_only", "rotate_trim"]
-EDITABLE = ["enabled", "description", "restart_requested_at", "favorite", "low_basis", "low_pct", "exit_only"]
+EDITABLE = ["enabled", "description", "restart_requested_at", "favorite", "low_basis", "low_pct", "exit_only",
+            "stopped_reason", "stopped_at"]
 SMA_LENGTHS = (10, 250)    # trend filter and SMA mode; the paper bot fetches 300 candles
 
 
@@ -73,6 +74,8 @@ class Instance:
     enabled: bool = False              # should run_all.py keep it running?
     favorite: bool = False             # pinned on the panel; not part of the setup
     exit_only: bool = False            # paper: no new entries, open positions close by their rules (not part of the setup)
+    stopped_reason: str | None = None  # why the instance stopped itself (exit only, last position closed)
+    stopped_at: str | None = None
     run_key: str = ""                  # paper: key in paper.db; testnet: database file in runtime/
     description: str = ""
     created_at: str = ""

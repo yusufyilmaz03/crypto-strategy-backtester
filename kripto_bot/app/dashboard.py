@@ -108,7 +108,8 @@ def _inst(name):
 def _instance_view(inst):
     d = {k: getattr(inst, k) for k in ("name", "mode", "strategy", "params", "timeframe", "stop", "trail", "sizing",
                                        "lower_tf_entry", "lower_tf_exit", "lower_tf_sma", "trend_sma", "manual_close",
-                                       "equity", "enabled", "favorite", "exit_only", "description",
+                                       "equity", "enabled", "favorite", "exit_only", "stopped_reason",
+                                       "stopped_at", "description",
                                        "created_at", "run_key", "stakes", "min_entry", "max_entry", "score_inputs",
                                        "rotation", "rotate_profit_only", "rotate_trim", "low_basis", "low_pct")}
     d["symbols"] = inst.symbol_list
@@ -242,7 +243,7 @@ def api_instance_action(name):
     d = request.get_json(silent=True) or {}
     action = d.get("action")
     if action == "start":
-        inst = instances.update(name, enabled=True)
+        inst = instances.update(name, enabled=True, stopped_reason=None, stopped_at=None)
     elif action == "stop":
         inst = instances.update(name, enabled=False)
     elif action == "restart":

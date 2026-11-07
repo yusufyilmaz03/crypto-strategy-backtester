@@ -792,16 +792,51 @@ def set_exit_only(name, runners, portfolio=None, load=None):
         portfolio.exit_only = on
 
 
+AUTO_STOP_REASON = "exit only and no open positions"
+
+
+def flat(runners):
+    """No position and no entry waiting for its open in any symbol."""
+    return all(r.engine.position is None and r.engine.pending is None for r in runners)
+
+
+def auto_stop(name, runners, update=None, wait=lambda: time.sleep(60)):
+    """In exit only, once the last position is closed the instance has nothing left to do:
+    it disables itself (and clears exit only, so Start later trades normally) and waits for
+    the supervisor to stop its process. Returns False while there is something to watch."""
+    from kripto_bot import instances
+    if not (runners and runners[0].exit_only and flat(runners)):
+        return False
+    now = pd.Timestamp.now(tz="UTC").isoformat()
+    try:
+        (update or instances.update)(name, enabled=False, exit_only=False, stopped_reason=AUTO_STOP_REASON,
+                                     stopped_at=now)
+    except Exception as e:                  # try again at the next check
+        print(f"[AUTO STOP] {type(e).__name__}: {e}")
+        return False
+    print(f"⏹  Stopped itself: {AUTO_STOP_REASON}. Waiting for the supervisor to end this process.")
+    while True:
+        wait()
+
+
 def run_loop(inst, runners, portfolio=None, watch=None):
     """Update at every close. When an update fails (e.g. no network right after the
-    computer wakes up), retry the failed symbols soon instead of a whole candle later."""
+    computer wakes up), retry the failed symbols soon instead of a whole candle later.
+    Exit only is read before every close and every minute; see auto_stop."""
     todo, retry_s = runners, RETRY_S
-    on_minute = watch.check if watch else None
+
+    def on_minute():
+        if watch:
+            watch.check()
+        set_exit_only(inst.name, runners, portfolio)
+        auto_stop(inst.name, runners)
+
     while True:
         set_exit_only(inst.name, runners, portfolio)
         if watch:
             watch.check()          # the last minutes of the candle that just closed
         failed = update_runners(todo, portfolio)
+        auto_stop(inst.name, runners)
         retry_at = now_ms() + retry_s * 1000
         if failed and retry_at < next_close_ms(inst.timeframe):
             if not portfolio:

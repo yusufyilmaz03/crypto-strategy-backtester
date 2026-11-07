@@ -761,4 +761,9 @@ TR = {
     "Click Flatten again within 5 seconds: every open position is sold at the market and the instance goes to exit only.":
         "5 saniye içinde Hepsini kapat'a tekrar tıkla: bütün açık pozisyonlar piyasadan satılır ve instance sadece çıkışa geçer.",
     "{n} position(s) to sell within a minute; exit only on": "{n} pozisyon bir dakika içinde satılacak; sadece çıkış açık",
+    "paper: simulated trades, no orders": "paper: simüle işlemler, emir yok",
+    "testnet: orders on the Binance Spot Testnet": "testnet: Binance Spot Testnet'te emirler",
+    "Stopped itself at {time} UTC: {reason}. Start trades normally again.":
+        "{time} UTC'de kendini durdurdu: {reason}. Başlat, normal işleme geri döndürür.",
+    "exit only and no open positions": "sadece çıkış ve açık pozisyon yok",
 }

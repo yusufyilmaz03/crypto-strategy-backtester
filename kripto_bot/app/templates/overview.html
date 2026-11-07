@@ -83,7 +83,7 @@ async function load() {
         <div class="d-flex justify-content-between align-items-start gap-2 mb-3"><h6 class="mb-0 text-body text-break">${KB.star(i)} ${KB.esc(i.name)}
           <i class="bi bi-exclamation-circle text-secondary small ms-1" data-bs-toggle="tooltip" data-bs-html="true"
              data-bs-title="${KB.esc(about)}"></i></h6>
-          <span class="text-nowrap">${KB.modeBadge(i.mode)} ${KB.statusBadge(i.status, i.enabled)}${KB.lowBadge(i)}</span></div>
+          <span class="text-nowrap">${KB.modeBadge(i.mode, true)} ${KB.statusBadge(i.status, i.enabled, true)}${KB.lowBadge(i, true)}${KB.exitBadge(i, true)}</span></div>
         <div class="card-metrics">
           <div class="metric"><div class="label">${KB.t("Max DD")}</div><div class="value">${s.max_dd_pct == null ? "–" : KB.num(s.max_dd_pct, 1) + "%"}</div></div>
           <div class="metric"><div class="label">${KB.term(KB.t("Buy &amp; hold"), KB.BH_TIP)}</div><div class="value ${KB.sign(s.buy_hold_pct)}">${KB.pct(s.buy_hold_pct)}</div></div>

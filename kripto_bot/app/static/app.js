@@ -69,13 +69,24 @@ const KB = {
     return `<span class="setup-tip" role="button" tabindex="0" data-bs-toggle="tooltip" data-bs-title="${KB.esc(tip)}">${html}</span>`;
   },
   params(p) { const e = Object.entries(p || {}); return e.length ? e.map(([k, v]) => `${k}=${v}`).join(", ") : KB.t("defaults"); },
-  statusBadge(st, enabled) {
+  // A badge with an icon and a label. iconOnly: the label goes to the tooltip and to screen readers
+  // (the overview cards); elsewhere it is shown next to the icon. label and title are plain text.
+  badge(kind, icon, label, title, iconOnly) {
+    const tip = title || (iconOnly ? label : "");
+    const body = iconOnly ? `<i class="bi bi-${icon}"></i><span class="visually-hidden">${KB.esc(label)}</span>`
+                          : `<i class="bi bi-${icon} me-1"></i>${KB.esc(label)}`;
+    return `<span class="badge text-bg-${kind}"${tip ? ` title="${KB.esc(tip)}"` : ""}>${body}</span>`;
+  },
+  statusBadge(st, enabled, iconOnly = false) {
     const s = (st && st.state) || "stopped";
-    const map = { running: "success", "waiting to restart": "warning", starting: "info", blocked: "danger",
-                  stopped: "secondary", "supervisor not running": enabled ? "warning" : "secondary" };
+    const map = { running: ["success", "play-circle-fill"], "waiting to restart": ["warning", "arrow-clockwise"],
+                  starting: ["info", "hourglass-split"], blocked: ["danger", "slash-circle"],
+                  stopped: ["secondary", "stop-circle"],
+                  "supervisor not running": enabled ? ["warning", "exclamation-triangle"] : ["secondary", "stop-circle"] };
     const label = s === "supervisor not running" && !enabled ? "stopped" : s;
-    const note = st && st.note ? ` title="${KB.esc(KB.t(st.note))}"` : "";
-    return `<span class="badge text-bg-${map[s] || "secondary"}"${note}>${KB.esc(KB.t(label))}</span>`;
+    const [kind, icon] = map[s] || ["secondary", "question-circle"];
+    const text = KB.t(label), note = st && st.note ? KB.t(st.note) : "";
+    return KB.badge(kind, icon, text, iconOnly && note ? `${text}: ${note}` : note, iconOnly);
   },
   // A "?" icon whose tooltip explains a setting (id: to change the text later with setTip).
   tip(text, id = "") {
@@ -111,21 +122,35 @@ const KB = {
             i.rotation && KB.t("rotation") + (i.rotate_profit_only ? KB.t(" (profit only)") : "") + (i.rotate_trim ? KB.t(" (reduce)") : "")]
       .filter(Boolean).join(" · ");
   },
-  lowBadge(i) {
+  lowBadge(i, iconOnly = false) {
     const b = i.summary && i.summary.bankroll;
     if (!b || !b.started) return "";
     const what = KB.t(b.low_basis === "free" ? "free cash" : "bankroll value");
-    if (b.low) return ` <span class="badge text-bg-warning" title="${KB.esc(KB.t("{what} {level}% of the contributed capital, below {low}%",
-      { what, level: KB.num(b.level_pct, 1), low: b.low_pct }))}">${KB.t("low bankroll")}</span>`;
-    if (b.cant_trade) return ` <span class="badge text-bg-secondary" title="${KB.t("free cash below the minimum entry: new signals wait for cash")}">${KB.t("invested")}</span>`;
+    const join = (label, why) => iconOnly ? `${label}: ${why}` : why;
+    if (b.low) {
+      const why = KB.t("{what} {level}% of the contributed capital, below {low}%", { what, level: KB.num(b.level_pct, 1), low: b.low_pct });
+      return " " + KB.badge("warning", "battery", KB.t("low bankroll"), join(KB.t("low bankroll"), why), iconOnly);
+    }
+    if (b.cant_trade) {
+      const why = KB.t("free cash below the minimum entry: new signals wait for cash");
+      return " " + KB.badge("secondary", "pie-chart-fill", KB.t("invested"), join(KB.t("invested"), why), iconOnly);
+    }
     return "";
+  },
+  exitBadge(i, iconOnly = false) {
+    if (!i.exit_only) return "";
+    const why = KB.t("No new entries: open positions close by their rules");
+    return " " + KB.badge("warning", "box-arrow-right", KB.t("exit only"), iconOnly ? `${KB.t("exit only")}: ${why}` : why, iconOnly);
   },
   score(v, grade) {
     if (v == null || v === "" || isNaN(v)) return "–";
     const cls = { "Very strong": "text-bg-success", Strong: "text-bg-primary", Normal: "text-bg-secondary", Weak: "text-bg-light" }[grade] || "text-bg-light";
     return `<span class="badge ${cls}" title="${KB.esc(KB.t(grade || ""))}">${Number(v).toFixed(0)}</span>`;
   },
-  modeBadge(m) { return `<span class="badge ${m === "testnet" ? "text-bg-warning" : "text-bg-primary"}">${KB.esc(m)}</span>`; },
+  modeBadge(m, iconOnly = false) {
+    return m === "testnet" ? KB.badge("warning", "cone-striped", "testnet", KB.t("testnet: orders on the Binance Spot Testnet"), iconOnly)
+                           : KB.badge("primary", "journal-text", "paper", KB.t("paper: simulated trades, no orders"), iconOnly);
+  },
   toast(msg, kind = "success") {
     const box = document.getElementById("toasts");
     const el = document.createElement("div");

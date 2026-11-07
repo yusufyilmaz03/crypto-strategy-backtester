@@ -386,6 +386,7 @@ class Watcher:
             self.blocked(blocked or {})
             self._kill()
             for inst in instances.load_all(self.instances_path).values():
+                self._stopped_itself(inst)
                 if inst.mode == "paper":
                     self._paper(inst)
                 else:
@@ -398,6 +399,15 @@ class Watcher:
 
     def _cursors(self, inst):
         return self.state.setdefault("instances", {}).setdefault(inst.name, {})
+
+    def _stopped_itself(self, inst):
+        """A message when an instance stopped itself (exit only, last position closed)."""
+        cur = self._cursors(inst)
+        first = "stopped_at" not in cur
+        before, cur["stopped_at"] = cur.get("stopped_at"), inst.stopped_at
+        if not first and inst.stopped_at and inst.stopped_at != before:
+            self.sender.send(f"⏹ <b>{esc(inst.name)}</b> stopped itself: {esc(inst.stopped_reason or '')}. "
+                             "Start it on the panel to trade again.")
 
     def _paper(self, inst):
         cur = self._cursors(inst)
