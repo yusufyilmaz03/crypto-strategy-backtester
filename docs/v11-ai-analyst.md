@@ -48,6 +48,9 @@ model was trained, with the model version pinned.
   SMA50 and SMA200, daily ATR(14) as % of price, the last 20 daily highs and lows, 30-day
   volume change, the last price, and the same summary for BTC as market context. Numbers,
   not chart images.
+- Market sentiment and structure: the crypto Fear & Greed index (alternative.me, daily since
+  2018-02-01; last 7 values) and BTC and ETH dominance (CoinGecko `/global`; only the current
+  value is free, so the bot records it daily from now on and gives the last 7 days it has).
 - Its own state: the position (flat, or long since when, at what price), open orders, the
   current plan and its reasons, and the last few plans with their outcome. Without this it
   would change its mind on every call.
@@ -209,7 +212,7 @@ orders (the "exchange-side stop / OCO" item in TODO.md), which needs explicit ap
 2. **News source.** Free RSS feeds of several outlets (e.g. CoinDesk, Cointelegraph, The
    Block, Decrypt), or a news API with its own timestamps and archive. Proposal: RSS, stored
    by us, so the archive is ours.
-3. **Universe.** All 42 symbols, or a fixed subset. Proposal: the 10 most liquid of
+3. **Universe.** All 41 symbols, or a fixed subset. Proposal: the 10 most liquid of
    `config.SYMBOLS` by 30-day quote volume on the start date, fixed for the test.
 4. **Budget.** Daily cap in USD. Roughly (symbols × (1 scheduled + triggered calls) × tokens per
    call × price); estimated once the model and universe are chosen.

@@ -23,6 +23,14 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   X200, E + X, H + E + X FAIL (they raise the win rate by cutting winners: lower profit
   factor and expectancy in the bull period).
 - **S200 + E200** (both passes together): would need its own test, on seen data.
+- **Fear & Greed and BTC dominance** (idea from phBot Crypto, `docs/research/011`): inputs
+  for the bankroll score and v11. Fear & Greed has free daily history since 2018-02-01
+  (alternative.me), so it can be tested as a score input on past data (use the value with a
+  one-day lag). Dominance history is not free (CoinGecko `/global` gives only the current
+  value): start recording it daily now so it has a history by the time it is tested. Neither
+  goes into a score or filter before a pre-registered test.
+- **Scale-in DCA test:** draft pre-registration in `docs/dca-scale-in-test.md`, waiting for
+  review.
 - **Trade-level metrics in every test from now on:** closed trades, win rate, average
   win and loss, profit factor, expectancy per trade (`analysis/filters.py`).
 
