@@ -187,6 +187,63 @@ def test_close_asks_first_then_files_the_request(bot):
     assert "close requested" in text and "c|1" not in buttons
 
 
+def test_options_ask_first_then_act(bot):
+    inst = _instance(manual_close=False)
+    _press(bot, "i|fwd")
+    assert "o|fwd" in bot.api.last()[1]
+    _press(bot, "o|fwd")
+    text, buttons = bot.api.last()
+    assert "fwd</b> · options" in text and buttons == ["a|1", "a|2", "a|3", "i|fwd", "l"]   # stop, exit only, flatten
+
+    _press(bot, "a|2")                                            # exit only: asks, changes nothing yet
+    text, buttons = bot.api.last()
+    assert "Switch fwd to exit only?" in text and buttons == ["z|2", "o|fwd"]
+    assert instances.get("fwd").exit_only is False
+    _press(bot, "z|2", edit_date=NOW - 5)
+    assert "Exit only on for fwd" in bot.api.last()[0] and instances.get("fwd").exit_only is True
+    _press(bot, "i|fwd")
+    assert "🚪 Exit only" in bot.api.last()[0]
+    _press(bot, "o|fwd")
+    assert "Allow entries" in bot.api.last()[0] and bot.api.last()[1][:3] == ["a|1", "a|4", "a|3"]
+
+    _press(bot, "a|3")                                            # flatten, without the manual close setting
+    assert "Flatten fwd?" in bot.api.last()[0]
+    assert not reporting.positions(inst).close_requested.any()
+    _press(bot, "z|3", edit_date=NOW - 5)
+    assert "1 position(s) to sell" in bot.api.last()[0]
+    assert bool(reporting.positions(inst).set_index("symbol").loc["X/USDT", "close_requested"])
+
+    _press(bot, "a|1")
+    _press(bot, "z|1", edit_date=NOW - 5)
+    assert "fwd stopped" in bot.api.last()[0] and instances.get("fwd").enabled is False
+    _press(bot, "z|1", edit_date=NOW - 5)                         # a second tap
+    assert "already stopped" in bot.api.last()[0]
+    _press(bot, "i|fwd")
+    assert "o|fwd" not in bot.api.last()[1]                       # no options on a stopped instance
+    assert [line.split("] ")[1] for line in bot.logged] == [
+        "exit_on on fwd: asked for confirmation", "exit_on on fwd: confirmed and done",
+        "flatten on fwd: asked for confirmation", "flatten on fwd: confirmed and done (1 close requests)",
+        "stop on fwd: asked for confirmation", "stop on fwd: confirmed and done",
+        "stop on fwd: refused (it is already stopped)"]
+
+
+def test_option_confirmations_expire(bot):
+    _instance()
+    _press(bot, "z|1")                                            # from before a restart
+    assert "expired" in bot.api.last()[0]
+    _press(bot, "o|fwd")
+    _press(bot, "a|1")
+    _press(bot, "z|1", edit_date=NOW - CONFIRM_TTL_S - 1)
+    assert "Too late" in bot.api.last()[0] and instances.get("fwd").enabled is True
+
+
+def test_testnet_options_are_stop_only(bot):
+    instances.update("testnet-v9", enabled=True)
+    _press(bot, "o|testnet-v9")
+    text, buttons = bot.api.last()
+    assert buttons == ["a|1", "i|testnet-v9", "l"] and "for paper instances" in text
+
+
 def test_late_confirmation_is_refused(bot):
     inst = _instance()
     _press(bot, "p|fwd")

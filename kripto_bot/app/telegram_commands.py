@@ -11,11 +11,17 @@ internet. Only the chat in TELEGRAM_CHAT_ID is answered; anything else is ignore
 
 Instances with manual close get a Close button per position. It asks for confirmation,
 then files the same request as the panel's Close button (app/manual_close.py): the
-instance's process sells and the notifier reports the trade. A confirmation pressed
-more than CONFIRM_TTL_S after it was asked is refused, and close buttons stop working
-when the supervisor restarts, so an old message can't close anything.
+instance's process sells and the notifier reports the trade.
 
-Logging: everything about closing a position (asked, requested, refused, too late,
+A running instance's view has an Options button: Stop, and for paper instances Exit only
+(or Allow entries) and Flatten, the same actions as the panel's buttons. Each asks for
+confirmation first.
+
+A confirmation pressed more than CONFIRM_TTL_S after it was asked is refused, and close
+and option buttons stop working when the supervisor restarts, so an old message can't
+change anything.
+
+Logging: everything about closing a position or an option (asked, done, refused, too late,
 expired) and messages from other chats always go to the supervisor's output, which
 the background service writes to runtime/logs/supervisor.log. Read-only commands are
 printed only when the supervisor runs in a terminal, so they don't fill the log.
@@ -49,7 +55,23 @@ HELP = ("<b>Crypto Tester Bot</b>\n"
         "/status: all instances at a glance\n"
         "/instance: pick an instance for its positions, signals and trades\n"
         "/instance NAME: open one directly\n"
-        "Instances with manual close get a Close button per position.")
+        "Instances with manual close get a Close button per position.\n"
+        "Options on a running instance: Stop, Exit only, Flatten (each asks first).")
+# option key -> (button, question, what happens, done message)
+OPTIONS = {
+    "stop": ("■ Stop", "Stop {name}?",
+             "Its process stops; open positions stay as they are until it is started again on the panel.",
+             "■ {name} stopped."),
+    "exit_on": ("🚪 Exit only", "Switch {name} to exit only?",
+                "From the next close it opens no new positions; open ones close by their own rules.",
+                "🚪 Exit only on for {name}: no new entries from the next close."),
+    "exit_off": ("↩ Allow entries", "Allow new entries on {name} again?",
+                 "From the next close its signals can open positions again.",
+                 "↩ Entries allowed again on {name} from the next close."),
+    "flatten": ("⛔ Flatten", "Flatten {name}?",
+                "Every open position is sold at the market within about a minute, then exit only is on.",
+                "⛔ {name}: {n} position(s) to sell within about a minute; exit only on."),
+}
 
 
 def _button(text, data):
@@ -149,6 +171,8 @@ class CommandBot:
         self.offset = None
         self.targets = {}           # close button id -> (instance name, symbol); in memory on purpose
         self._ids = {}              # (instance name, symbol) -> close button id
+        self.options = {}           # option button id -> (instance name, option key); in memory too
+        self._option_ids = {}
         self._last_error = None
         self._stop = threading.Event()
         self._thread = None
@@ -243,7 +267,7 @@ class CommandBot:
         if not self._ours(msg, query.get("from"), "button press"):
             return
         kind, _, arg = (query.get("data") or "").partition("|")
-        if kind not in ("c", "y"):
+        if kind not in ("c", "y", "a", "z"):
             self.trace(f"button {query.get('data')}")
         text, keyboard = self.view(kind, arg, msg)
         try:        # only stops the button's spinner; Telegram refuses it for a press answered late
@@ -274,11 +298,18 @@ class CommandBot:
                 self.audit("close button from before a restart pressed: refused (expired)")
                 return "This button has expired (the supervisor restarted). Open the instance again.", self._back()
             return self._confirm(arg, *target) if kind == "c" else self._close(arg, msg, *target)
+        if kind in ("a", "z"):
+            option = self.options.get(arg)
+            if option is None:
+                self.audit("option button from before a restart pressed: refused (expired)")
+                return "This button has expired (the supervisor restarted). Open the instance again.", self._back()
+            return self._ask(arg, *option) if kind == "a" else self._apply(arg, msg, *option)
         try:
             inst = instances.get(arg, self.instances_path)
         except instances.InstanceError:
             return f"There is no instance named {_e(arg)}.", self._back()
-        views = {"i": self._instance, "p": self._positions, "s": self._signals, "t": self._trades}
+        views = {"i": self._instance, "p": self._positions, "s": self._signals, "t": self._trades,
+                 "o": self._options}
         return views[kind](inst) if kind in views else self._list()
 
     def _back(self, inst=None):
@@ -301,6 +332,8 @@ class CommandBot:
         about = [f"<i>{_e(inst.description)}</i>", ""] if inst.description else []
         lines = [f"<b>{_e(_name(inst))}</b> - {inst.mode} - {_e(status)}",      # Telegram folds a long quote
                  "<blockquote expandable>" + "\n".join(about + [_e(_settings(inst))]) + "</blockquote>"]
+        if inst.exit_only:
+            lines.append("🚪 Exit only: no new entries, open positions close by their rules.")
         if s["return_pct"] is None:
             lines.append("No data yet.")
         else:
@@ -325,6 +358,8 @@ class CommandBot:
         keyboard = [[_button(f"Positions ({s['open_positions']})", f"p|{inst.name}"),
                      _button("Signals", f"s|{inst.name}"), _button("Trades", f"t|{inst.name}")],
                     [_button("↻ Refresh", f"i|{inst.name}"), _button("« Instances", "l")]]
+        if inst.enabled:
+            keyboard.insert(1, [_button("⚙️ Options", f"o|{inst.name}")])
         return "\n".join(lines), keyboard
 
     def _positions(self, inst):
@@ -421,6 +456,58 @@ class CommandBot:
         self.audit(f"close {symbol} on {name}: confirmed, request filed")
         return (f"✋ Close of {_e(symbol)} requested. {_e(name)} sells it within about a minute; "
                 "the trade message follows."), back
+
+    # ----- options: stop, exit only, flatten
+    def _option_id(self, name, key):
+        k = (name, key)
+        if k not in self._option_ids:
+            self._option_ids[k] = str(len(self._option_ids) + 1)
+            self.options[self._option_ids[k]] = k
+        return self._option_ids[k]
+
+    def _options(self, inst):
+        back = self._back(inst)
+        if not inst.enabled:
+            return f"<b>{_e(inst.name)}</b> is stopped. Start it on the panel.", back
+        keys = ["stop"] + (["exit_off" if inst.exit_only else "exit_on", "flatten"] if inst.mode == "paper" else [])
+        lines = [f"<b>{_e(inst.name)}</b> · options"]
+        lines += [f"{OPTIONS[k][0]}: {OPTIONS[k][2]}" for k in keys]
+        if inst.mode != "paper":
+            lines.append("Exit only and Flatten are for paper instances.")
+        lines.append("Each option asks for confirmation.")
+        buttons = [_button(OPTIONS[k][0], f"a|{self._option_id(inst.name, k)}") for k in keys]
+        return "\n".join(lines), [buttons] + back
+
+    def _ask(self, option_id, name, key):
+        self.audit(f"{key} on {name}: asked for confirmation")
+        label, question, what, _ = OPTIONS[key]
+        text = f"<b>{_e(question.format(name=name))}</b>\n{_e(what)}"
+        return text, [[_button(f"Yes, {label.split(' ', 1)[1].lower()}", f"z|{option_id}"),
+                       _button("Cancel", f"o|{name}")]]
+
+    def _apply(self, option_id, msg, name, key):
+        back = [[_button("« " + name, f"i|{name}"), _button("« Instances", "l")]]
+        asked = (msg or {}).get("edit_date") or (msg or {}).get("date", 0)
+        if self.clock() - asked > CONFIRM_TTL_S:
+            self.audit(f"{key} on {name}: confirmed too late, nothing done")
+            return "Too late: nothing was done. Open Options again.", back
+        try:
+            inst = instances.get(name, self.instances_path)
+            if not inst.enabled:
+                raise instances.InstanceError("it is already stopped")
+            n = 0
+            if key == "stop":
+                instances.update(name, self.instances_path, enabled=False)
+            elif key == "flatten":
+                n = len(manual_close.flatten(inst, self.paper_db))
+                instances.update(name, self.instances_path, exit_only=True)
+            else:
+                instances.update(name, self.instances_path, exit_only=key == "exit_on")
+        except (manual_close.CloseRefused, instances.InstanceError) as e:
+            self.audit(f"{key} on {name}: refused ({e})")
+            return f"Nothing done on {_e(name)}: {_e(e)}", back
+        self.audit(f"{key} on {name}: confirmed and done" + (f" ({n} close requests)" if key == "flatten" else ""))
+        return _e(OPTIONS[key][3].format(name=name, n=n)), back
 
     # ----- /status
     def status_text(self):
