@@ -158,9 +158,16 @@ alternative is groups of five:
 **Choice in the dry run.** On the same days and inputs, the primary setup runs twice one symbol
 per call and once in groups. Compared: how often plans agree (same action, and entry, stop and
 take-profit within 0.5 daily ATR), rejected plans, tokens, time and usage-limit errors. Outcomes
-are not looked at. Groups are used if grouped plans agree with the single-call plans about as
-often as the two single-call runs agree with each other, and are rejected no more often;
-otherwise one symbol per call. The choice is written here before this document is fixed.
+are not looked at. A rejected plan counts as `hold`. Groups are used if grouped plans agree with
+the single-call plans (the mean of single-a vs group and single-b vs group) at most 10
+percentage points less often than the two single-call runs agree with each other, and are
+rejected no more often than the more rejected single-call run; otherwise one symbol per call.
+The choice is written here before this document is fixed.
+
+The dry run sends the same inputs, in this order: the primary setup one by one twice and in
+groups once, then the two secondary setups and the no-news control in groups, so the day's
+load is close to the test's. A usage-limit error ends the day's runs
+(`python -m kripto_bot v11-dry-run run [--loop]`, `... report`).
 
 ### Model access (decided 2026-11-09)
 
