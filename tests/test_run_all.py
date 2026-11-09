@@ -64,10 +64,11 @@ def test_fixed_services_are_not_stopped_by_reconcile(tmp_path):
     s = Supervisor(with_dashboard=False, with_context=True, instances_path=path, log_dir=str(tmp_path),
                    status_file=str(tmp_path / "status.json"))
     try:
-        assert "market-context" in s.services
+        assert {"market-context", "news"} <= set(s.services)
         s.services["market-context"].cmd = SLEEP
+        s.services["news"].cmd = SLEEP
         s.reconcile()
-        assert "market-context" in s.services
+        assert {"market-context", "news"} <= set(s.services)
     finally:
         for svc in s.services.values():
             svc.stop()

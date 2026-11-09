@@ -35,7 +35,7 @@ STATUS_FILE = paths.runtime("status.json")
 PALETTE = ["\033[36m", "\033[35m", "\033[32m", "\033[34m", "\033[91m", "\033[96m"]
 DASHBOARD_COLOR = "\033[33m"
 CONTEXT_COLOR = "\033[90m"
-FIXED_SERVICES = ("dashboard", "market-context")   # not instances: always running
+FIXED_SERVICES = ("dashboard", "market-context", "news")   # not instances: always running
 RESET = "\033[0m"
 MIN_BACKOFF_S, MAX_BACKOFF_S = 5, 300
 STABLE_AFTER_S = 600       # a run this long resets the backoff
@@ -167,6 +167,9 @@ class Supervisor:
         if with_dashboard if with_context is None else with_context:
             self.services["market-context"] = Service(
                 "market-context", [sys.executable, "-u", "-m", "kripto_bot.core.market_context", "--loop"],
+                log_dir, CONTEXT_COLOR, on_exit, echo)
+            self.services["news"] = Service(
+                "news", [sys.executable, "-u", "-m", "kripto_bot.core.news", "--loop"],
                 log_dir, CONTEXT_COLOR, on_exit, echo)
 
     def _desired(self):
