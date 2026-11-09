@@ -146,7 +146,8 @@ Sizing, the daily loss limit and the kill switch stay in the existing determinis
   no nvm `PATH`.
 - Before its first call the bot checks `codex --version`. Any other version stops the calls
   (they count as `hold`) and sends a Telegram message.
-- One call at a time, 180-second timeout.
+- One call at a time, 180-second timeout. With 20 symbols a scheduled round takes about 20
+  minutes; the primary's calls finish in about the first 5.
 - A change of model, effort or Codex version ends the test of the instance it affects, whatever
   the reason (a quota problem included). The new setup runs as a new instance with its own 180
   days.
@@ -212,8 +213,9 @@ for a change of effort or Codex CLI version.
 ## Evaluation
 
 - Earliest evaluation: 180 days after the first plan.
-- Benchmarks over the same period and symbols: equal-weight buy-and-hold, and the v9 paper
-  instance (`forward-v9`).
+- Benchmarks over the same period and symbols: equal-weight buy-and-hold, and v9
+  (`close > SMA50`, its fixed rule) run by the engine on the same 20 symbols. `forward-v9` itself
+  trades `config.SYMBOLS`, so it is shown for reference only.
 - **Pass (A), for `v11-astra-high` only, all of:**
   - annualized Sharpe of daily returns above buy-and-hold's
   - max drawdown below buy-and-hold's
@@ -312,14 +314,13 @@ orders (the "exchange-side stop / OCO" item in TODO.md), which needs explicit ap
 1. **LLM provider and model.** Decided 2026-11-09: Codex CLI `0.166.0` and the user's ChatGPT
    plan; primary `gpt-6-astra` with effort `high`, secondary `gpt-6-astra` `medium` and
    `gpt-6.1-sol` `high` (see "Model access").
-2. **News source.** Free RSS feeds of several outlets (e.g. CoinDesk, Cointelegraph, The
-   Block, Decrypt), or a news API with its own timestamps and archive. Proposal: RSS, stored
-   by us, so the archive is ours.
-3. **Universe.** Proposal (2026-11-09): the 10 USDT spot pairs with the highest 30-day quote
+2. **News source.** Decided 2026-11-09: the free RSS feeds of CoinDesk, Cointelegraph, The
+   Block and Decrypt, stored by us, so the archive is ours.
+3. **Universe.** Decided 2026-11-09: the 20 USDT spot pairs with the highest 30-day quote
    volume on Binance on the start date, chosen from all listed pairs (not only `config.SYMBOLS`)
    after the survivorship test's exclusions (stablecoins, fiat and gold tokens, leveraged tokens,
-   tokenized stocks), fixed for the test. Ten keeps the calls at about 60 a day over the four
-   instances.
+   tokenized stocks), fixed for the test. About 120 calls a day over the four instances; if the
+   dry run hits the plan's usage limit, the number drops to 15 before this document is fixed.
 4. **Budget.** Decided 2026-11-09: no USD budget (ChatGPT plan). Calls and tokens are counted per
    day, and a usage-limit error stops the day's calls (see "Call limits").
 5. **Sizing.** Decided 2026-11-09: in the code, grade stakes are an instance option. With the
