@@ -55,8 +55,10 @@ on 2026-04-30 (OpenAI's model page).
   2018-02-01; last 7 values) and BTC and ETH dominance (CoinGecko `/global`; only the current
   value is free, so the bot records it daily from now on and gives the last 7 days it has).
 - Its own state: the position (flat, or long since when, at what price), open orders, the
-  current plan and its reasons, and the last few plans with their outcome. Without this it
-  would change its mind on every call.
+  current plan and its reasons, the last few plans with their outcome, and the `memo` it wrote
+  on the last call for this symbol. Without this it would change its mind on every call. Each
+  call is a new, independent session: no conversation history is carried over, so every input
+  is the recorded prompt and nothing else.
 - News headlines from the last 72 hours that mention the coin, plus general market
   headlines: source, published time, title, short summary. An item is used only if both
   its published time and the time we fetched it are before the call (guards against
@@ -73,7 +75,8 @@ One plan per symbol, strict JSON validated against a schema:
  "entry": {"type": "limit", "price": 3420, "expires_candles": 1},
  "stop": 3250, "take_profit": 3900, "p_tp": 0.31, "grade": "normal",
  "review_if": [{"below": 3300}, {"above": 3650}],
- "reasons": ["..."], "news_ids": [123, 140]}
+ "reasons": ["..."], "news_ids": [123, 140],
+ "memo": "Reconsider above a daily close over 3500; watch ETF flows."}
 ```
 
 - `action`: `hold` (keep everything as it is), `enter` (place an entry order), `adjust`
@@ -90,6 +93,9 @@ One plan per symbol, strict JSON validated against a schema:
 - `grade`: weak / normal / strong / very strong. Recorded; whether it sizes the position is
   open question 5.
 - `review_if`: up to two price levels that trigger a review.
+- `memo`: a note of at most 300 characters to itself, shown on the next call for the same
+  symbol and then replaced. A note the model wants to keep has to be written again. Required,
+  may be empty. It never affects orders.
 
 ### Guardrails (the validator)
 
@@ -109,6 +115,7 @@ rejection and its reason are stored.
 - Entry orders expire after at most 3 daily closes.
 - `review_if` levels at least 0.5 daily ATRs from the last price.
 - `p_tp`, when required, present and between 0.01 and 0.99.
+- `memo` at most 300 characters.
 - Prices must be positive numbers with at most the symbol's price precision; anything that
   is not a valid plan, an API error or a timeout counts as `hold`.
 
