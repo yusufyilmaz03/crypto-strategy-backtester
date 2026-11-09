@@ -17,6 +17,12 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   both passed `docs/v9-filters-test.md`). Report the number of closed trades, win rate,
   profit factor and expectancy too, not only returns.
 
+- **2026-11-12 — v11 dry run report.** The loop started 2026-11-09 and runs after every daily
+  close (`runtime/logs/v11-dry-run.log`, pid in `runtime/v11-dry-run.pid`; it does not survive a
+  reboot). After 2–3 runs: `python -m kripto_bot v11-dry-run report`. Write the grouping choice
+  and the symbol count (20, or 15 on usage limits) into `docs/v11-ai-analyst.md`, then stop the
+  loop (`kill $(cat runtime/v11-dry-run.pid)`).
+
 ## Research (notes, not decided)
 
 - **Done 2026-10-30, `docs/v9-filters-test.md`:** S200 and E200 PASS (trade criteria);
