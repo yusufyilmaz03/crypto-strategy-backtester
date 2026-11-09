@@ -108,3 +108,13 @@ def test_waiting_follows_the_wall_clock():
 
     dr.wait_for_next_close(clock=lambda: now[0], sleep=sleep)
     assert now[0] >= pd.Timestamp("2026-11-10 00:00:05", tz="UTC") and len(sleeps) == 3
+
+
+def test_a_close_missed_by_a_few_hours_is_made_up_once(tmp_path):
+    st = LLMStore(str(tmp_path / "paper.db"))
+    morning = pd.Timestamp("2026-11-10 02:00", tz="UTC")
+    assert dr.missed_today(st, morning)
+    assert not dr.missed_today(st, pd.Timestamp("2026-11-10 07:00", tz="UTC"))       # too late: wait
+    dr.run_day(pd.Timestamp("2026-11-10 00:00:05", tz="UTC"), SYMBOLS[:1], st, {s: Echo() for s in dr.SETUPS},
+               snapshot=_snapshot, log=lambda *_: None)
+    assert not dr.missed_today(st, morning)                                          # already ran today

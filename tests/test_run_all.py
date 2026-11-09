@@ -64,11 +64,12 @@ def test_fixed_services_are_not_stopped_by_reconcile(tmp_path):
     s = Supervisor(with_dashboard=False, with_context=True, instances_path=path, log_dir=str(tmp_path),
                    status_file=str(tmp_path / "status.json"))
     try:
-        assert {"market-context", "news"} <= set(s.services)
-        s.services["market-context"].cmd = SLEEP
-        s.services["news"].cmd = SLEEP
+        fixed = {"market-context", "news", "v11-dry-run"}
+        assert fixed <= set(s.services)
+        for name in fixed:
+            s.services[name].cmd = SLEEP          # never run the real services in a test
         s.reconcile()
-        assert {"market-context", "news"} <= set(s.services)
+        assert fixed <= set(s.services)
     finally:
         for svc in s.services.values():
             svc.stop()

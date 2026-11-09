@@ -91,6 +91,9 @@ CODEX_PATH = os.path.expanduser("~/.nvm/versions/node/v22.22.3/bin/codex")
 CODEX_VERSION = "0.166.0"
 CODEX_HOME = os.path.expanduser("~/.codex")
 LLM_TIMEOUT_SEC = 180
+# The supervisor runs the v11 dry run (analysis/v11_dry_run.py) as a service while this is on.
+# Switch it off after the dry-run report (TODO.md).
+V11_DRY_RUN = True
 
 # ===== Grid backtest (analysis/multi_backtest.py) =====
 TIMEFRAMES = ["1m", "3m", "5m"]

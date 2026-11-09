@@ -11,6 +11,9 @@ the plans agree, rejections, tokens, latency and failures; outcomes are not look
 
     python -m kripto_bot v11-dry-run run [--loop]     # once now, or after every daily close
     python -m kripto_bot v11-dry-run report
+
+With config.V11_DRY_RUN on, the supervisor runs the loop as a fixed service, so it restarts
+after a crash or reboot; a close missed by less than 6 hours is made up on start.
 """
 import argparse
 import glob
@@ -159,10 +162,25 @@ def seconds_to_next_run(now=None):
 
 def wait_for_next_close(check_every_s=30, clock=lambda: pd.Timestamp.now(tz="UTC"), sleep=time.sleep):
     """Wait by the wall clock: time.sleep stops counting while the Mac sleeps."""
-    target = clock() + pd.Timedelta(seconds=seconds_to_next_run(clock()))
+    now = clock()
+    target = now.floor("D") + pd.Timedelta(days=1, seconds=RUN_AFTER_CLOSE_S)
     print(f"next run at {target:%Y-%m-%d %H:%M:%S} UTC")
     while clock() < target:
         sleep(min(check_every_s, max(0.0, (target - clock()).total_seconds())))
+
+
+CATCH_UP_HOURS = 6
+
+
+def missed_today(store, now):
+    """True when today's run hasn't happened and the close was less than CATCH_UP_HOURS ago:
+    the service was down at the close (crash, reboot, restart). Later than that, waiting for
+    the next close keeps the runs about a day apart."""
+    if now - now.floor("D") > pd.Timedelta(hours=CATCH_UP_HOURS):
+        return False
+    row = store.conn.execute("SELECT 1 FROM llm_calls WHERE instance LIKE ? AND time >= ? LIMIT 1",
+                             (PREFIX + "%", now.floor("D").isoformat())).fetchone()
+    return row is None
 
 
 def main():
@@ -177,9 +195,11 @@ def main():
             return
         symbols = fixed_universe()
         print(f"v11 dry run on {len(symbols)} symbols: {', '.join(symbols)}")
+        first = True
         while True:
-            if a.loop:
+            if a.loop and not (first and missed_today(st, pd.Timestamp.now(tz="UTC"))):
                 wait_for_next_close()
+            first = False
             run_day(pd.Timestamp.now(tz="UTC"), symbols, st)
             if not a.loop:
                 break
