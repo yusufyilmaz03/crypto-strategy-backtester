@@ -38,6 +38,8 @@ on 2026-04-30 (OpenAI's model page).
 ### When the model is called
 
 - **Scheduled review:** once per symbol after each daily close (00:00 UTC + a few seconds).
+  Whether the symbols go one per call or in fixed groups of five is chosen in the dry run (see
+  "Grouped scheduled reviews").
 - **Triggered review:** when the price crosses a level the model asked for in its last plan
   (`review_if`), checked on closed 1m candles.
 - Nothing else calls the model. Fills, stops and take-profits are executed by the bot
@@ -123,6 +125,29 @@ Sizing, the daily loss limit and the kill switch stay in the existing determinis
   counts as `hold`. A usage-limit error and an invalid plan are not retried.
 - If more than 10% of a day's calls fail, a Telegram warning is sent.
 
+### Grouped scheduled reviews (chosen in the dry run)
+
+Every call carries about 9,300 tokens of Codex instructions on top of our prompt (about 1,200
+tokens per symbol), so one call per symbol spends most of its tokens on the same text. The
+alternative is groups of five:
+
+- The 20 symbols are split into four fixed groups by their volume rank on the start date (1–5,
+  6–10, 11–15, 16–20). The groups do not change during the test.
+- A scheduled review sends one group per call. The answer is a list with one plan per symbol,
+  each validated on its own; a rejected plan affects only its symbol.
+- Triggered reviews stay one symbol per call.
+- A failed group call follows the retry rule above; if it still fails, the group's five symbols
+  count as `hold`.
+- Scheduled calls per day over the four instances: 80 one by one, 16 in groups. Input tokens:
+  about 840,000 and 230,000.
+
+**Choice in the dry run.** On the same days and inputs, the primary setup runs twice one symbol
+per call and once in groups. Compared: how often plans agree (same action, and entry, stop and
+take-profit within 0.5 daily ATR), rejected plans, tokens, time and usage-limit errors. Outcomes
+are not looked at. Groups are used if grouped plans agree with the single-call plans about as
+often as the two single-call runs agree with each other, and are rejected no more often;
+otherwise one symbol per call. The choice is written here before this document is fixed.
+
 ### Model access (decided 2026-11-09)
 
 - Three instances, each with its own model setup (see "Variants"):
@@ -146,8 +171,8 @@ Sizing, the daily loss limit and the kill switch stay in the existing determinis
   no nvm `PATH`.
 - Before its first call the bot checks `codex --version`. Any other version stops the calls
   (they count as `hold`) and sends a Telegram message.
-- One call at a time, 180-second timeout. With 20 symbols a scheduled round takes about 20
-  minutes; the primary's calls finish in about the first 5.
+- One call at a time, 180-second timeout. With 20 symbols one by one, a scheduled round takes
+  about 20 minutes and the primary's calls finish in about the first 5; groups make it shorter.
 - A change of model, effort or Codex version ends the test of the instance it affects, whatever
   the reason (a quota problem included). The new setup runs as a new instance with its own 180
   days.
@@ -180,7 +205,7 @@ stop data (`stop_events`, first look ~2026-11-30).
 New tables in the instance's database:
 
 - `news_items`: id, source, url, title, summary, published_at, fetched_at.
-- `llm_calls`: time, symbol, kind (scheduled / triggered), prompt, raw response, the JSONL
+- `llm_calls`: time, symbol or group, kind (scheduled / triggered), prompt, raw response, the JSONL
   events, model id, reasoning effort, Codex CLI version, input, cached, output and reasoning
   tokens, latency, exit code, stderr, whether it was a retry.
 - `llm_plans`: the parsed plan, whether it passed the validator and why not, the plan it
@@ -284,6 +309,8 @@ orders (the "exchange-side stop / OCO" item in TODO.md), which needs explicit ap
   with a usage-limit error have no new plans. Three instances need three times the calls, and the
   same limit hits all of them; the call order protects the primary.
 - OpenAI recommends API keys for automation and calls ChatGPT sign-in an advanced option.
+- With groups, the model sees five symbols at once and may weigh them against each other, and
+  scheduled and triggered reviews differ in format.
 
 ## Implementation outline (after the open questions are decided)
 
@@ -307,7 +334,8 @@ orders (the "exchange-side stop / OCO" item in TODO.md), which needs explicit ap
 - Codex provider tests with a fake `codex`: the command flags, the minimal environment, the version
   check, timeout and retry rules, usage-limit handling.
 - Before this document is fixed: a dry run of 2–3 days on live data that measures only format
-  validity, tokens, latency and usage-limit errors. Its plans are not traded or evaluated.
+  validity, tokens, latency and usage-limit errors, and compares single and grouped calls (see
+  "Grouped scheduled reviews"). Its plans are not traded or evaluated.
 
 ## Open questions
 
