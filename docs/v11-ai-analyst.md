@@ -206,6 +206,12 @@ stop and gap fills.
 - **Stop:** when a 1m low reaches the stop, at min(1m open, stop) minus slippage.
 - **Take-profit:** when a 1m high goes above it, at the take-profit (open if it gaps above).
 - Stop and take-profit in the same 1m candle: the stop is assumed first.
+- In the 1m candle an entry fills, the stop is checked too (the low may have come after the
+  fill); the take-profit is not.
+- A gapped limit buy gets slippage but never fills above its limit; a gapped take-profit never
+  below its level.
+- New stop, take-profit and review levels act only on candles that open after their plan was
+  stored. Adjusting a pending entry re-places it from the next candle.
 - Expired entry orders are cancelled at the daily close.
 - After a restart, standing orders are replayed over the missed 1m candles with the same
   rules. Missed triggered reviews are not made up; the next scheduled review covers them.
