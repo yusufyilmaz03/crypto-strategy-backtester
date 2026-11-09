@@ -31,6 +31,12 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   goes into a score or filter before a pre-registered test.
 - **Scale-in DCA test:** draft pre-registration in `docs/dca-scale-in-test.md`, waiting for
   review.
+- **Universe for new instances (idea, 2026-11-09):** a point-in-time top N by 30-day volume,
+  refreshed monthly, as an instance option next to the fixed `config.SYMBOLS` list. Needs a
+  rule for a held symbol that leaves the universe. Running forward tests keep their list until
+  they are evaluated.
+- **Scale-in DCA as an instance option (user idea, 2026-11-09):** only after the scale-in DCA
+  test has run. The engine needs several fills per position and an average cost.
 - **Trade-level metrics in every test from now on:** closed trades, win rate, average
   win and loss, profit factor, expectancy per trade (`analysis/filters.py`).
 
