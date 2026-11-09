@@ -82,6 +82,8 @@ One plan per symbol, strict JSON validated against a schema:
 - `action`: `hold` (keep everything as it is), `enter` (place an entry order), `adjust`
   (change stop, take-profit or review levels of a position or a pending order), `cancel`
   (cancel a pending entry), `exit` (sell the position at market).
+- The `review_if` levels and the `memo` of every accepted plan, `hold` included, replace the
+  previous ones. An `enter` while a limit entry is pending replaces that entry.
 - `entry.type`: `market` or `limit`. `expires_candles`: how many daily closes the order
   lives.
 - `stop`: required for every position and pending entry. `take_profit`: optional.
@@ -116,6 +118,11 @@ rejection and its reason are stored.
 - `review_if` levels at least 0.5 daily ATRs from the last price.
 - `p_tp`, when required, present and between 0.01 and 0.99.
 - `memo` at most 300 characters.
+- `enter` needs a grade.
+- An unchanged stop is accepted even when the price has come closer than 0.5 ATR to it, so a
+  plan can change the take-profit or review levels alone.
+- For a position, a take-profit is also above the last price.
+- The plan is for the symbol asked; every broken rule is stored with the rejection.
 - Prices must be positive numbers with at most the symbol's price precision; anything that
   is not a valid plan, an API error or a timeout counts as `hold`.
 
