@@ -83,6 +83,15 @@ NOTIFY_TRADES = True             # opened/closed positions and testnet orders
 NOTIFY_DAILY_SUMMARY = True      # one summary of every instance per day
 NOTIFY_SUMMARY_HOUR_UTC = 6      # when the daily summary is sent (06 UTC = 09:00 in Turkey)
 
+# ===== v11 AI analyst (llm/codex_cli.py, docs/v11-ai-analyst.md) =====
+# The model is reached through Codex CLI on the user's ChatGPT plan: no API key. The path is
+# absolute because the launchd service has no nvm PATH. The version is pinned for the test;
+# any other installed version stops the analyst's calls.
+CODEX_PATH = os.path.expanduser("~/.nvm/versions/node/v22.22.3/bin/codex")
+CODEX_VERSION = "0.166.0"
+CODEX_HOME = os.path.expanduser("~/.codex")
+LLM_TIMEOUT_SEC = 180
+
 # ===== Grid backtest (analysis/multi_backtest.py) =====
 TIMEFRAMES = ["1m", "3m", "5m"]
 STRATEGY_LIST = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"]
