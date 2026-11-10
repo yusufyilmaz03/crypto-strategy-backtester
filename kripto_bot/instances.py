@@ -148,6 +148,20 @@ def _clean_params(key, params):
 
 ANALYST = "v11"     # the AI analyst (trading/llm_analyst.py): a paper instance without a strategy function
 ANALYST_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+ANALYST_MODELS = ("gpt-6-astra", "gpt-6.1-sol")
+ANALYST_INFO = ("AI analyst: after each daily close a language model plans entries, stops and take-profits "
+                "for each symbol; the bot executes them every minute (docs/v11-ai-analyst.md). Paper, 1d, "
+                "its own symbol list.")
+ANALYST_PARAMS = [      # the panel's form for a v11 instance
+    {"name": "model", "default": "gpt-6-astra", "type": "choice", "choices": list(ANALYST_MODELS),
+     "description": "Model, called through Codex CLI on the ChatGPT plan."},
+    {"name": "effort", "default": "high", "type": "choice", "choices": list(ANALYST_EFFORTS),
+     "description": "Reasoning effort: higher thinks longer and uses more of the plan's quota."},
+    {"name": "news", "default": True, "type": "bool",
+     "description": "Off: the no-news control, the model sees no headlines."},
+    {"name": "group", "default": 5, "type": "int",
+     "description": "Symbols per scheduled call: 5 (groups of five) or 1 (one by one), as the dry run chose."},
+]
 
 
 def _validate_analyst(inst):
@@ -161,10 +175,15 @@ def _validate_analyst(inst):
         raise InstanceError("v11 needs a model")
     if params.get("effort") not in ANALYST_EFFORTS:
         raise InstanceError(f"v11 effort must be one of {', '.join(ANALYST_EFFORTS)}")
-    params["news"] = params.get("news", True)
-    if not isinstance(params["news"], bool):
+    news = params.get("news", True)
+    if news in ("true", "false"):            # the panel's form sends text
+        news = news == "true"
+    if not isinstance(news, bool):
         raise InstanceError("v11 news must be true or false")
+    params["news"] = news
     group = params.get("group", 5)
+    if isinstance(group, str) and group.strip().isdigit():
+        group = int(group)
     if not isinstance(group, int) or isinstance(group, bool) or not 1 <= group <= 10:
         raise InstanceError("v11 group must be a whole number from 1 to 10")
     params["group"] = group

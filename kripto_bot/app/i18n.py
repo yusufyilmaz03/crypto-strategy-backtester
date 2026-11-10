@@ -238,8 +238,24 @@ TR = {
     "Empty = off. Paper only.":
         "Kapanış, girişten bu yana en yüksek kapanışın bu kadar ATR altına düşünce sonraki açılışta sat. "
         "Boş = kapalı. Yalnızca paper.",
-    "All default symbols: the list in config.SYMBOLS. Custom: your own list, e.g. BTC/USDT, ETH/USDT.":
-        "Bütün varsayılan semboller: config.SYMBOLS'taki liste. Özel: kendi listeniz, örn. BTC/USDT, ETH/USDT.",
+    "All default symbols: the list in config.SYMBOLS. Custom: your own list, e.g. BTC/USDT, ETH/USDT. "
+    "Saved universe: the most traded pairs chosen on a date by `python -m kripto_bot universe --save` "
+    "(the v11 test uses one; a v11 instance needs a fixed list).":
+        "Bütün varsayılan semboller: config.SYMBOLS'taki liste. Özel: kendi listeniz, örn. BTC/USDT, ETH/USDT. "
+        "Kaydedilmiş evren: bir tarihte `python -m kripto_bot universe --save` ile seçilmiş en çok işlem gören "
+        "çiftler (v11 testi bunlardan birini kullanır; bir v11 instance'ı sabit bir liste ister).",
+    "Saved universe {date} ({n} symbols)": "Kaydedilmiş evren {date} ({n} sembol)",
+    "on": "açık",
+    ("AI analyst: after each daily close a language model plans entries, stops and take-profits for each "
+     "symbol; the bot executes them every minute (docs/v11-ai-analyst.md). Paper, 1d, its own symbol list."):
+        "AI analist: her günlük kapanıştan sonra bir dil modeli her sembol için giriş, stop ve kâr al planlar; "
+        "bot bunları her dakika uygular (docs/v11-ai-analyst.md). Paper, 1d, kendi sembol listesi.",
+    "Model, called through Codex CLI on the ChatGPT plan.": "Model; ChatGPT planı üzerinden Codex CLI ile çağrılır.",
+    "Reasoning effort: higher thinks longer and uses more of the plan's quota.":
+        "Düşünme seviyesi: yüksek olan daha uzun düşünür ve planın kotasından daha fazla kullanır.",
+    "Off: the no-news control, the model sees no headlines.": "Kapalı: haberisiz kontrol, model başlık görmez.",
+    "Symbols per scheduled call: 5 (groups of five) or 1 (one by one), as the dry run chose.":
+        "Planlı çağrı başına sembol: 5 (beşli gruplar) ya da 1 (tek tek), kuru çalıştırmanın seçtiği gibi.",
     "All default symbols": "Bütün varsayılan semboller",
     "Custom list": "Özel liste",
     "Lower timeframes": "Alt timeframe'ler",

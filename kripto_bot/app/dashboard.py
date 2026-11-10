@@ -29,7 +29,7 @@ from kripto_bot import instances, paths
 from kripto_bot.app import i18n, manual_close, notify, playground
 from kripto_bot.app import reporting
 from kripto_bot import settings
-from kripto_bot.core import bankroll, strategy
+from kripto_bot.core import bankroll, strategy, universe
 from kripto_bot.core.lower_timeframes import LOWER_TIMEFRAMES
 from kripto_bot.trading import store
 
@@ -207,7 +207,10 @@ def api_strategies():
                         "params": instances.param_spec(k), "grid": {
                             (" / ".join(n) if isinstance(n, tuple) else n): v
                             for n, v in strategy.PARAM_GRIDS.get(k, {}).items()}}
-                       for k in strategy.STRATEGY_DISPATCH],
+                       for k in strategy.STRATEGY_DISPATCH]
+                      + [{"key": instances.ANALYST, "description": instances.ANALYST_INFO,
+                          "params": instances.ANALYST_PARAMS, "grid": {}, "analyst": True}],
+        "universes": universe.saved(),
         "timeframes": instances.TIMEFRAMES, "modes": instances.MODES, "sizings": instances.SIZINGS,
         "stops": dict(config.STOPLOSS_CONFIG), "lower_timeframes": LOWER_TIMEFRAMES,
         "symbols": list(config.SYMBOLS), "default_equity": config.INITIAL_EQUITY,

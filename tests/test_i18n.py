@@ -59,6 +59,7 @@ def server_texts():
     """English texts the server sends that the browser shows (translated by KB.t)."""
     texts = set(strategy.STRATEGY_INFO.values()) | set(instances.SIZINGS.values())
     texts |= {d for p in strategy.PARAM_INFO.values() for d in p.values()}
+    texts |= {instances.ANALYST_INFO} | {p["description"] for p in instances.ANALYST_PARAMS}
     texts |= set(bankroll.INPUTS.values()) | set(bankroll.LOW_BASES.values()) | set(bankroll.GRADES)
     for s in settings.SCHEMA:
         texts |= {s.group, s.label} | ({s.help} if s.help else set())

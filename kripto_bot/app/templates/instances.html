@@ -53,7 +53,7 @@
         </div></div></div>
       <div class="col-md-6"><label class="form-label">{{ _("Trailing exit (ATR ×)") }}{{ tip(_("Sell at the next open when the close falls this many ATRs below the highest close since entry. Empty = off. Paper only.")) }}</label>
         <input class="form-control" type="number" min="0.5" max="20" step="any" id="trail" placeholder="{{ _("off") }}"></div>
-      <div class="col-md-6"><label class="form-label">{{ _("Symbols") }}{{ tip(_("All default symbols: the list in config.SYMBOLS. Custom: your own list, e.g. BTC/USDT, ETH/USDT.")) }}</label>
+      <div class="col-md-6"><label class="form-label">{{ _("Symbols") }}{{ tip(_("All default symbols: the list in config.SYMBOLS. Custom: your own list, e.g. BTC/USDT, ETH/USDT. Saved universe: the most traded pairs chosen on a date by `python -m kripto_bot universe --save` (the v11 test uses one; a v11 instance needs a fixed list).")) }}</label>
         <select class="form-select" id="symbol-mode"><option value="all">{{ _("All default symbols") }}</option><option value="custom">{{ _("Custom list") }}</option></select></div>
       <div class="col-12 d-none" id="symbols-box"><textarea class="form-control font-monospace" name="symbols" rows="2" placeholder="BTC/USDT, ETH/USDT"></textarea></div>
       <div class="col-md-6"><label class="form-label">{{ _("Lower timeframes") }}{{ tip("", "tip-ltf") }}</label>
@@ -147,6 +147,8 @@ async function initForm() {
     `<div class="col-6 col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" data-input="${k}" id="in-${k}">
       <label class="form-check-label small" for="in-${k}">${KB.esc(k)}</label>${KB.tip(KB.t(text))}</div></div>`).join("");
   document.getElementById("low-basis").innerHTML = Object.entries(B.low_bases).map(([k, v]) => opt(k, KB.t(v))).join("");
+  document.getElementById("symbol-mode").insertAdjacentHTML("beforeend", META.universes.map(u =>
+    opt(`universe:${u.file}`, KB.t("Saved universe {date} ({n} symbols)", { date: u.date, n: u.symbols.length }))).join(""));
   KB.setTip("tip-inputs", KB.t("Each selected input gives 0 to 1 point at the signal's close (closed candles only); " +
     "the score is their average × 100. Hover an input for what it measures."));
   KB.setTip("tip-rotation", KB.t("Only for a Very strong signal that can't get its full stake: the free cash is used first, " +
@@ -198,6 +200,7 @@ function cloneInstance(encodedName) {
   const form = document.getElementById("form"), set = (id, v) => document.getElementById(id).value = v;
   set("mode", i.mode); set("timeframe", i.timeframe); set("strategy", i.strategy);
   renderParams(); modeChanged();                       // sets the mode's defaults first
+  if (wasAnalyst) { wasAnalyst = false; analystChanged(); }    // modeChanged unlocked some fields
   Object.entries(i.params).forEach(([k, v]) => { const el = form.querySelector(`[data-param="${k}"]`); if (el) el.value = v; });
   set("equity", i.equity); set("trail", i.trail ?? "");
   if (!document.getElementById("ltf-sma").disabled) set("ltf-sma", i.lower_tf_sma ?? "");
@@ -242,11 +245,51 @@ function renderParams() {
   box.innerHTML = s.params.map(p => {
     const grid = Object.entries(s.grid).find(([k]) => k.split(" / ").includes(p.name));
     const text = [KB.t(p.description), grid && KB.t("Research grid: {grid}", { grid: JSON.stringify(grid[1]) })].filter(Boolean).join(" ");
-    return `<div class="col-6 col-md-3"><label class="form-label small mb-0">${KB.esc(p.name)}${text ? KB.tip(text) : ""}</label>
-      <input class="form-control form-control-sm" data-param="${KB.esc(p.name)}" type="number" step="${p.type === "int" ? 1 : "any"}"
-        placeholder="${KB.esc(p.default)}"></div>`;
+    const choices = p.type === "bool" ? [["true", KB.t("on")], ["false", KB.t("off")]]
+      : p.type === "choice" ? p.choices.map(c => [c, c]) : null;
+    const input = choices
+      ? `<select class="form-select form-select-sm" data-param="${KB.esc(p.name)}">${choices.map(([v, l]) => opt(v, l)).join("")}</select>`
+      : `<input class="form-control form-control-sm" data-param="${KB.esc(p.name)}" type="number" step="${p.type === "int" ? 1 : "any"}"
+        placeholder="${KB.esc(p.default)}">`;
+    return `<div class="col-6 col-md-3"><label class="form-label small mb-0">${KB.esc(p.name)}${text ? KB.tip(text) : ""}</label>${input}</div>`;
   }).join("") || `<div class="text-secondary small">${KB.t("No parameters.")}</div>`;
+  s.params.filter(p => p.type === "bool" || p.type === "choice")
+    .forEach(p => box.querySelector(`[data-param="${p.name}"]`).value = String(p.default));
   KB.initTips(box);
+  analystChanged();
+}
+// The AI analyst (v11) has its own stops and a daily rhythm: the strategy fields don't apply to it.
+const ANALYST_LOCKED = ["mode", "timeframe", "stop", "sizing", "trail", "ltf-entry", "ltf-exit", "ltf-sma", "trend-sma", "manual-close"];
+let wasAnalyst = false;
+function analystChanged() {
+  const s = META.strategies.find(x => x.key === document.getElementById("strategy").value);
+  const on = !!s?.analyst, set = (id, v) => document.getElementById(id).value = v;
+  const symbolMode = document.getElementById("symbol-mode");
+  if (on) {
+    set("mode", "paper"); modeChanged(); set("timeframe", "1d"); lowerChanged();
+    set("stop", "none"); set("sizing", "equal"); sizingChanged(); set("trail", ""); set("ltf-sma", ""); set("trend-sma", "");
+    for (const id of ["ltf-entry", "ltf-exit", "manual-close"]) document.getElementById(id).checked = false;
+    for (const id of ANALYST_LOCKED) document.getElementById(id).disabled = true;
+    symbolMode.querySelector('option[value="all"]').disabled = true;     // a fixed list: a saved universe or your own
+    if (symbolMode.value === "all") {
+      symbolMode.value = META.universes.length ? `universe:${META.universes[0].file}` : "custom";
+      symbolModeChanged();
+    }
+  } else if (wasAnalyst) {
+    for (const id of ANALYST_LOCKED) document.getElementById(id).disabled = false;
+    symbolMode.querySelector('option[value="all"]').disabled = false;
+    modeChanged(); lowerChanged();
+  }
+  wasAnalyst = on;
+}
+function symbolModeChanged() {
+  document.getElementById("symbols-box").classList.toggle("d-none", document.getElementById("symbol-mode").value !== "custom");
+}
+function chosenSymbols(form) {
+  const mode = document.getElementById("symbol-mode").value;
+  if (mode === "custom") return new FormData(form).get("symbols").split(/[\s,]+/).filter(Boolean);
+  if (mode.startsWith("universe:")) return META.universes.find(u => `universe:${u.file}` === mode).symbols;
+  return null;
 }
 function modeChanged() {
   const testnet = document.getElementById("mode").value === "testnet";
@@ -290,8 +333,7 @@ function lowerChanged() {
 document.getElementById("strategy").addEventListener("change", renderParams);
 document.getElementById("mode").addEventListener("change", modeChanged);
 document.getElementById("timeframe").addEventListener("change", lowerChanged);
-document.getElementById("symbol-mode").addEventListener("change", e =>
-  document.getElementById("symbols-box").classList.toggle("d-none", e.target.value !== "custom"));
+document.getElementById("symbol-mode").addEventListener("change", symbolModeChanged);
 
 function bankrollBody() {
   if (document.getElementById("sizing").value !== "bankroll") return {};
@@ -311,15 +353,15 @@ document.getElementById("form").addEventListener("submit", async e => {
   const f = new FormData(e.target), err = document.getElementById("form-error");
   const params = {};
   document.querySelectorAll("[data-param]").forEach(el => { if (el.value !== "") params[el.dataset.param] = el.value; });
-  const body = { name: f.get("name"), mode: f.get("mode"), strategy: f.get("strategy"), timeframe: f.get("timeframe"),
+  const body = { name: f.get("name"), mode: document.getElementById("mode").value, strategy: f.get("strategy"),
+    timeframe: document.getElementById("timeframe").value,      // read directly: a locked (disabled) field isn't in FormData
     stop: document.getElementById("stop").value, sizing: document.getElementById("sizing").value,
     trail: document.getElementById("trail").value || null,
     lower_tf_entry: document.getElementById("ltf-entry").checked, lower_tf_exit: document.getElementById("ltf-exit").checked,
     manual_close: document.getElementById("manual-close").checked,
     lower_tf_sma: document.getElementById("ltf-sma").value || null, trend_sma: document.getElementById("trend-sma").value || null,
     equity: f.get("equity"), description: f.get("description"), params, ...bankrollBody(),
-    symbols: document.getElementById("symbol-mode").value === "custom"
-      ? f.get("symbols").split(/[\s,]+/).filter(Boolean) : null };
+    symbols: chosenSymbols(e.target) };
   try {
     await KB.api("/api/instances", { method: "POST", body });
     if (document.getElementById("start-now").checked)

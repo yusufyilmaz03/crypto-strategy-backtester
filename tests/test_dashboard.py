@@ -221,3 +221,19 @@ def test_a_v11_instance_shows_like_a_paper_instance(client):
     assert "v11-astra-high" in [i["name"] for i in client.get("/api/instances").get_json()]
     for table in ("trades", "positions", "signals"):
         assert client.get(f"/api/instances/v11-astra-high/{table}").status_code in (200, 400), table
+
+
+def test_the_form_offers_v11_and_creates_it_like_the_browser_does(client, monkeypatch):
+    from kripto_bot.core import universe
+    monkeypatch.setattr(universe, "saved", lambda: [{"file": "universe_2026-11-09.json", "date": "2026-11-09",
+                                                    "symbols": ["BTC/USDT", "ETH/USDT"]}])
+    meta = client.get("/api/strategies").get_json()
+    v11 = next(s for s in meta["strategies"] if s["key"] == "v11")
+    assert v11["analyst"] and [p["name"] for p in v11["params"]] == ["model", "effort", "news", "group"]
+    assert meta["universes"][0]["symbols"] == ["BTC/USDT", "ETH/USDT"]
+    body = {"name": "v11-nonews", "mode": "paper", "strategy": "v11", "timeframe": "1d", "stop": "none",
+            "sizing": "equal", "equity": "1000", "symbols": ["BTC/USDT", "ETH/USDT"],
+            "params": {"model": "gpt-6-astra", "effort": "high", "news": "false", "group": "5"}}
+    r = _post(client, "/api/instances", body)
+    assert r.status_code == 201, r.get_json()
+    assert r.get_json()["params"] == {"model": "gpt-6-astra", "effort": "high", "news": False, "group": 5}

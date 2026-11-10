@@ -12,7 +12,9 @@ Every pair left out is listed with its reason, so a person can check the choice 
 fixed.
 """
 import argparse
+import glob
 import json
+import os
 import statistics
 
 import pandas as pd
@@ -87,6 +89,19 @@ def select(n, exchange=None, now=None, log=print):
         r["rank"] = i
     return {"as_of": now.isoformat(), "n": n, "symbols": [r["symbol"] for r in ranked[:n]],
             "ranking": ranked, "skipped": skipped}
+
+
+def saved():
+    """Universes saved with --save, newest first: [{file, date, symbols}] (the panel offers them)."""
+    out = []
+    for path in sorted(glob.glob(paths.results("universe_*.json")), reverse=True):
+        try:
+            with open(path) as f:
+                u = json.load(f)
+            out.append({"file": os.path.basename(path), "date": u["as_of"][:10], "symbols": u["symbols"]})
+        except (OSError, ValueError, KeyError):
+            continue
+    return out
 
 
 def main():
