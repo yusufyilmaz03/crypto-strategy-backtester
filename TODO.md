@@ -102,7 +102,8 @@ day, up to 33 on one candle. (The first two instances, `withBankroll` and `withB
 ran v2 40/60/3, which gave no BUY in the last 1000 candles of any symbol on 4h or 5m; they
 were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
 
-- **Stakes and scores.** The first BUYs write `RESERVE` then `BUY` rows with a score and
+- **Stakes and scores.** The first BUYs write a `RESERVE` row (at the open a small `RELEASE`
+  returns what lot rounding left over; there is no `BUY` ledger row) with a score and
   grade. The stake is the grade's % of the contributed capital: 200 / 500 / 700 / 1,000
   USDT for Weak / Normal / Strong / Very strong. Weak trades here, since its stake is 2%.
   The Score column is filled on Signals, Positions (with Now) and Trades.
