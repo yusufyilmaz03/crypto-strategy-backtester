@@ -59,3 +59,6 @@ instances.json
 status.json
 playground.db
 *.tmp
+
+# Built skill packages
+agent-skill/dist/
