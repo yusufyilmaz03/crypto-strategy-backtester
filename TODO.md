@@ -94,10 +94,15 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   instance's Bankroll tab for now. It may move elsewhere later (e.g. its own page or the
   Backtests page); keep it as it is until that is decided.
 
-## Bankroll (paper, 2026-11-01) — check before merging `phase-4g-bankroll`
+## Bankroll (paper, 2026-11-01)
 
-The branch is pushed, not merged. Merge into dev once the checks below pass on the paper
-instance `bankroll-v4-5m` (started 2026-11-02): v4 on 5m, 41 symbols, 10,000 USDT, stakes
+- **Still open: the panel at phone width** (user check, not urgent): the Bankroll section of
+  the New instance modal, the bankroll card, the Bankroll tab (chart, ledger, requests,
+  replay) and the Deposit / Withdraw dialogs.
+
+`phase-4g-bankroll` was merged into dev on 2026-11-10 (with 4h and 4i, fast-forward) after
+the checks below; only the phone-width check was left, by the user's choice. The checks ran
+on the paper instance `bankroll-v4-5m` (started 2026-11-02): v4 on 5m, 41 symbols, 10,000 USDT, stakes
 2/5/7/10%, min entry 10, rotation on (profit only, reduce allowed), low bankroll below 50%
 of value. v4 on 5m gives about 18 BUY signals an hour and up to 40 on one candle, so the
 cash runs short quickly. `bankroll-v4-4h` (started 2026-11-02) has the same setup on 4h
