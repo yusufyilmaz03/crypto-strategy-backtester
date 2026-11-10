@@ -115,7 +115,8 @@ were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
     'instance:bankroll-v4-%' AND (free_after < -1e-6 OR abs(free_after +
     reserved_after + invested_after - value_after) > 0.01)"
   ```
-  An empty result is a pass.
+  An empty result is a pass. With rotation, free can be negative on the rows of a candle that
+  funded a Very strong entry against the cash a rotation will bring at the next open.
 - **A busy candle.** When many BUYs arrive together, the higher scores are funded first.
   Once the cash runs out, rows say "cut to the free cash" or "no free cash" (`SKIP`).
 - **Rotation.** A Very strong signal (score 80 or more) short of cash spends the free
@@ -139,6 +140,21 @@ were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
 - **Panel in a browser**, also at phone width: the Bankroll section of the New instance
   modal, the bankroll card, the Bankroll tab (chart, ledger, requests) and Deposit /
   Withdraw.
+- **Status 2026-11-10.** Passed on the paper instances: books add up, restarts, busy candles
+  (cut / no cash), the lower-timeframe exit, deposit and withdraw (5,000 in and 7,000 out on
+  `bankroll-v4-5m`, applied within about 15 s, TWR without a jump; the refusal above the free
+  cash is covered by tests), the low-bankroll warning (threshold 99%: badge and Telegram) and the
+  Telegram views. Still open: the panel at phone width.
+  Strong / Very strong stakes and rotation never occur with v4: it buys below the lower Bollinger
+  band, where most score inputs (trend, distance, breakout, RSI 50-70) give no points, so its BUY
+  scores stay below about 56 (replays of both instances' exact settings on cached candles: max
+  55.9 on 4h, 2026-04 to 2026-09; max 50.1 over 34,113 BUYs on 5m, 2026-07 to 2026-09). A replay of the same bankroll settings with v9 on cached 4h
+  candles (2026-04 to 2026-09, the live BankrollRunner with faked clock and fetches) gave 119
+  Very strong and 485 Strong entries, 41 rotations for 27 entries (26 TRIMs). Every rule held:
+  margin of 20 points, held 3 candles or more, profit only, at most 2 per candle, filled at the
+  next open, stakes 200 / 500 / 700 / 1,000, higher scores funded first. Free cash is negative
+  only at the end of a candle that funded an entry against rotation proceeds (by design); the
+  three shortfalls were settled as "stake cut" (cents).
 - **Afterwards:** bankroll instances are untested variants. Compare them descriptively,
   with the trade metrics, before trusting any stake grades or rotation. A pre-registered
   test needs a portfolio backtest built on `core/bankroll.py`.
