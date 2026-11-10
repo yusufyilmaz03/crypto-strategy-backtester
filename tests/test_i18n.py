@@ -7,6 +7,7 @@ import pytest
 from kripto_bot import instances, settings
 from kripto_bot.app import dashboard, i18n
 from kripto_bot.core import bankroll, strategy
+from kripto_bot.llm import plan as llm_plan
 
 APP_DIR = os.path.dirname(dashboard.__file__)
 LITERAL = r'"((?:[^"\\]|\\.)*)"'
@@ -64,6 +65,7 @@ def server_texts():
     for s in settings.SCHEMA:
         texts |= {s.group, s.label} | ({s.help} if s.help else set())
     texts |= {"Binance API key", "Testnet API key", "Telegram bot"}     # dashboard._settings_view
+    texts |= set(llm_plan.ACTIONS) | set(llm_plan.GRADES)                # v11 plans in the panel
     return texts
 
 

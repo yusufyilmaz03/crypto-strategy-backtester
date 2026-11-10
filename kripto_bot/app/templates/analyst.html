@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{{ _("AI analyst") }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+  <h1 class="h3 mb-0"><i class="bi bi-robot"></i> {{ _("AI analyst") }} <small class="text-secondary">v11</small></h1>
+  <a class="btn btn-outline-primary btn-sm" href="/instances#new"><i class="bi bi-plus-lg"></i> {{ _("New instance") }}</a>
+</div>
+<p class="text-secondary small mb-4">{{ _("After each daily close a language model plans entries, stops and take-profits for each symbol (docs/v11-ai-analyst.md). First comes the dry run: every setup is called on the same snapshot and the plans are stored, never traded. Its report decides between one-by-one and grouped calls and the number of symbols; then the v11 instances are created and start trading on paper.") }}</p>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-4"><div class="card h-100"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-2"><h6 class="card-title mb-1">{{ _("Dry run") }}</h6><span id="dr-badge"></span></div>
+    <div class="small" id="dr-status">…</div>
+  </div></div></div>
+  <div class="col-lg-8"><div class="card h-100"><div class="card-body">
+    <h6 class="card-title mb-1">{{ _("One by one or grouped?") }}</h6>
+    <div class="small text-secondary mb-2" id="cmp-rule"></div>
+    <div id="cmp">…</div>
+  </div></div></div>
+</div>
+
+<h2 class="h5">{{ _("v11 instances") }}</h2>
+<div class="mb-4" id="instances">…</div>
+
+<h2 class="h5">{{ _("Calls per day and run") }}</h2>
+<div class="table-responsive mb-4" style="max-height: 420px"><table class="table table-sm" id="usage"></table></div>
+
+<div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+  <h2 class="h5 mb-0 me-2">{{ _("Plans") }}</h2>
+  <select class="form-select form-select-sm w-auto" id="day"></select>
+  <select class="form-select form-select-sm w-auto" id="run"></select>
+  <select class="form-select form-select-sm w-auto" id="symbol"></select>
+</div>
+<div class="small text-secondary mb-1">{{ _("Every run gets the same snapshot of the day. Times UTC.") }}</div>
+<div class="table-responsive mb-4" style="max-height: 620px"><table class="table table-sm" id="plans"></table></div>
+
+<details class="mb-4"><summary class="h6">{{ _("Log") }}</summary>
+  <div class="small text-secondary mb-1">{{ _("Newest first.") }}</div><div class="log bg-body-tertiary p-2 rounded" id="log">…</div>
+</details>
+{% endblock %}
+{% block scripts %}
+<script>
+let DATA, PLANS = [];
+const lvl = v => v == null ? "" : KB.num(v, 6);
+const runKey = r => `${r.setup}/${r.mode}`;
+const MODE_TEXT = { "single-a": KB.t("one by one (A)"), "single-b": KB.t("one by one (B)"),
+                    "group": KB.t("grouped"), "group-no-news": KB.t("grouped, no news") };
+const runLabel = (setup, mode) => `${setup} · ${MODE_TEXT[mode] || mode}`;
+function pctCell(v) { return v == null ? "–" : KB.num(v * 100, 0) + "%"; }
+
+async function load() {
+  DATA = await KB.api("/api/analyst");
+  const d = DATA.dry_run;
+  // status
+  document.getElementById("dr-badge").innerHTML = d.enabled ? KB.statusBadge(d.service, true)
+    : `<span class="badge text-bg-secondary">${KB.t("off")}</span>`;
+  const u = d.universe;
+  document.getElementById("dr-status").innerHTML = (d.enabled
+      ? KB.t("Runs after every daily close; next run {time} UTC.", { time: KB.time(d.next_run) })
+      : KB.t("Off (config.V11_DRY_RUN). The stored plans stay here."))
+    + `<br>${KB.t("Last call: {time} UTC.", { time: d.last_call ? KB.time(d.last_call) : "–" })}`
+    + `<br>${KB.t("{n} runs per day:", { n: d.runs.length })} <span class="text-secondary">${
+        d.runs.map(r => KB.esc(`${runLabel(r.setup, r.mode)} (${r.model} ${r.effort})`)).join("; ")}</span>`
+    + (u ? `<br>${KB.t("Universe: {n} symbols from {file}", { n: u.symbols.length, file: KB.esc(u.file) })}
+        <div class="text-secondary">${KB.esc(u.symbols.map(s => s.replace("/USDT", "")).join(" "))}</div>` : "");
+  // comparison
+  const c = d.comparison;
+  document.getElementById("cmp-rule").textContent = KB.t(
+    "The primary setup (astra-high) runs one by one twice and grouped once. Grouped calls are used if their agreement with the one-by-one runs is at most {tol} points below the one-by-one runs' agreement with each other, and they are rejected no more often. Two plans agree when the action is the same and the levels are within {atr} ATR.",
+    { tol: KB.num(d.tolerance * 100, 0), atr: KB.num(d.agree_atr, 1) });
+  document.getElementById("cmp").innerHTML = !c.symbol_days ? `<div class="small text-secondary">${KB.t("No dry-run plans yet.")}</div>`
+    : `<div class="row g-3">${[["one by one A vs B", c["single-a vs single-b"]], ["A vs grouped", c["single-a vs group"]],
+                             ["B vs grouped", c["single-b vs group"]]].map(([k, v]) => `
+        <div class="col-4"><div class="metric"><div class="label">${KB.t(k)}</div><div class="value">${pctCell(v)}</div></div></div>`).join("")}</div>
+      <div class="small mt-2">${KB.t("Rejected by the validator: A {a}, B {b}, grouped {g}.", { a: pctCell(c["rejected single-a"]),
+        b: pctCell(c["rejected single-b"]), g: pctCell(c["rejected group"]) })} ${KB.t("{n} symbol-days compared.", { n: c.symbol_days })}</div>
+      <div class="mt-1">${c["use groups"] ? `<span class="badge text-bg-success">${KB.t("Grouped calls pass so far")}</span>`
+                                         : `<span class="badge text-bg-warning">${KB.t("One by one so far")}</span>`}
+        <span class="small text-secondary">${KB.t("Decided in the report after 2-3 days.")}</span></div>`;
+  // instances
+  document.getElementById("instances").innerHTML = DATA.instances.length
+    ? `<div class="list-group">${DATA.instances.map(i => `<a class="list-group-item list-group-item-action d-flex flex-wrap gap-2 align-items-center"
+        href="/instances/${encodeURIComponent(i.name)}"><b>${KB.esc(i.name)}</b> ${KB.statusBadge(i.status, i.enabled)}
+        <span class="small text-secondary">${KB.esc(KB.params(i.params))} · ${KB.t("{n} symbols", { n: i.symbols })}</span></a>`).join("")}</div>`
+    : `<div class="small text-secondary">${KB.t("None yet. They are created after the dry-run report: Instances → New instance → strategy v11 (Today's top 20 for the symbols). Each one's page then has an AI analyst tab with its plans, orders and calls.")}</div>`;
+  // usage
+  KB.table(document.getElementById("usage"), d.usage, [
+    [KB.t("Day"), r => KB.esc(r.day), r => r.day], [KB.t("Run"), r => KB.esc(runLabel(r.setup, r.mode)), r => runKey(r)],
+    [KB.t("Calls"), r => r.calls, r => r.calls],
+    [KB.t("Failed"), r => `<span class="${r.failed ? "text-danger" : ""}">${r.failed}</span>`, r => r.failed],
+    [KB.t("Plans accepted"), r => r.plans == null ? "–" : `${r.accepted}/${r.plans}`, r => r.accepted],
+    [KB.t("Tokens in"), r => KB.num(r.input_tokens, 0), r => r.input_tokens],
+    [KB.t("Tokens out"), r => KB.num(r.output_tokens, 0), r => r.output_tokens],
+    [KB.t("Reasoning"), r => KB.num(r.reasoning_tokens, 0), r => r.reasoning_tokens],
+    [KB.t("Seconds per call"), r => KB.num(r.seconds, 1), r => r.seconds]],
+    KB.t("No calls yet: the first run comes after the next daily close."), null);
+  // plans
+  const day = document.getElementById("day");
+  if (!day.options.length || [...day.options].map(o => o.value).join() !== d.days.join()) {
+    const keep = day.value;
+    day.innerHTML = d.days.map(x => `<option>${x}</option>`).join("");
+    if (d.days.includes(keep)) day.value = keep;
+    await loadPlans();
+  }
+}
+async function loadPlans() {
+  const day = document.getElementById("day").value;
+  PLANS = day ? await KB.api(`/api/analyst/plans?day=${day}`) : [];
+  const fill = (id, values, label, all) => {
+    const el = document.getElementById(id), keep = el.value;
+    el.innerHTML = `<option value="">${all}</option>` + values.map(v => `<option value="${KB.esc(v)}">${KB.esc(label(v))}</option>`).join("");
+    if (values.includes(keep)) el.value = keep;
+  };
+  const runs = [...new Set(PLANS.map(runKey))];
+  fill("run", runs, v => runLabel(...v.split("/")), KB.t("All runs"));
+  fill("symbol", [...new Set(PLANS.map(r => r.symbol))].sort(), v => v, KB.t("All symbols"));
+  renderPlans();
+}
+function entryCell(r) {
+  if (!r.entry_type) return "";
+  return r.entry_type === "market" ? KB.t("market") : KB.t("limit {price}", { price: lvl(r.entry_price) });
+}
+function renderPlans() {
+  const run = document.getElementById("run").value, sym = document.getElementById("symbol").value;
+  const rows = PLANS.filter(r => (!run || runKey(r) === run) && (!sym || r.symbol === sym));
+  KB.table(document.getElementById("plans"), rows, [
+    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol],
+    [KB.t("Run"), r => `<span class="small">${KB.esc(runLabel(r.setup, r.mode))}</span>`, r => runKey(r)],
+    [KB.t("Action"), r => KB.esc(r.action ? KB.t(r.action) : ""), r => r.action],
+    [KB.t("Accepted"), r => r.accepted ? `<i class="bi bi-check-lg text-success"></i>`
+      : `<i class="bi bi-x-lg text-danger" title="${KB.esc(r.rejected_because)}"></i>`, r => r.accepted],
+    [KB.t("Entry"), entryCell, r => r.entry_price], [KB.t("Stop"), r => lvl(r.stop), r => r.stop],
+    [KB.t("Take-profit"), r => lvl(r.take_profit), r => r.take_profit],
+    [KB.term("p_tp", KB.t("The model's probability that the take-profit comes before the stop within 30 days of the fill")),
+     r => r.p_tp == null ? "" : KB.num(r.p_tp, 2), r => r.p_tp],
+    [KB.t("Grade"), r => KB.esc(r.grade ? KB.t(r.grade) : ""), r => r.grade],
+    [KB.t("Review levels"), r => KB.esc(r.review_if || ""), r => r.review_if],
+    [KB.t("Reasons"), r => `<span class="small">${KB.esc(r.plan_reasons)}</span>${r.rejected_because
+      ? `<div class="small text-danger">${KB.esc(r.rejected_because)}</div>` : ""}`],
+    [KB.t("Memo"), r => `<span class="small text-secondary">${KB.esc(r.memo)}</span>`]],
+    KB.t("No plans yet."), null);
+  KB.initTips(document.getElementById("plans"));
+}
+async function loadLog() {
+  const lines = await KB.api("/api/analyst/log?lines=200");
+  document.getElementById("log").textContent = lines.length ? lines.slice().reverse().join("\n") : KB.t("No log yet.");
+}
+document.getElementById("day").addEventListener("change", loadPlans);
+document.getElementById("run").addEventListener("change", renderPlans);
+document.getElementById("symbol").addEventListener("change", renderPlans);
+document.querySelector("details").addEventListener("toggle", e => e.target.open && loadLog());
+load();
+setInterval(load, 60000);
+</script>
+{% endblock %}

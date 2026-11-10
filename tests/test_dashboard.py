@@ -5,7 +5,7 @@ import pytest
 
 from kripto_bot import config
 from kripto_bot.app import dashboard
-from kripto_bot import instances
+from kripto_bot import instances, paths
 from kripto_bot.app import playground
 from kripto_bot.app import reporting
 from kripto_bot.trading import run_realtime
@@ -299,3 +299,45 @@ def test_the_ai_analyst_tab_shows_plans_calls_events_and_orders(client, tmp_path
     today = get("llm_today")
     assert today["calls"] == 1 and today["failed"] == 0 and today["stopped"] is None
     assert client.get("/instances/v11-a").status_code == 200
+
+
+def test_the_ai_analyst_page_shows_the_dry_run(client, tmp_path, monkeypatch):
+    import pandas as pd
+    from kripto_bot.analysis import v11_dry_run as dr
+    from kripto_bot.llm import plan as pl
+    from kripto_bot.llm import provider as p
+    from kripto_bot.llm.store import LLMStore
+    from kripto_bot.trading import store
+    db = str(tmp_path / "paper.db")
+    monkeypatch.setattr(store, "DB_FILE", db)
+    monkeypatch.setattr(paths, "RESULTS_DIR", str(tmp_path / "results"))
+    monkeypatch.setattr(config, "V11_DRY_RUN", True)
+    with open(paths.results("universe_2026-11-09.json"), "w") as f:
+        json.dump({"as_of": "2026-11-09T20:00:00+00:00", "symbols": ["BTC/USDT", "ETH/USDT"]}, f)
+    assert client.get("/api/analyst").get_json()["dry_run"]["usage"] == []        # no calls yet
+    st = LLMStore(db)
+    now = pd.Timestamp("2026-11-10T00:03:00", tz="UTC")
+    plan = {"symbol": "ETH/USDT", "action": "hold", "review_if": [{"side": "below", "price": 2880}],
+            "reasons": ["wait"], "news_ids": [], "memo": "flat"}
+    ctx = {"last": 3000, "atr": 120, "tick": 0.01}
+    for mode in ("single-a", "single-b", "group"):
+        if mode == "single-a":
+            st.record_call(dr.PREFIX + "astra-high", now, "scheduled", mode, ["ETH/USDT"], "prompt",
+                           p.LLMResult(p.TIMEOUT, model="gpt-6-astra", effort="high"))
+        call = st.record_call(dr.PREFIX + "astra-high", now, "scheduled", mode, ["ETH/USDT"], "prompt",
+                              p.LLMResult(p.OK, usage={"input_tokens": 1000, "output_tokens": 50}, model="gpt-6-astra",
+                                          effort="high"))
+        st.record_plan(dr.PREFIX + "astra-high", call, now, mode, "ETH/USDT", plan, pl.Verdict(True, [], plan), ctx)
+    instances.create({"name": "v11-a", "strategy": "v11", "timeframe": "1d", "symbols": ["ETH/USDT"],
+                      "params": {"model": "gpt-6-astra", "effort": "high"}})
+    d = client.get("/api/analyst").get_json()
+    dry = d["dry_run"]
+    assert dry["enabled"] and dry["next_run"] and dry["universe"]["symbols"] == ["BTC/USDT", "ETH/USDT"]
+    assert [(u["mode"], u["calls"], u["failed"], u["accepted"]) for u in dry["usage"]] == \
+        [("single-a", 2, 1, 1), ("single-b", 1, 0, 1), ("group", 1, 0, 1)]
+    assert dry["comparison"]["symbol_days"] == 1 and dry["comparison"]["use groups"]
+    assert dry["days"] == ["2026-11-10"] and [i["name"] for i in d["instances"]] == ["v11-a"]
+    plans = client.get("/api/analyst/plans?day=2026-11-10").get_json()
+    assert len(plans) == 3 and {r["setup"] for r in plans} == {"astra-high"} and plans[0]["review_if"] == "below 2880"
+    assert client.get("/api/analyst/plans?day=x").status_code == 400
+    assert client.get("/analyst").status_code == 200

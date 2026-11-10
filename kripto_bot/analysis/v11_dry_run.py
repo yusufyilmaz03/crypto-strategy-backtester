@@ -53,11 +53,17 @@ def chunks(items, size):
     return [items[i:i + size] for i in range(0, len(items), size)]
 
 
+def universe_file():
+    """The universe saved on the first run (results/universe_<date>.json), or None."""
+    files = sorted(glob.glob(paths.results("universe_*.json")))
+    return files[0] if files else None
+
+
 def fixed_universe(log=print):
     """The symbols chosen on the first run, saved in results/; later runs reuse them."""
-    files = sorted(glob.glob(paths.results("universe_*.json")))
-    if files:
-        with open(files[0]) as f:
+    path = universe_file()
+    if path:
+        with open(path) as f:
             chosen = json.load(f)
     else:
         chosen = universe.select(SYMBOLS, log=log)

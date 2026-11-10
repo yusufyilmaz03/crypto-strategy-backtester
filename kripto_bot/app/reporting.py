@@ -388,3 +388,63 @@ def llm_today(inst, paper_db=None, now=None):
             "input_tokens": int(df["input_tokens"].fillna(0).sum()), "output_tokens": int(df["output_tokens"].fillna(0).sum()),
             "reasoning_tokens": int(df["reasoning_tokens"].fillna(0).sum()), "stopped": stopped,
             "last_scheduled": last["t"].iloc[0] if not last.empty else None}
+
+
+# ---------------------------------------------------------------- v11 dry run (the AI analyst page)
+def dry_run_view(paper_db=None, now=None):
+    """The v11 dry run from paper.db: usage per day and run, the grouping comparison, the
+    days with plans, its universe and the next run. Reads only what is stored."""
+    from kripto_bot.analysis import v11_dry_run as dr
+    db = paper_db or store.DB_FILE
+    like = (dr.PREFIX + "%",)
+    calls = _query(db, "SELECT id, instance, time, mode, outcome, retry, input_tokens, output_tokens, reasoning_tokens, "
+                       "latency_sec FROM llm_calls WHERE instance LIKE ? ORDER BY id", like)
+    plans = _query(db, "SELECT id, instance, time, mode, symbol, action, accepted, plan, context FROM llm_plans "
+                       "WHERE instance LIKE ? ORDER BY id", like)
+    usage = []
+    if not calls.empty:
+        calls["day"] = calls["time"].str[:10]
+        calls["setup"] = calls["instance"].str[len(dr.PREFIX):]
+        g = calls.groupby(["day", "setup", "mode"], sort=False)
+        usage = g.agg(calls=("id", "size"), failed=("outcome", lambda s: int((s != "ok").sum())),
+                      retries=("retry", "sum"), input_tokens=("input_tokens", "sum"),
+                      output_tokens=("output_tokens", "sum"), reasoning_tokens=("reasoning_tokens", "sum"),
+                      seconds=("latency_sec", "mean")).reset_index()
+        if not plans.empty:
+            pl = plans.assign(day=plans["time"].str[:10], setup=plans["instance"].str[len(dr.PREFIX):])
+            counts = pl.groupby(["day", "setup", "mode"]).agg(plans=("id", "size"), accepted=("accepted", "sum")).reset_index()
+            usage = usage.merge(counts, on=["day", "setup", "mode"], how="left")
+        order = {(s, m): i for i, (s, m, _, _) in enumerate(dr.RUNS)}
+        usage["run"] = [order.get((s, m), 99) for s, m in zip(usage["setup"], usage["mode"])]
+        usage = usage.sort_values(["day", "run"], ascending=[False, True]).drop(columns="run")
+        usage = json.loads(usage.to_json(orient="records"))
+    comparison = dr.comparison(plans) if not plans.empty else {}
+    path = dr.universe_file()
+    uni = None
+    if path:
+        with open(path) as f:
+            u = json.load(f)
+        uni = {"file": os.path.basename(path), "as_of": u.get("as_of"), "symbols": u["symbols"][:dr.SYMBOLS]}
+    now = now or pd.Timestamp.now(tz="UTC")
+    return {"enabled": bool(config.V11_DRY_RUN), "service": service_status("v11-dry-run"),
+            "next_run": (now + pd.Timedelta(seconds=dr.seconds_to_next_run(now))).isoformat() if config.V11_DRY_RUN else None,
+            "last_call": calls["time"].iloc[-1] if not calls.empty else None,
+            "runs": [{"setup": s, "mode": m, "group": n, "news": news, "model": dr.SETUPS[s][0], "effort": dr.SETUPS[s][1]}
+                     for s, m, n, news in dr.RUNS],
+            "usage": usage, "comparison": comparison, "tolerance": dr.AGREE_TOLERANCE, "agree_atr": dr.AGREE_ATR,
+            "days": sorted(plans["time"].str[:10].unique().tolist(), reverse=True) if not plans.empty else [],
+            "universe": uni}
+
+
+def dry_run_plans(day, paper_db=None):
+    """Every dry-run plan of one UTC day, by symbol and run."""
+    from kripto_bot.analysis import v11_dry_run as dr
+    df = _query(paper_db or store.DB_FILE,
+                "SELECT id, instance, time, mode, symbol, action, accepted, reasons, plan FROM llm_plans "
+                "WHERE instance LIKE ? AND substr(time, 1, 10) = ? ORDER BY symbol, id", (dr.PREFIX + "%", day))
+    if df.empty:
+        return df
+    fields = pd.DataFrame([_plan_fields(x) for x in df["plan"]], index=df.index)
+    df["setup"] = df["instance"].str[len(dr.PREFIX):]
+    df["rejected_because"] = [" · ".join(json.loads(r or "[]")) for r in df["reasons"]]
+    return pd.concat([df.drop(columns=["plan", "reasons", "instance"]), fields], axis=1)

@@ -378,7 +378,7 @@ function renderAnalyst([today, current, orders, plans, calls, events]) {
     [KB.t("Review levels"), r => KB.esc(r.review_if || ""), r => r.review_if]];
   KB.table(document.getElementById("llm-current"), current, [
     [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Time"), r => KB.time(r.time), r => r.time],
-    [KB.t("Action"), r => KB.esc(r.action), r => r.action], ...levelCols,
+    [KB.t("Action"), r => KB.esc(KB.t(r.action)), r => r.action], ...levelCols,
     [KB.t("Reasons"), r => `<span class="small">${KB.esc(r.plan_reasons)}</span>`],
     [KB.t("Memo"), r => `<span class="small text-secondary">${KB.esc(r.memo)}</span>`]],
     KB.t("No plans yet: the first one comes with the first scheduled review."), [0, "asc"]);
@@ -390,7 +390,7 @@ function renderAnalyst([today, current, orders, plans, calls, events]) {
     KB.t("No pending orders or review levels."), [0, "asc"]);
   KB.table(document.getElementById("llm-plans"), plans, [
     [KB.t("Time"), r => KB.time(r.time), r => r.time], [KB.t("Review"), r => KB.esc(KB.t(r.kind || "")), r => r.kind],
-    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Action"), r => KB.esc(r.action ?? ""), r => r.action],
+    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Action"), r => KB.esc(r.action ? KB.t(r.action) : ""), r => r.action],
     [KB.t("Accepted"), r => r.accepted ? `<i class="bi bi-check-lg text-success"></i>`
       : `<i class="bi bi-x-lg text-danger" title="${KB.esc(r.rejected_because)}"></i>`, r => r.accepted],
     ...levelCols,

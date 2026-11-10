@@ -45,6 +45,7 @@
     <div class="collapse navbar-collapse" id="nav">
       <ul class="navbar-nav me-auto">
         {% for key, label, icon in [("overview", "Overview", "speedometer2"), ("instances", "Instances", "cpu"),
+                                    ("analyst", "AI analyst", "robot"),
                                     ("playground", "Playground", "graph-up-arrow"), ("backtest", "Backtests", "table"),
                                     ("settings", "Settings", "sliders")] %}
         <li class="nav-item"><a class="nav-link {{ 'active fw-semibold' if page == key }}"

@@ -885,6 +885,58 @@ TR = {
     "Rotations {rot} for {entries} entries · reduced {trim} · stake cuts {cuts} · highest BUY score {max}":
         "{entries} giriş için {rot} rotasyon · küçültme {trim} · stake kesintisi {cuts} · en yüksek BUY skoru {max}",
     "Replay started": "Oynatma başladı",
+    # AI analyst page (v11 dry run)
+    "After each daily close a language model plans entries, stops and take-profits for each symbol (docs/v11-ai-analyst.md). First comes the dry run: every setup is called on the same snapshot and the plans are stored, never traded. Its report decides between one-by-one and grouped calls and the number of symbols; then the v11 instances are created and start trading on paper.":
+        "Her günlük kapanıştan sonra bir dil modeli her sembol için giriş, stop ve kâr al planlar "
+        "(docs/v11-ai-analyst.md). Önce kuru çalıştırma var: her kurulum aynı anlık görüntüyle çağrılır, planlar "
+        "kaydedilir ama işlem yapılmaz. Raporu tek tek mi gruplu mu çağrılacağına ve sembol sayısına karar verir; "
+        "sonra v11 instance'ları açılır ve paper'da işlem yapmaya başlar.",
+    "Dry run": "Kuru çalıştırma",
+    "One by one or grouped?": "Tek tek mi, gruplu mu?",
+    "v11 instances": "v11 instance'ları",
+    "Calls per day and run": "Gün ve tur başına çağrılar",
+    "Plans": "Planlar",
+    "Every run gets the same snapshot of the day. Times UTC.": "Her tur günün aynı anlık görüntüsünü alır. Saatler UTC.",
+    "No log yet.": "Henüz log yok.",
+    "one by one (A)": "tek tek (A)",
+    "one by one (B)": "tek tek (B)",
+    "grouped": "gruplu",
+    "grouped, no news": "gruplu, habersiz",
+    "hold": "bekle",
+    "enter": "gir",
+    "adjust": "ayarla",
+    "cancel": "iptal",
+    "Runs after every daily close; next run {time} UTC.": "Her günlük kapanıştan sonra çalışır; sonraki tur {time} UTC.",
+    "Off (config.V11_DRY_RUN). The stored plans stay here.": "Kapalı (config.V11_DRY_RUN). Kaydedilen planlar burada kalır.",
+    "Last call: {time} UTC.": "Son çağrı: {time} UTC.",
+    "{n} runs per day:": "Günde {n} tur:",
+    "Universe: {n} symbols from {file}": "Evren: {file} dosyasından {n} sembol",
+    "The primary setup (astra-high) runs one by one twice and grouped once. Grouped calls are used if their agreement with the one-by-one runs is at most {tol} points below the one-by-one runs' agreement with each other, and they are rejected no more often. Two plans agree when the action is the same and the levels are within {atr} ATR.":
+        "Ana kurulum (astra-high) iki kez tek tek, bir kez gruplu çalışır. Gruplu çağrıların tek tek turlarla "
+        "örtüşmesi, tek tek turların birbiriyle örtüşmesinden en fazla {tol} puan düşükse ve daha sık reddedilmiyorsa "
+        "gruplu çağrı kullanılır. İki plan, eylem aynı ve seviyeler {atr} ATR içindeyse örtüşür.",
+    "No dry-run plans yet.": "Henüz kuru çalıştırma planı yok.",
+    "one by one A vs B": "tek tek A ile B",
+    "A vs grouped": "A ile gruplu",
+    "B vs grouped": "B ile gruplu",
+    "Rejected by the validator: A {a}, B {b}, grouped {g}.": "Doğrulayıcının reddettiği: A {a}, B {b}, gruplu {g}.",
+    "{n} symbol-days compared.": "{n} sembol-gün karşılaştırıldı.",
+    "Grouped calls pass so far": "Şimdilik gruplu çağrılar geçiyor",
+    "One by one so far": "Şimdilik tek tek",
+    "Decided in the report after 2-3 days.": "Karar 2–3 gün sonraki raporda verilir.",
+    "None yet. They are created after the dry-run report: Instances → New instance → strategy v11 (Today's top 20 for the symbols). Each one's page then has an AI analyst tab with its plans, orders and calls.":
+        "Henüz yok. Kuru çalıştırma raporundan sonra açılır: Instance'lar → Yeni instance → strateji v11 (semboller "
+        "için Bugünün ilk 20'si). Her birinin sayfasında planlarını, emirlerini ve çağrılarını gösteren bir AI analist "
+        "sekmesi olur.",
+    "Day": "Gün",
+    "Run": "Tur",
+    "Failed": "Başarısız",
+    "Plans accepted": "Kabul edilen plan",
+    "Reasoning": "Akıl yürütme",
+    "Seconds per call": "Çağrı başına saniye",
+    "No calls yet: the first run comes after the next daily close.": "Henüz çağrı yok: ilk tur bir sonraki günlük kapanıştan sonra.",
+    "All runs": "Bütün turlar",
+    "All symbols": "Bütün semboller",
     # replay errors (analysis/bankroll_replay.py, dashboard)
     "only bankroll instances can be replayed": "sadece kasalı instance'lar oynatılabilir",
     "no cached candles for this instance": "bu instance için diskte mum yok",

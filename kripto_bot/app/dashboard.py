@@ -145,6 +145,11 @@ def instance_page(name):
     return render_template("instance.html", page="instances", name=name)
 
 
+@app.route("/analyst")
+def page_analyst():
+    return render_template("analyst.html", page="analyst")
+
+
 @app.route("/playground")
 def playground_page():
     return render_template("playground.html", page="playground")
@@ -237,6 +242,29 @@ def _pick_universe(n):
         UNIVERSE_JOB["error"] = f"{type(e).__name__}: {e}"
     finally:
         UNIVERSE_JOB["running"] = False
+
+
+@app.route("/api/analyst")
+def api_analyst():
+    """The AI analyst page: the v11 dry run and the v11 instances."""
+    items = [i for i in instances.load_all().values() if i.strategy == instances.ANALYST]
+    return jsonify({"dry_run": reporting.dry_run_view(),
+                    "instances": [{"name": i.name, "params": i.params, "enabled": i.enabled,
+                                   "symbols": len(i.symbol_list), "status": reporting.service_status(i.name)}
+                                  for i in items]})
+
+
+@app.route("/api/analyst/plans")
+def api_analyst_plans():
+    day = request.args.get("day", "")
+    if len(day) != 10:
+        raise ApiError("day must be YYYY-MM-DD")
+    return jsonify(records(reporting.dry_run_plans(day)))
+
+
+@app.route("/api/analyst/log")
+def api_analyst_log():
+    return jsonify(reporting.log_tail("v11-dry-run", int(request.args.get("lines", 200))))
 
 
 @app.route("/api/universes", methods=["GET", "POST"])
