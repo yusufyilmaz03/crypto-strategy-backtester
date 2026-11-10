@@ -23,10 +23,12 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   Write the grouping choice and the symbol count (20, or 15 on usage limits) into
   `docs/v11-ai-analyst.md`, then set `V11_DRY_RUN = False` and restart the service.
 
-- **v11 start (after the dry-run report and the move to a server).** Right after a daily close:
-  `python -m kripto_bot universe --n 20 --save`, then `python -m kripto_bot v11-setup --universe
-  results/universe_<date>.json --group <5 or 1> --enable`. Fix `docs/v11-ai-analyst.md` as the
-  pre-registration (commit) before that close.
+- **v11 start (after the dry-run report and the move to a server).** Fix `docs/v11-ai-analyst.md`
+  as the pre-registration (commit) first. Right after a daily close, in the panel's New instance
+  form: "Today's top 20" for the universe, then create the four v11 instances (strategy v11:
+  astra high, astra medium, sol high, astra high with news off; group as the dry run chose) and
+  `v9-v11-symbols` (v9 on the same saved universe), all started. The same from the command line:
+  `universe --n 20 --save`, then `v11-setup --universe results/universe_<date>.json --group N --enable`.
 
 ## Server (next topic)
 

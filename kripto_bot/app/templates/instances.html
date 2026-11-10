@@ -54,7 +54,8 @@
       <div class="col-md-6"><label class="form-label">{{ _("Trailing exit (ATR ×)") }}{{ tip(_("Sell at the next open when the close falls this many ATRs below the highest close since entry. Empty = off. Paper only.")) }}</label>
         <input class="form-control" type="number" min="0.5" max="20" step="any" id="trail" placeholder="{{ _("off") }}"></div>
       <div class="col-md-6"><label class="form-label">{{ _("Symbols") }}{{ tip(_("All default symbols: the list in config.SYMBOLS. Custom: your own list, e.g. BTC/USDT, ETH/USDT. Saved universe: the most traded pairs chosen on a date by `python -m kripto_bot universe --save` (the v11 test uses one; a v11 instance needs a fixed list).")) }}</label>
-        <select class="form-select" id="symbol-mode"><option value="all">{{ _("All default symbols") }}</option><option value="custom">{{ _("Custom list") }}</option></select></div>
+        <div class="input-group"><select class="form-select" id="symbol-mode"><option value="all">{{ _("All default symbols") }}</option><option value="custom">{{ _("Custom list") }}</option></select>
+          <button type="button" class="btn btn-outline-secondary" id="pick-universe" title="{{ _("Choose the 20 most traded USDT pairs on Binance now and save them as a universe (takes a few minutes).") }}"><i class="bi bi-stars"></i> {{ _("Today's top 20") }}</button></div></div>
       <div class="col-12 d-none" id="symbols-box"><textarea class="form-control font-monospace" name="symbols" rows="2" placeholder="BTC/USDT, ETH/USDT"></textarea></div>
       <div class="col-md-6"><label class="form-label">{{ _("Lower timeframes") }}{{ tip("", "tip-ltf") }}</label>
         <div class="form-check"><input class="form-check-input" type="checkbox" id="ltf-entry">
@@ -147,8 +148,7 @@ async function initForm() {
     `<div class="col-6 col-md-4"><div class="form-check"><input class="form-check-input" type="checkbox" data-input="${k}" id="in-${k}">
       <label class="form-check-label small" for="in-${k}">${KB.esc(k)}</label>${KB.tip(KB.t(text))}</div></div>`).join("");
   document.getElementById("low-basis").innerHTML = Object.entries(B.low_bases).map(([k, v]) => opt(k, KB.t(v))).join("");
-  document.getElementById("symbol-mode").insertAdjacentHTML("beforeend", META.universes.map(u =>
-    opt(`universe:${u.file}`, KB.t("Saved universe {date} ({n} symbols)", { date: u.date, n: u.symbols.length }))).join(""));
+  renderUniverses();
   KB.setTip("tip-inputs", KB.t("Each selected input gives 0 to 1 point at the signal's close (closed candles only); " +
     "the score is their average × 100. Hover an input for what it measures."));
   KB.setTip("tip-rotation", KB.t("Only for a Very strong signal that can't get its full stake: the free cash is used first, " +
@@ -282,6 +282,33 @@ function analystChanged() {
   }
   wasAnalyst = on;
 }
+function renderUniverses() {
+  const sel = document.getElementById("symbol-mode");
+  sel.querySelectorAll('option[value^="universe:"]').forEach(o => o.remove());
+  sel.insertAdjacentHTML("beforeend", META.universes.map(u =>
+    opt(`universe:${u.file}`, KB.t("Saved universe {date} ({n} symbols)", { date: u.date, n: u.symbols.length }))).join(""));
+}
+// Today's top 20 runs on the server in the background; the list appears here when it is done.
+document.getElementById("pick-universe").addEventListener("click", async () => {
+  const btn = document.getElementById("pick-universe");
+  try {
+    await KB.api("/api/universes", { method: "POST", body: { n: 20 } });
+  } catch (e) { KB.toast(e.message, "danger"); return; }
+  btn.disabled = true;
+  KB.toast(KB.t("Choosing today's most traded pairs: this takes a few minutes."));
+  const poll = setInterval(async () => {
+    const r = await KB.api("/api/universes");
+    if (r.running) return;
+    clearInterval(poll);
+    btn.disabled = false;
+    if (r.error) { KB.toast(r.error, "danger"); return; }
+    META.universes = r.universes;
+    renderUniverses();
+    document.getElementById("symbol-mode").value = `universe:${r.universes[0].file}`;
+    symbolModeChanged();
+    KB.toast(KB.t("Universe {date} saved", { date: r.universes[0].date }));
+  }, 10000);
+});
 function symbolModeChanged() {
   document.getElementById("symbols-box").classList.toggle("d-none", document.getElementById("symbol-mode").value !== "custom");
 }

@@ -18,6 +18,7 @@ import json
 import logging
 import math
 import os
+import threading
 import urllib.parse
 
 import pandas as pd
@@ -223,6 +224,32 @@ def api_strategies():
                      "rotate": {"margin": bankroll.ROTATE_MARGIN, "min_hold": bankroll.ROTATE_MIN_HOLD,
                                 "max": bankroll.ROTATE_MAX}},
     })
+
+
+UNIVERSE_JOB = {"running": False, "error": None}
+
+
+def _pick_universe(n):
+    try:
+        universe.save(universe.select(n, log=lambda *_: None))
+        UNIVERSE_JOB["error"] = None
+    except Exception as e:      # shown in the panel; the next click tries again
+        UNIVERSE_JOB["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        UNIVERSE_JOB["running"] = False
+
+
+@app.route("/api/universes", methods=["GET", "POST"])
+def api_universes():
+    """Saved universes; POST chooses today's most traded pairs in the background (a few minutes)."""
+    if request.method == "POST":
+        if UNIVERSE_JOB["running"]:
+            raise ApiError("a universe is already being chosen")
+        UNIVERSE_JOB.update(running=True, error=None)
+        threading.Thread(target=_pick_universe, args=(int((request.get_json(silent=True) or {}).get("n", 20)),),
+                         daemon=True).start()
+        return jsonify({"running": True}), 202
+    return jsonify({**UNIVERSE_JOB, "universes": universe.saved()})
 
 
 @app.route("/api/instances", methods=["GET", "POST"])

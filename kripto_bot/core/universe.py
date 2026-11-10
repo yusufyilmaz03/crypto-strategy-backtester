@@ -91,6 +91,14 @@ def select(n, exchange=None, now=None, log=print):
             "ranking": ranked, "skipped": skipped}
 
 
+def save(chosen):
+    """Write a selection to results/universe_<date>.json; returns the path."""
+    path = paths.results(f"universe_{chosen['as_of'][:10]}.json")
+    with open(path, "w") as f:
+        json.dump(chosen, f, indent=1)
+    return path
+
+
 def saved():
     """Universes saved with --save, newest first: [{file, date, symbols}] (the panel offers them)."""
     out = []
@@ -118,10 +126,7 @@ def main():
     print(f"{len(out['ranking'])} eligible, {len(out['skipped'])} left out"
           + (f", {len(failed)} of them because a fetch failed: run again" if failed else ""))
     if a.save:
-        path = paths.results(f"universe_{out['as_of'][:10]}.json")
-        with open(path, "w") as f:
-            json.dump(out, f, indent=1)
-        print(f"saved {path}")
+        print(f"saved {save(out)}")
 
 
 if __name__ == "__main__":

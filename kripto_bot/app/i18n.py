@@ -245,6 +245,13 @@ TR = {
         "Kaydedilmiş evren: bir tarihte `python -m kripto_bot universe --save` ile seçilmiş en çok işlem gören "
         "çiftler (v11 testi bunlardan birini kullanır; bir v11 instance'ı sabit bir liste ister).",
     "Saved universe {date} ({n} symbols)": "Kaydedilmiş evren {date} ({n} sembol)",
+    "Today's top 20": "Bugünün ilk 20'si",
+    "Choose the 20 most traded USDT pairs on Binance now and save them as a universe (takes a few minutes).":
+        "Binance'te şu an en çok işlem gören 20 USDT çiftini seç ve evren olarak kaydet (birkaç dakika sürer).",
+    "Choosing today's most traded pairs: this takes a few minutes.":
+        "Bugünün en çok işlem gören çiftleri seçiliyor: birkaç dakika sürer.",
+    "Universe {date} saved": "{date} evreni kaydedildi",
+    "a universe is already being chosen": "zaten bir evren seçiliyor",
     "on": "açık",
     ("AI analyst: after each daily close a language model plans entries, stops and take-profits for each "
      "symbol; the bot executes them every minute (docs/v11-ai-analyst.md). Paper, 1d, its own symbol list."):

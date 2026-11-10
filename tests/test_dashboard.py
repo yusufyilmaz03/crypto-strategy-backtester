@@ -237,3 +237,20 @@ def test_the_form_offers_v11_and_creates_it_like_the_browser_does(client, monkey
     r = _post(client, "/api/instances", body)
     assert r.status_code == 201, r.get_json()
     assert r.get_json()["params"] == {"model": "gpt-6-astra", "effort": "high", "news": False, "group": 5}
+
+
+def test_todays_universe_is_chosen_in_the_background(client, monkeypatch):
+    from kripto_bot.core import universe
+    done = []
+    monkeypatch.setattr(universe, "select", lambda n, log=None: {"as_of": "2026-11-10T08:00:00+00:00", "n": n,
+                                                                  "symbols": ["BTC/USDT"], "ranking": [], "skipped": []})
+    monkeypatch.setattr(universe, "save", lambda chosen: done.append(chosen))
+    r = _post(client, "/api/universes", {"n": 20})
+    assert r.status_code == 202
+    for _ in range(50):
+        if not client.get("/api/universes").get_json()["running"]:
+            break
+        import time
+        time.sleep(0.02)
+    status = client.get("/api/universes").get_json()
+    assert not status["running"] and status["error"] is None and done[0]["n"] == 20
