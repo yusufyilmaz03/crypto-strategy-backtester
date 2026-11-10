@@ -839,4 +839,59 @@ TR = {
     "Stopped itself at {time} UTC: {reason}. Start trades normally again.":
         "{time} UTC'de kendini durdurdu: {reason}. Başlat, normal işleme geri döndürür.",
     "exit only and no open positions": "sadece çıkış ve açık pozisyon yok",
+    # replay on past data (Bankroll tab)
+    "Replay on past data": "Geçmiş veride oynat",
+    "Runs this bankroll's own code on cached candles to check the mechanics: stakes per grade, busy candles, rotation and the books. The candles are seen data, so it says nothing about performance. Choose another strategy to see grades or rotations this one doesn't produce.":
+        "Bu kasanın kendi kodunu diskteki geçmiş mumlarla çalıştırıp mekaniği kontrol eder: dereceye göre stake, "
+        "yoğun mumlar, rotasyon ve defter. Mumlar görülmüş veri olduğu için performans hakkında bir şey söylemez. "
+        "Bu stratejinin üretmediği dereceleri veya rotasyonları görmek için başka bir strateji seç.",
+    "From (UTC)": "Başlangıç (UTC)",
+    "To (UTC)": "Bitiş (UTC)",
+    "Start replay": "Oynatmayı başlat",
+    "this instance": "bu instance",
+    "No cached candles for this instance's symbols.": "Bu instance'ın sembolleri için diskte mum yok.",
+    "Cached candles ({tfs}): {start} to {end} UTC. Run a backtest to extend the cache.":
+        "Diskteki mumlar ({tfs}): {start} – {end} UTC. Aralığı uzatmak için bir backtest çalıştır.",
+    "No cache: {list}.": "Diskte yok: {list}.",
+    "Cache ends earlier: {list}.": "Diskteki verisi daha erken bitiyor: {list}.",
+    "done in {s} s": "{s} sn'de bitti",
+    "failed": "başarısız",
+    "queued": "sırada",
+    "at {time}": "{time} mumunda",
+    "requested {time}": "istendi {time}",
+    "No replays yet.": "Henüz oynatma yok.",
+    "Books: free + reserved + invested = value on every ledger row":
+        "Defter: her satırda serbest + rezerve + yatırılan = değer",
+    "Free cash ends a candle below zero only after funding an entry against a rotation":
+        "Serbest nakit bir mumu sadece rotasyondan gelecek paraya karşı giriş fonlandığında eksi bitiriyor",
+    "Stakes: each entry gets its grade's stake, less only when cut to the free cash":
+        "Stake: her giriş derecesinin stake'ini alıyor, sadece serbest nakde göre kısıldığında daha az",
+    "Busy candles: higher scores are funded first": "Yoğun mumlar: yüksek skorlar önce fonlanıyor",
+    "Rotation: score lower by the margin, held long enough, in profit if required, at most the limit per candle, sold at the next open, only for Very strong entries":
+        "Rotasyon: skoru fark kadar düşük, yeterince tutulmuş, gerekiyorsa kârda, mum başına sınırı aşmıyor, "
+        "sonraki açılışta satılıyor, sadece Çok güçlü girişler için",
+    "{n} problem(s):": "{n} sorun:",
+    "Rotations (first {n})": "Rotasyonlar (ilk {n})",
+    "Sold": "Satılan",
+    "For": "Kimin için",
+    "Expected": "Beklenen",
+    "Got": "Gelen",
+    "close": "kapat",
+    "reduce": "küçült",
+    "{candles} candles · value {value} USDT · return {ret} · {trades} closed trades":
+        "{candles} mum · değer {value} USDT · getiri {ret} · {trades} kapanan işlem",
+    "Entries:": "Girişler:",
+    "cut to the free cash {cut} · skipped for cash {skip}": "serbest nakde göre kısılan {cut} · nakit yokken atlanan {skip}",
+    "Rotations {rot} for {entries} entries · reduced {trim} · stake cuts {cuts} · highest BUY score {max}":
+        "{entries} giriş için {rot} rotasyon · küçültme {trim} · stake kesintisi {cuts} · en yüksek BUY skoru {max}",
+    "Replay started": "Oynatma başladı",
+    # replay errors (analysis/bankroll_replay.py, dashboard)
+    "only bankroll instances can be replayed": "sadece kasalı instance'lar oynatılabilir",
+    "no cached candles for this instance": "bu instance için diskte mum yok",
+    "the cache covers {start} to {end} UTC": "diskteki veri {start} – {end} UTC aralığını kapsıyor",
+    "a replay of this instance is already running": "bu instance'ın bir oynatması zaten çalışıyor",
+    "start and end must be dates": "başlangıç ve bitiş tarih olmalı",
+    "the AI analyst has no signals to replay": "AI analistin oynatılacak sinyali yok",
+    "params must be an object": "parametreler bir nesne olmalı",
+    "the replay process stopped": "oynatma süreci durdu",
 }

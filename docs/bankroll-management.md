@@ -370,6 +370,27 @@ Checks:
   free cash never went below 0, and the deposit didn't change the time-weighted return.
 - Not checked in a browser yet.
 
+### Replay on cached candles (2026-11-10)
+
+`analysis/bankroll_replay.py` runs a bankroll instance's exact settings through the paper
+bot's own `BankrollRunner` on the OHLCV cache; only the clock and the candle fetches are
+faked. The panel starts it from the instance's Bankroll tab ("Replay on past data", a
+background process; results in `results/replays/<instance>/`), the command line with
+`python -m kripto_bot bankroll-replay --instance NAME [--strategy v9 --params '{...}']`.
+Another strategy can be chosen with the same bankroll. The report counts entries per
+grade, cuts, skips, rotations and trims, and checks the books, the stakes, the funding
+order and every rotation rule. The update chunk doesn't change the result (8,192 ledger
+rows identical for chunks of 50 and 300 candles). It is a mechanics check on seen data,
+not a test of returns.
+
+Findings: v4 (the strategy of `bankroll-v4-5m` and `bankroll-v4-4h`) buys below the lower
+Bollinger band, where the trend, distance, breakout and RSI inputs give no points; its
+BUY scores stayed below 56 (4h, 2026-04 to 2026-09) and 51 (5m, 2026-07 to 2026-09), so it
+never reaches Strong or rotation. With v9 (1/50) the same bankroll on 4h gave 119 Very
+strong and 491 Strong entries and 41 rotations, and every check held. With rotation, free
+cash can end a candle below zero: a Very strong entry is funded against the cash the
+rotation brings at the next open (the earlier note "never below 0" held for that run only).
+
 ## To-do for testnet (later, needs approval: order-sending code)
 
 - Replace the equal `allocation` split in `Trader` with the instance bankroll; free

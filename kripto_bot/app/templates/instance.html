@@ -53,6 +53,23 @@
     <div class="small text-secondary mb-2" id="requests"></div>
     <div class="card mb-3"><div class="card-body"><h6 class="card-title">{{ _("Bankroll (USDT)") }}</h6><canvas id="bankroll-chart" height="80"></canvas></div></div>
     <div class="table-responsive" style="max-height: 520px"><table class="table table-sm" id="ledger"></table></div>
+    <div class="card mt-4"><div class="card-body">
+      <h6 class="card-title"><i class="bi bi-rewind"></i> {{ _("Replay on past data") }}</h6>
+      <div class="small text-secondary mb-2">{{ _("Runs this bankroll's own code on cached candles to check the mechanics: stakes per grade, busy candles, rotation and the books. The candles are seen data, so it says nothing about performance. Choose another strategy to see grades or rotations this one doesn't produce.") }}</div>
+      <div class="small mb-2" id="replay-coverage"></div>
+      <form class="row g-2 align-items-end mb-3" id="replay-form">
+        <div class="col-sm-6 col-lg-3"><label class="form-label small mb-0">{{ _("Strategy") }}</label>
+          <select class="form-select form-select-sm" id="replay-strategy"></select></div>
+        <div class="col-sm-6 col-lg-3" id="replay-params"></div>
+        <div class="col-6 col-lg-2"><label class="form-label small mb-0">{{ _("From (UTC)") }}</label>
+          <input class="form-control form-control-sm" type="date" id="replay-start" required></div>
+        <div class="col-6 col-lg-2"><label class="form-label small mb-0">{{ _("To (UTC)") }}</label>
+          <input class="form-control form-control-sm" type="date" id="replay-end" required></div>
+        <div class="col-lg-2"><button class="btn btn-sm btn-outline-primary w-100" type="submit" id="replay-submit">
+          <i class="bi bi-play"></i> {{ _("Start replay") }}</button></div>
+      </form>
+      <div id="replays"></div>
+    </div></div>
   </div>
   <div class="tab-pane fade" id="t-analyst">
     <div id="analyst-today" class="mb-3"></div>
@@ -229,6 +246,101 @@ function renderLedger(ledger, requests) {
     [KB.t("Source"), r => KB.esc(r.source ?? ""), r => r.source], [KB.t("Note"), r => KB.esc(r.note ?? ""), r => r.note]],
     KB.t("No bankroll changes yet."), null);
 }
+// ---- replay on cached candles (analysis/bankroll_replay.py), bankroll instances only
+let REPLAY_STRATS = null, replayTimer = null;
+function renderReplayParams() {
+  const key = document.getElementById("replay-strategy").value;
+  const s = REPLAY_STRATS.find(x => x.key === key);
+  const own = key === INST.strategy ? INST.params || {} : {};
+  document.getElementById("replay-params").innerHTML = (s && s.params.length ? s.params.map(p => `
+    <div class="input-group input-group-sm mb-1"><span class="input-group-text">${KB.esc(p.name)}</span>
+      <input class="form-control" type="number" step="any" min="0" data-param="${KB.esc(p.name)}"
+             value="${KB.esc(own[p.name] ?? p.default)}" title="${KB.esc(KB.t(p.description || ""))}"></div>`).join("")
+    : `<div class="small text-secondary">${KB.t("No parameters.")}</div>`);
+}
+async function loadReplays() {
+  clearTimeout(replayTimer);
+  if (!REPLAY_STRATS) {
+    REPLAY_STRATS = (await KB.api("/api/strategies")).strategies.filter(s => !s.analyst);
+    const sel = document.getElementById("replay-strategy");
+    sel.innerHTML = REPLAY_STRATS.map(s => `<option value="${s.key}" title="${KB.esc(KB.t(s.description))}">${s.key}${
+      s.key === INST.strategy ? " (" + KB.t("this instance") + ")" : ""}</option>`).join("");
+    sel.value = INST.strategy;
+    renderReplayParams();
+  }
+  const d = await KB.api(`/api/instances/${N}/replays`);
+  const c = d.coverage, start = document.getElementById("replay-start"), end = document.getElementById("replay-end");
+  if (c.start) {
+    start.min = end.min = c.start.slice(0, 10);
+    start.max = end.max = c.end.slice(0, 10);
+    if (!start.value) start.value = c.start.slice(0, 10);
+    if (!end.value) end.value = c.end.slice(0, 10);
+  }
+  document.getElementById("replay-coverage").innerHTML = !c.start
+    ? `<span class="text-danger">${KB.t("No cached candles for this instance's symbols.")}</span>`
+    : KB.t("Cached candles ({tfs}): {start} to {end} UTC. Run a backtest to extend the cache.",
+           { tfs: c.timeframes.join(", "), start: KB.time(c.start), end: KB.time(c.end) })
+      + (c.missing.length ? ` <span class="text-warning-emphasis">${KB.t("No cache: {list}.", { list: KB.esc(c.missing.join(", ")) })}</span>` : "")
+      + (c.stale.length ? ` <span class="text-warning-emphasis">${KB.t("Cache ends earlier: {list}.", { list: KB.esc(c.stale.join(", ")) })}</span>` : "");
+  renderReplays(d.jobs);
+  const busy = d.jobs.some(j => j.state === "queued" || j.state === "running");
+  document.getElementById("replay-submit").disabled = busy;
+  if (busy) replayTimer = setTimeout(loadReplays, 3000);
+}
+function replayState(j) {
+  if (j.state === "done") return `<span class="badge text-bg-success">${KB.t("done in {s} s", { s: j.seconds ?? "–" })}</span>`;
+  if (j.state === "failed") return `<span class="badge text-bg-danger">${KB.t("failed")}</span> <span class="small text-danger">${KB.esc(KB.t(j.error || ""))}</span>`;
+  return `<span class="badge text-bg-info">${KB.t(j.state === "queued" ? "queued" : "running")}</span>${
+    j.progress ? ` <span class="small text-secondary">${KB.t("at {time}", { time: KB.time(j.progress) })}</span>` : ""}`;
+}
+const CHECK_TEXT = {
+  books: "Books: free + reserved + invested = value on every ledger row",
+  free_cash: "Free cash ends a candle below zero only after funding an entry against a rotation",
+  stakes: "Stakes: each entry gets its grade's stake, less only when cut to the free cash",
+  priority: "Busy candles: higher scores are funded first",
+  rotation: "Rotation: score lower by the margin, held long enough, in profit if required, at most the limit per candle, sold at the next open, only for Very strong entries",
+};
+function renderReplays(jobs) {
+  const el = document.getElementById("replays");
+  if (!jobs.length) { el.innerHTML = `<div class="small text-secondary">${KB.t("No replays yet.")}</div>`; return; }
+  el.innerHTML = jobs.map(j => {
+    const head = `<div class="d-flex flex-wrap gap-2 align-items-center"><b>${KB.esc(j.strategy)}</b>
+      <span class="small">${KB.esc(KB.params(j.params))} · ${KB.time(j.start).slice(0, 10)} → ${KB.time(j.end).slice(0, 10)}</span>
+      ${replayState(j)}<span class="small text-secondary ms-auto">${KB.t("requested {time}", { time: KB.time(j.requested_at) })}</span></div>`;
+    const r = j.report;
+    if (!r) return `<div class="border rounded p-2 mb-2">${head}</div>`;
+    const s = r.summary, e = s.entries;
+    const grades = ["Weak", "Normal", "Strong", "Very strong"].filter(g => g in e).map(g => `${KB.esc(KB.t(g))} <b>${e[g]}</b>`).join(" · ");
+    const checks = r.checks.map(ch => `<li>${ch.ok ? `<i class="bi bi-check-lg text-success"></i>` : `<i class="bi bi-x-lg text-danger"></i>`}
+      ${KB.t(CHECK_TEXT[ch.name] || ch.name)}${ch.ok ? "" : `<div class="small text-danger">${KB.t("{n} problem(s):", { n: ch.count })} ${
+        KB.esc(ch.problems.join("; "))}</div>`}</li>`).join("");
+    const ex = r.rotation_examples.length ? `<details class="mt-1"><summary class="small">${KB.t("Rotations (first {n})", { n: r.rotation_examples.length })}</summary>
+      <div class="table-responsive"><table class="table table-sm small mb-0"><thead><tr><th>${KB.t("Time")}</th><th>${KB.t("Sold")}</th><th>${KB.t("Score")}</th>
+      <th>${KB.t("For")}</th><th>${KB.t("Score")}</th><th>${KB.t("Kind")}</th><th>${KB.t("Expected")}</th><th>${KB.t("Got")}</th><th>PnL</th></tr></thead><tbody>${
+      r.rotation_examples.map(x => `<tr><td>${KB.time(x.time)}</td><td>${KB.esc(x.sold)}</td><td>${KB.num(x.sold_score, 1)}</td>
+        <td>${KB.esc(x.for)}</td><td>${KB.num(x.for_score, 1)}</td><td>${KB.t(x.what === "close" ? "close" : "reduce")}</td>
+        <td>${KB.num(x.expected)}</td><td>${KB.num(x.got)}</td><td class="${KB.sign(x.pnl)}">${KB.num(x.pnl)}</td></tr>`).join("")}</tbody></table></div></details>` : "";
+    return `<div class="border rounded p-2 mb-2">${head}
+      <div class="small mt-1">${KB.t("{candles} candles · value {value} USDT · return {ret} · {trades} closed trades",
+        { candles: s.candles, value: KB.money(s.value), ret: KB.pct(s.return_pct), trades: s.closed_trades })}</div>
+      <div class="small">${KB.t("Entries:")} ${grades} · ${KB.t("cut to the free cash {cut} · skipped for cash {skip}", { cut: s.cut_to_free_cash, skip: s.skipped_no_cash })}</div>
+      <div class="small">${KB.t("Rotations {rot} for {entries} entries · reduced {trim} · stake cuts {cuts} · highest BUY score {max}",
+        { rot: s.rotations, entries: s.rotation_entries, trim: s.trims, cuts: s.stake_cuts, max: KB.num(s.buy_score_max, 1) })}</div>
+      <ul class="list-unstyled small mb-0 mt-1">${checks}</ul>${ex}</div>`;
+  }).join("");
+}
+document.getElementById("replay-strategy").addEventListener("change", renderReplayParams);
+document.getElementById("replay-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const params = {};
+  document.querySelectorAll("#replay-params [data-param]").forEach(i => { if (i.value !== "") params[i.dataset.param] = Number(i.value); });
+  try {
+    await KB.api(`/api/instances/${N}/replays`, { method: "POST", body: { strategy: document.getElementById("replay-strategy").value,
+      params, start: document.getElementById("replay-start").value, end: document.getElementById("replay-end").value + "T23:59:59" } });
+    KB.toast(KB.t("Replay started"));
+    loadReplays();
+  } catch (ex) { KB.toast(ex.message, "danger"); }
+});
 async function loadChart() {
   const d = await KB.api(`/api/instances/${N}/curves`);
   const color = KB.cssVar("--bs-body-color");
@@ -309,7 +421,7 @@ async function loadTables() {
   const [pos, trades, signals, log, stops, ledger, requests, snaps] = await Promise.all(
     ["positions", "trades", "signals", "log", ...(paper ? ["stops"] : [null]), ...(bank ? ["ledger", "requests", "snapshots"] : [])]
     .map(t => t ? KB.api(`/api/instances/${N}/${t}`) : null));
-  if (bank) { renderLedger(ledger, requests); renderBankrollChart(snaps); }
+  if (bank) { renderLedger(ledger, requests); renderBankrollChart(snaps); if (!replayTimer) loadReplays(); }
   const scoreCol = (label, key, grade) => bank ? [[label, r => KB.score(r[key], r[grade]), r => r[key]]] : [];
   // Columns: [header, cell html, sort value]. Newest first by default; click a header to re-sort.
   // Prices come separately (loadPrices): open rows show the last known price until then.

@@ -333,6 +333,24 @@ def api_instance_bankroll(name):
     return jsonify({"requested": kind, "amount": amount, "applied": when})
 
 
+@app.route("/api/instances/<name>/replays", methods=["GET", "POST"])
+def api_instance_replays(name):
+    """Replays of a bankroll instance on cached candles (analysis/bankroll_replay.py): the
+    cache's period and the replays so far; POST starts one in a background process."""
+    from kripto_bot.analysis import bankroll_replay      # replaces bot functions only in its own process
+    inst = _inst(name)
+    if inst.sizing != "bankroll":
+        raise ApiError(f"{inst.name} has no bankroll")
+    if request.method == "POST":
+        d = request.get_json(silent=True) or {}
+        params = d.get("params") or {}
+        if not isinstance(params, dict):
+            raise ApiError("params must be an object")
+        job = bankroll_replay.start_job(inst, d.get("start"), d.get("end"), d.get("strategy") or inst.strategy, params)
+        return jsonify(job), 202
+    return jsonify({"coverage": bankroll_replay.coverage(inst), "jobs": bankroll_replay.jobs(inst.name)})
+
+
 @app.route("/api/instances/<name>/close", methods=["POST"])
 def api_instance_close(name):
     """Ask a paper instance's process to sell one position at the market."""
