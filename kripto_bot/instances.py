@@ -146,14 +146,50 @@ def _clean_params(key, params):
     return out
 
 
+ANALYST = "v11"     # the AI analyst (trading/llm_analyst.py): a paper instance without a strategy function
+ANALYST_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
+def _validate_analyst(inst):
+    """v11 setup in params: model, effort, news (False = no-news control), group (symbols per
+    scheduled call). Daily reviews, no strategy stop or filters, a fixed symbol list."""
+    params = dict(inst.params or {})
+    unknown = set(params) - {"model", "effort", "news", "group"}
+    if unknown:
+        raise InstanceError(f"v11 has no parameter {', '.join(sorted(unknown))}")
+    if not isinstance(params.get("model"), str) or not params["model"].strip():
+        raise InstanceError("v11 needs a model")
+    if params.get("effort") not in ANALYST_EFFORTS:
+        raise InstanceError(f"v11 effort must be one of {', '.join(ANALYST_EFFORTS)}")
+    params["news"] = params.get("news", True)
+    if not isinstance(params["news"], bool):
+        raise InstanceError("v11 news must be true or false")
+    group = params.get("group", 5)
+    if not isinstance(group, int) or isinstance(group, bool) or not 1 <= group <= 10:
+        raise InstanceError("v11 group must be a whole number from 1 to 10")
+    params["group"] = group
+    inst.params = params
+    if inst.mode != "paper":
+        raise InstanceError("v11 runs as a paper instance only")
+    if inst.timeframe != "1d" or inst.stop != "none" or inst.trail not in (None, ""):
+        raise InstanceError("v11 uses timeframe 1d and its own stops (no strategy stop or trailing exit)")
+    if inst.lower_tf_entry or inst.lower_tf_exit or inst.trend_sma or inst.manual_close or inst.sizing != "equal":
+        raise InstanceError("v11 takes no lower-timeframe rules, trend filter, manual close or portfolio sizing")
+    if not inst.symbols:
+        raise InstanceError("v11 needs its fixed symbol list")
+
+
 def validate(inst, existing):
     if not NAME_RE.match(inst.name):
         raise InstanceError("name: 2-60 characters: letters, digits, '-' and '_', starting with a letter or digit")
     if inst.mode not in MODES:
         raise InstanceError(f"mode must be one of {', '.join(MODES)}")
-    if inst.strategy not in strategy.STRATEGY_DISPATCH:
+    if inst.strategy == ANALYST:
+        _validate_analyst(inst)
+    elif inst.strategy not in strategy.STRATEGY_DISPATCH:
         raise InstanceError(f"unknown strategy {inst.strategy}")
-    inst.params = _clean_params(inst.strategy, inst.params)
+    else:
+        inst.params = _clean_params(inst.strategy, inst.params)
     if inst.timeframe not in TIMEFRAMES:
         raise InstanceError(f"timeframe must be one of {', '.join(TIMEFRAMES)}")
     if inst.stop not in config.STOPLOSS_CONFIG:

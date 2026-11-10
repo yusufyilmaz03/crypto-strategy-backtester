@@ -56,6 +56,7 @@ class Position:
     stop: float
     take_profit: float | None
     plan_id: int | None = None
+    trade_id: str = ""               # set by the analyst when it records the trade
 
 
 @dataclass
@@ -126,7 +127,7 @@ def _close(book, time, price, reason, fee_rate):
     book.position, book.levels, book.exit_after = None, None, None
     return {"kind": reason, "time": time, "price": price, "qty": p.qty, "entry_time": p.entry_time,
             "entry_price": p.entry_price, "fees": p.entry_fee + exit_fee, "pnl": pnl,
-            "return_pct": 100 * pnl / p.equity_before, "plan_id": p.plan_id}
+            "return_pct": 100 * pnl / p.equity_before, "plan_id": p.plan_id, "trade_id": p.trade_id}
 
 
 def _stop_hit(book, c, slip, fee_rate):

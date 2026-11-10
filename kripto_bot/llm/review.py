@@ -18,6 +18,7 @@ class Outcome:
     call_kind: str           # the last attempt's result kind (provider.OK, USAGE_LIMIT, ...)
     verdicts: dict           # symbol -> plan.Verdict
     call_id: int | None      # the last attempt's id in llm_calls
+    plan_ids: dict = None    # symbol -> id of its row in llm_plans (symbols with a plan in the answer)
 
 
 def run(provider, store, instance, mode, snap, symbols, contexts, kind="scheduled", news=True,
@@ -35,7 +36,7 @@ def run(provider, store, instance, mode, snap, symbols, contexts, kind="schedule
         for item in last.output.get("plans") or []:
             if isinstance(item, dict) and item.get("symbol") not in answers:
                 answers[item.get("symbol")] = item
-    verdicts = {}
+    verdicts, plan_ids = {}, {}
     for s in symbols:
         ctx = contexts[s.symbol]
         context = {"last": ctx.last_price, "atr": ctx.atr, "tick": ctx.tick_size}
@@ -44,6 +45,7 @@ def run(provider, store, instance, mode, snap, symbols, contexts, kind="schedule
             continue
         item = answers.get(s.symbol)
         verdict = pl.validate(item, ctx) if item is not None else pl.Verdict(False, ["no plan for this symbol"])
-        store.record_plan(instance, call_id, snap.time, mode, s.symbol, item or {}, verdict, context)
+        plan_ids[s.symbol] = store.record_plan(instance, call_id, snap.time, mode, s.symbol, item or {}, verdict,
+                                               context)
         verdicts[s.symbol] = verdict
-    return Outcome(last.kind, verdicts, call_id)
+    return Outcome(last.kind, verdicts, call_id, plan_ids)

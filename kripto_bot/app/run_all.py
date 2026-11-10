@@ -142,7 +142,10 @@ class Service:
 
 
 def instance_command(inst):
-    module = "kripto_bot.trading.run_realtime" if inst.mode == "paper" else "kripto_bot.trading.run_testnet"
+    if inst.strategy == instances.ANALYST:
+        module = "kripto_bot.trading.llm_analyst"
+    else:
+        module = "kripto_bot.trading.run_realtime" if inst.mode == "paper" else "kripto_bot.trading.run_testnet"
     return [sys.executable, "-u", "-m", module, "--instance", inst.name]
 
 
