@@ -90,6 +90,9 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   equity vs buy-and-hold (matplotlib, drawn locally, sent with `sendPhoto`). A `/chart
   SYMBOL` command could reuse it: candles with the instance's entries and exits, the open
   position's stop and the strategy's indicator.
+- **Where the bankroll replay lives (user, 2026-11-10).** It sits at the bottom of a bankroll
+  instance's Bankroll tab for now. It may move elsewhere later (e.g. its own page or the
+  Backtests page); keep it as it is until that is decided.
 
 ## Bankroll (paper, 2026-11-01) — check before merging `phase-4g-bankroll`
 
