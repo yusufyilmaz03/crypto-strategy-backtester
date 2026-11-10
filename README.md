@@ -235,3 +235,9 @@ More background in `docs/telegram-commands-and-mobile.md`.
 - A second copy of the same instance refuses to start (`*.lock` files in `runtime/`).
 - The dashboard listens on 127.0.0.1 by default and requires an `X-Requested-With: kripto-bot` header on every change, so other websites can't drive it. With `DASHBOARD_PASSWORD` set it also requires HTTP basic auth for every request that doesn't come straight from the same computer (see *The panel on a phone*).
 - In the grid backtest strategies run with their default parameters, so its walk-forward folds are plain out-of-sample windows. Parameter optimization happens in the research runner.
+
+## License
+
+[PolyForm Noncommercial License 1.0.0](LICENSE). You may use, change and share the code for any noncommercial purpose (personal study, research, hobby projects, education). Commercial use, including selling it or a product built on it, needs a separate license from the author.
+
+This project is a research and education tool. Nothing in it is financial advice.
