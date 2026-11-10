@@ -23,6 +23,23 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   Write the grouping choice and the symbol count (20, or 15 on usage limits) into
   `docs/v11-ai-analyst.md`, then set `V11_DRY_RUN = False` and restart the service.
 
+- **v11 start (after the dry-run report and the move to a server).** Right after a daily close:
+  `python -m kripto_bot universe --n 20 --save`, then `python -m kripto_bot v11-setup --universe
+  results/universe_<date>.json --group <5 or 1> --enable`. Fix `docs/v11-ai-analyst.md` as the
+  pre-registration (commit) before that close.
+
+## Server (next topic)
+
+- **Memory per instance.** Each paper instance process uses about 234 MB (physical footprint;
+  `ps` shows less because macOS compresses idle memory), about 3.5 GB for 17 processes. Most of
+  it is ccxt loading all 4,714 Binance markets on the first request (about 290 MB peak; spot
+  only is still 3,742 markets and barely smaller) plus pandas and ccxt imports (about 110 MB).
+  Fetching klines from Binance's REST endpoint directly, without ccxt's market list, would cut
+  most of it. Measure again after the change; it decides between a 4 GB and an 8 GB server.
+- **Providers.** Hetzner's cost-optimized plans (CX23: 2 vCPU, 4 GB, €5.99) fit; regular
+  performance is about three times the price. Compare other providers in the EU (Binance blocks
+  US addresses).
+
 ## Research (notes, not decided)
 
 - **Done 2026-10-30, `docs/v9-filters-test.md`:** S200 and E200 PASS (trade criteria);
@@ -41,6 +58,10 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   refreshed monthly, as an instance option next to the fixed `config.SYMBOLS` list. Needs a
   rule for a held symbol that leaves the universe. Running forward tests keep their list until
   they are evaluated.
+- **v11 grade stakes as an instance option (deferred 2026-11-10):** with the bankroll on, the
+  stake follows the model's grade. Needs a cash pool shared by the symbols (the order simulator
+  keeps cash per symbol) and a way to show the pool in reports and the panel. After the bankroll
+  review; the v11 test instances don't use it.
 - **Scale-in DCA as an instance option (user idea, 2026-11-09):** only after the scale-in DCA
   test has run. The engine needs several fills per position and an average cost.
 - **Trade-level metrics in every test from now on:** closed trades, win rate, average

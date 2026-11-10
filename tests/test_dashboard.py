@@ -208,3 +208,16 @@ def test_start_clears_the_self_stop_reason(client):
     assert client.get("/api/instances/wound-down").get_json()["stopped_reason"]
     r = _post(client, "/api/instances/wound-down/action", {"action": "start"}).get_json()
     assert r["enabled"] and r["stopped_reason"] is None and r["stopped_at"] is None and r["exit_only"] is False
+
+
+def test_a_v11_instance_shows_like_a_paper_instance(client):
+    instances.create({"name": "v11-astra-high", "strategy": "v11", "timeframe": "1d",
+                      "symbols": ["ETH/USDT", "SOL/USDT"], "params": {"model": "gpt-6-astra", "effort": "high"}})
+    assert client.get("/instances/v11-astra-high").status_code == 200
+    assert client.get("/").status_code == 200 and client.get("/instances").status_code == 200
+    detail = client.get("/api/instances/v11-astra-high").get_json()
+    assert detail["strategy"] == "v11" and detail["params"]["model"] == "gpt-6-astra"
+    assert client.get("/api/instances/v11-astra-high/curves").status_code == 200
+    assert "v11-astra-high" in [i["name"] for i in client.get("/api/instances").get_json()]
+    for table in ("trades", "positions", "signals"):
+        assert client.get(f"/api/instances/v11-astra-high/{table}").status_code in (200, 400), table

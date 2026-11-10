@@ -28,6 +28,7 @@ COMMANDS = {
     "service": ("kripto_bot.tools.service", "macOS background service: install | status | restart | uninstall"),
     "market-context": ("kripto_bot.core.market_context", "record the daily Fear & Greed index and BTC/ETH dominance"),
     "news": ("kripto_bot.core.news", "store new headlines from the v11 RSS feeds (--loop)"),
+    "v11-setup": ("kripto_bot.tools.v11_setup", "create the v11 test instances (--universe FILE --group N [--enable])"),
     "v11-forecasts": ("kripto_bot.analysis.v11_forecasts", "score the v11 p_tp forecasts (--instance NAME [--as-of DATE])"),
     "v11-dry-run": ("kripto_bot.analysis.v11_dry_run", "v11 dry run: run [--loop] | report (plans stored, never traded)"),
     "universe": ("kripto_bot.core.universe", "the N most traded USDT pairs on Binance now (--n 20, --save)"),

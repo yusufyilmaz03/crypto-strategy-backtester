@@ -245,3 +245,15 @@ def test_bad_v11_setups_are_refused(tmp_path, data, why):
             "params": {"model": "m", "effort": "high"}}
     with pytest.raises(instances.InstanceError, match=why):
         instances.create({**base, **data}, str(tmp_path / "instances.json"))
+
+
+def test_the_setup_creates_the_four_v11_instances_and_the_v9_benchmark(tmp_path):
+    from kripto_bot.tools import v11_setup
+    path = str(tmp_path / "instances.json")
+    names = v11_setup.create(SYMBOLS, group=5, path=path)
+    items = instances.load_all(path)
+    assert names == ["v11-astra-high", "v11-astra-medium", "v11-sol-high", "v11-astra-high-nonews", "v9-v11-symbols"]
+    assert items["v11-astra-high-nonews"].params == {"model": "gpt-6-astra", "effort": "high", "news": False, "group": 5}
+    assert items["v11-sol-high"].params["model"] == "gpt-6.1-sol"
+    assert items["v9-v11-symbols"].strategy == "v9" and items["v9-v11-symbols"].symbols == SYMBOLS
+    assert not any(items[n].enabled for n in names)

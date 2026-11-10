@@ -252,8 +252,10 @@ for a change of effort or Codex CLI version.
   `v11-astra-medium` and `v11-sol-high` (table under "Model access"). Same prompts, validator and
   execution rules. The secondary instances show whether a lower effort or a smaller model plans
   differently, on the same days and the same inputs, so plans can be compared one to one.
-- The no-news control runs with the primary setup. A0 and B do not run in this test (open
-  question 8).
+- The no-news control runs with the primary setup, as `v11-astra-high-nonews`. A0 and B do not
+  run in this test (open question 8).
+- The v9 benchmark runs as the paper instance `v9-v11-symbols`: v9 with its fixed parameters on
+  the same 20 symbols, started on the same day.
 - **A0, direction only (open question 8):** same inputs and model, but the answer is only
   LONG or FLAT, filled at the next daily open like the other 1d instances. Shows whether
   planning adds anything over picking a direction.
@@ -266,8 +268,8 @@ for a change of effort or Codex CLI version.
 
 - Earliest evaluation: 180 days after the first plan.
 - Benchmarks over the same period and symbols: equal-weight buy-and-hold, and v9
-  (`close > SMA50`, its fixed rule) run by the engine on the same 20 symbols. `forward-v9` itself
-  trades `config.SYMBOLS`, so it is shown for reference only.
+  (`close > SMA50`, its fixed rule) on the same 20 symbols, the instance `v9-v11-symbols`.
+  `forward-v9` itself trades `config.SYMBOLS`, so it is shown for reference only.
 - **Pass (A), for `v11-astra-high` only, all of:**
   - annualized Sharpe of daily returns above buy-and-hold's
   - max drawdown below buy-and-hold's
@@ -338,28 +340,37 @@ orders (the "exchange-side stop / OCO" item in TODO.md), which needs explicit ap
 - OpenAI recommends API keys for automation and calls ChatGPT sign-in an advanced option.
 - With groups, the model sees five symbols at once and may weigh them against each other, and
   scheduled and triggered reviews differ in format.
+- The bot needs a machine that stays awake. When it is paused (sleep, restart), missed 1m
+  candles are replayed on return, so fills, stops and take-profits stay correct; review levels
+  reached more than 5 minutes ago are not made up, and a scheduled review missed at the close
+  is made the same UTC day as soon as the bot is back, on the data of that moment. Paused
+  minutes and late scheduled reviews are visible in `llm_calls` and the logs and are reported.
+- Equity is marked once a UTC day, valued at the daily close with the books as they stand
+  after the missed candles are replayed; after a long pause a fill made after the close can
+  already be in the book.
+- An instance's first scheduled review is made when it starts; enable the instances right
+  after a daily close so the v11 instances and the v9 benchmark start on the same day.
 
-## Implementation outline (after the open questions are decided)
+## Implementation
 
-- `core/news.py`: fetch the feeds every 15 minutes, store into `news_items`, deduplicate by URL.
-- `trading/llm_analyst.py`: build the inputs, call the model, validate, store the plan.
-- `trading/order_sim.py`: the 1m order simulator above (entries, stops, take-profits,
-  expiries, triggers), run from the minute loop; daily equity marks for the metrics.
-- `analysis/forecasts.py`: resolve forecasts from 1m candles, the references, Brier and skill
-  scores, calibration table, bootstrap by plan date.
-- `llm/provider.py`: a small interface (prompt and schema in; plan, raw output and usage out),
-  so tests use a fake provider and an API provider can be added later without touching the
-  analyst.
-- `llm/codex_cli.py`: the Codex provider from "Model access", with `subprocess.run` and a
-  timeout.
-- Model id, effort, Codex path and version, and the limits in settings. No API key.
-- Tests: schema and validator (each rule, rejection keeps the old plan, stop only rises),
-  fill rules (strict limit, gaps, stop before take-profit, no fill before the plan), call
-  limits and budget stop, news time filter, restart replay gives the same fills, forecast
-  outcomes (take-profit first, stop first, stop first in one candle, neither in 30 days, later
-  `adjust` ignored, cut-off) and `p_tp` having no effect on orders.
-- Codex provider tests with a fake `codex`: the command flags, the minimal environment, the version
-  check, timeout and retry rules, usage-limit handling.
+All of it is in `phase-5-v11-llm-analyst` (tests in `tests/test_llm_*.py`, `test_order_sim.py`,
+`test_v11_*.py`, `test_universe.py`, `test_news.py`):
+
+- `llm/provider.py`, `llm/codex_cli.py`: the provider interface, the retry rule and the Codex
+  provider from "Model access".
+- `llm/plan.py`: the plan schema and the validator. `llm/prompt.py`: the prompt.
+  `llm/inputs.py`: the snapshot of everything a call may see. `llm/review.py`: one call (prompt,
+  model, validation, records). `llm/store.py`: `llm_calls` and `llm_plans`.
+- `trading/order_sim.py`: the 1m order simulator. `trading/llm_analyst.py`: the instance
+  (strategy `v11`): minute loop, daily equity and scheduled review, triggered reviews, call
+  limits, books, events and forecasts in paper.db, fills in the shared trades table.
+- `core/universe.py` (`universe --n 20 --save`), `core/news.py` (`news --loop`, a supervisor
+  service).
+- `analysis/v11_dry_run.py` (`v11-dry-run run --loop | report`, a supervisor service while
+  `config.V11_DRY_RUN` is on), `analysis/v11_forecasts.py` (`v11-forecasts --instance`),
+  `tools/v11_setup.py` (`v11-setup --universe FILE --group N [--enable]`).
+- At the evaluation: the pass criteria and trade metrics come from the instances' trades and
+  equity (`forward-report`); the grade-stake curve of open question 5 is computed then.
 - Before this document is fixed: a dry run of 2–3 days on live data that measures only format
   validity, tokens, latency and usage-limit errors, and compares single and grouped calls (see
   "Grouped scheduled reviews"). Its plans are not traded or evaluated.
@@ -378,13 +389,14 @@ orders (the "exchange-side stop / OCO" item in TODO.md), which needs explicit ap
    dry run hits the plan's usage limit, the number drops to 15 before this document is fixed.
 4. **Budget.** Decided 2026-11-09: no USD budget (ChatGPT plan). Calls and tokens are counted per
    day, and a usage-limit error stops the day's calls (see "Call limits").
-5. **Sizing.** Decided 2026-11-09: in the code, grade stakes are an instance option. With the
-   bankroll on, the stake follows the model's `grade` (the bankroll's stake grades); with it off,
-   a fixed slot per symbol (equal paper equity, the full slot per position, as `forward-v9`). The
-   test instances run with the bankroll off, so they stay comparable with buy-and-hold and v9 and
-   do not depend on the bankroll, which is still under review. The report adds a grade-stake
-   equity curve computed from the primary's trades (2/5/7/10% of the starting capital per grade);
-   it is an approximation, because a real bankroll can run short of cash after losses.
+5. **Sizing.** Decided 2026-11-09: the test instances use a fixed slot per symbol (equal paper
+   equity, the full slot per position, as `forward-v9`), so they stay comparable with
+   buy-and-hold and v9 and do not depend on the bankroll, which is still under review. The
+   report adds a grade-stake equity curve computed from the primary's trades (2/5/7/10% of the
+   starting capital per grade); it is an approximation, because a real bankroll can run short of
+   cash after losses. Grade stakes as an instance option (bankroll on: the stake follows the
+   model's `grade`) are deferred until the bankroll has been reviewed: they need a cash pool
+   shared by the symbols and a way to show that pool in the reports (TODO.md).
 6. **Validator bounds.** Decided 2026-11-09: stop 0.5–4 ATR, limit at most 3 ATR below,
    take-profit at least 1 ATR, expiry at most 3 closes, review levels at least 0.5 ATR away.
 7. **Call limits.** Decided 2026-11-09: 3 triggered reviews per symbol per day, 60-minute cooldown.
