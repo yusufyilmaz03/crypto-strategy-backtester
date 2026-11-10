@@ -19,7 +19,8 @@ Open work that isn't code yet. Dated items first; check this file at the start o
 
 - **2026-11-12 — v11 dry run report.** The supervisor runs the dry run after every daily close
   while `config.V11_DRY_RUN` is on (`runtime/logs/v11-dry-run.log`, symbols in
-  `results/universe_2026-11-09.json`). After 2–3 runs: `python -m kripto_bot v11-dry-run report`.
+  `results/universe_2026-11-09.json`; the panel's AI analyst page shows the runs, the comparison
+  and every plan). After 2–3 runs: `python -m kripto_bot v11-dry-run report`.
   Write the grouping choice and the symbol count (20, or 15 on usage limits) into
   `docs/v11-ai-analyst.md`, then set `V11_DRY_RUN = False` and restart the service.
 
@@ -144,7 +145,8 @@ were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
   (cut / no cash), the lower-timeframe exit, deposit and withdraw (5,000 in and 7,000 out on
   `bankroll-v4-5m`, applied within about 15 s, TWR without a jump; the refusal above the free
   cash is covered by tests), the low-bankroll warning (threshold 99%: badge and Telegram) and the
-  Telegram views. Still open: the panel at phone width.
+  Telegram views. Still open: the panel at phone width. The replay is now in the panel
+  (Bankroll tab, "Replay on past data") and `bankroll-replay`.
   Strong / Very strong stakes and rotation never occur with v4: it buys below the lower Bollinger
   band, where most score inputs (trend, distance, breakout, RSI 50-70) give no points, so its BUY
   scores stay below about 56 (replays of both instances' exact settings on cached candles: max
