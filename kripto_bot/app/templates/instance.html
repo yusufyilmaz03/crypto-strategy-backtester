@@ -31,6 +31,7 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-signals" id="signals-tab">{{ _("Signals") }}</button></li>
   <li class="nav-item d-none" id="stops-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-stops">{{ _("Stop events") }}</button></li>
   <li class="nav-item d-none" id="bankroll-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-bankroll" id="bankroll-tab">{{ _("Bankroll") }}</button></li>
+  <li class="nav-item d-none" id="analyst-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-analyst"><i class="bi bi-cpu"></i> {{ _("AI analyst") }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-log">{{ _("Log") }}</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-setup">{{ _("Setup") }}</button></li>
 </ul>
@@ -52,6 +53,20 @@
     <div class="small text-secondary mb-2" id="requests"></div>
     <div class="card mb-3"><div class="card-body"><h6 class="card-title">{{ _("Bankroll (USDT)") }}</h6><canvas id="bankroll-chart" height="80"></canvas></div></div>
     <div class="table-responsive" style="max-height: 520px"><table class="table table-sm" id="ledger"></table></div>
+  </div>
+  <div class="tab-pane fade" id="t-analyst">
+    <div id="analyst-today" class="mb-3"></div>
+    <h6>{{ _("Current plans") }}</h6>
+    <div class="small text-secondary mb-1">{{ _("The latest accepted plan of each symbol. A rejected plan leaves the previous one in force. Times UTC.") }}</div>
+    <div class="table-responsive mb-3"><table class="table table-sm" id="llm-current"></table></div>
+    <h6>{{ _("Pending orders and review levels") }}</h6>
+    <div class="table-responsive mb-3"><table class="table table-sm" id="llm-orders"></table></div>
+    <h6>{{ _("All plans") }}</h6>
+    <div class="table-responsive mb-3" style="max-height: 420px"><table class="table table-sm" id="llm-plans"></table></div>
+    <h6>{{ _("Calls") }}</h6>
+    <div class="table-responsive mb-3" style="max-height: 360px"><table class="table table-sm" id="llm-calls"></table></div>
+    <h6>{{ _("Events") }}</h6>
+    <div class="table-responsive" style="max-height: 360px"><table class="table table-sm" id="llm-events"></table></div>
   </div>
   <div class="tab-pane fade" id="t-log"><div class="small text-secondary mb-1">{{ _("Newest first.") }}</div><div class="log bg-body-tertiary p-2 rounded" id="log">…</div></div>
   <div class="tab-pane fade" id="t-setup"><pre class="small mb-0" id="setup"></pre></div>
@@ -226,9 +241,71 @@ async function loadChart() {
     plugins: { legend: { labels: { color } } },
     scales: { x: { ticks: { color, maxTicksLimit: 10 } }, y: { ticks: { color, callback: v => v + "%" } } } } });
 }
+// ---- v11 AI analyst: its plans, calls and events (strategy "v11" only)
+const ANALYST_TABLES = ["llm_today", "llm_current", "llm_orders", "llm_plans", "llm_calls", "llm_events"];
+const lvl = v => v == null ? "" : KB.num(v, 6);
+function entryCell(r) {
+  if (!r.entry_type) return "";
+  return r.entry_type === "market" ? KB.t("market") : KB.t("limit {price}", { price: lvl(r.entry_price) });
+}
+function renderAnalyst([today, current, orders, plans, calls, events]) {
+  const stopped = today.stopped ? `<div class="alert alert-warning py-2 mb-2"><i class="bi bi-exclamation-triangle"></i> ${
+    KB.t(today.stopped === "usage_limit" ? "Usage limit reached: no more calls until the next UTC day."
+                                         : "Codex is not the pinned version: calls stopped for today.")}</div>` : "";
+  document.getElementById("analyst-today").innerHTML = stopped + `<div class="small">${KB.t(
+    "Today (UTC): {calls} calls, {failed} failed, {triggered} triggered reviews · tokens in {input}, out {output} (reasoning {reasoning}) · last scheduled review {last}",
+    { calls: today.calls, failed: today.failed, triggered: today.triggered, input: today.input_tokens.toLocaleString(),
+      output: today.output_tokens.toLocaleString(), reasoning: today.reasoning_tokens.toLocaleString(),
+      last: today.last_scheduled ? KB.time(today.last_scheduled) : "—" })}</div>`;
+  const levelCols = [
+    [KB.t("Entry"), entryCell, r => r.entry_price], [KB.t("Stop"), r => lvl(r.stop), r => r.stop],
+    [KB.t("Take-profit"), r => lvl(r.take_profit), r => r.take_profit],
+    [KB.term("p_tp", KB.t("The model's probability that the take-profit comes before the stop within 30 days of the fill")),
+     r => r.p_tp == null ? "" : KB.num(r.p_tp, 2), r => r.p_tp],
+    [KB.t("Grade"), r => KB.esc(r.grade ? KB.t(r.grade) : ""), r => r.grade],
+    [KB.t("Review levels"), r => KB.esc(r.review_if || ""), r => r.review_if]];
+  KB.table(document.getElementById("llm-current"), current, [
+    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Time"), r => KB.time(r.time), r => r.time],
+    [KB.t("Action"), r => KB.esc(r.action), r => r.action], ...levelCols,
+    [KB.t("Reasons"), r => `<span class="small">${KB.esc(r.plan_reasons)}</span>`],
+    [KB.t("Memo"), r => `<span class="small text-secondary">${KB.esc(r.memo)}</span>`]],
+    KB.t("No plans yet: the first one comes with the first scheduled review."), [0, "asc"]);
+  KB.table(document.getElementById("llm-orders"), orders, [
+    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Entry"), entryCell, r => r.entry_price],
+    [KB.t("Stop"), r => lvl(r.stop), r => r.stop], [KB.t("Take-profit"), r => lvl(r.take_profit), r => r.take_profit],
+    [KB.t("Expires"), r => r.expires_at ? KB.time(r.expires_at) : "", r => r.expires_at],
+    [KB.t("Review levels"), r => KB.esc(r.review_if || ""), r => r.review_if]],
+    KB.t("No pending orders or review levels."), [0, "asc"]);
+  KB.table(document.getElementById("llm-plans"), plans, [
+    [KB.t("Time"), r => KB.time(r.time), r => r.time], [KB.t("Review"), r => KB.esc(KB.t(r.kind || "")), r => r.kind],
+    [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol], [KB.t("Action"), r => KB.esc(r.action ?? ""), r => r.action],
+    [KB.t("Accepted"), r => r.accepted ? `<i class="bi bi-check-lg text-success"></i>`
+      : `<i class="bi bi-x-lg text-danger" title="${KB.esc(r.rejected_because)}"></i>`, r => r.accepted],
+    ...levelCols,
+    [KB.t("Why rejected"), r => `<span class="small text-danger">${KB.esc(r.rejected_because)}</span>`, r => r.rejected_because]],
+    KB.t("No plans yet."), [0, "desc"]);
+  KB.table(document.getElementById("llm-calls"), calls, [
+    [KB.t("Time"), r => KB.time(r.time), r => r.time], [KB.t("Review"), r => KB.esc(KB.t(r.kind)), r => r.kind],
+    [KB.t("Symbols"), r => `<span class="small">${KB.esc(r.symbols)}</span>`, r => r.symbols],
+    [KB.t("Result"), r => `<span class="${r.outcome === "ok" ? "" : "text-danger"}" title="${KB.esc(r.stderr || "")}">${
+      KB.esc(r.outcome)}${r.retry ? " · " + KB.t("retry") : ""}</span>`, r => r.outcome],
+    [KB.t("Model"), r => KB.esc(`${r.model} ${r.effort}`), r => r.model],
+    [KB.t("Tokens in"), r => KB.num(r.input_tokens, 0), r => r.input_tokens],
+    [KB.t("Tokens out"), r => KB.num(r.output_tokens, 0), r => r.output_tokens],
+    [KB.t("Seconds"), r => KB.num(r.latency_sec, 1), r => r.latency_sec]],
+    KB.t("No calls yet."), [0, "desc"]);
+  KB.table(document.getElementById("llm-events"), events, [
+    [KB.t("Time"), r => KB.time(r.time), r => r.time], [KB.t("Symbol"), r => KB.esc(r.symbol), r => r.symbol],
+    [KB.t("Event"), r => KB.esc(KB.t(r.kind)), r => r.kind], [KB.t("Detail"), r => KB.esc(KB.t(r.detail || "")), r => r.detail]],
+    KB.t("No events yet."), [0, "desc"]);
+}
 async function loadTables() {
   const paper = INST.mode === "paper";
   const bank = INST.sizing === "bankroll";
+  const analyst = INST.strategy === "v11";
+  document.getElementById("analyst-item").classList.toggle("d-none", !analyst);
+  document.getElementById("signals-tab").parentElement.classList.toggle("d-none", analyst);   // v11 has no signals
+  if (analyst) renderAnalyst(await Promise.all(ANALYST_TABLES.map(t => KB.api(`/api/instances/${N}/${t}`))));
   const [pos, trades, signals, log, stops, ledger, requests, snaps] = await Promise.all(
     ["positions", "trades", "signals", "log", ...(paper ? ["stops"] : [null]), ...(bank ? ["ledger", "requests", "snapshots"] : [])]
     .map(t => t ? KB.api(`/api/instances/${N}/${t}`) : null));
@@ -285,8 +362,8 @@ async function loadTables() {
     [KB.t("Time"), r => KB.time(r.time), r => r.time], [KB.t("Level"), r => KB.esc(r.level), r => r.level],
     [KB.t("Symbol"), r => KB.esc(r.symbol ?? ""), r => r.symbol], [KB.t("Message"), r => KB.esc(r.message), r => r.message]],
     KB.t(paper ? "No signals yet." : "No events yet."), [0, "desc"]);
-  document.getElementById("stops-item").classList.toggle("d-none", !paper);
-  if (paper) {
+  document.getElementById("stops-item").classList.toggle("d-none", !paper || analyst);   // v11 stops are in its events
+  if (paper && !analyst) {
     const rel = (a, b) => a == null || b == null ? null : (a / b - 1) * 100;
     // detection delay: wall clock at detection minus the 1m candle's close
     const late = r => (Date.parse(r.detected_at) - Date.parse(r.minute_time + "Z") - 60000) / 1000;

@@ -290,3 +290,101 @@ def log_tail(name, lines=200, log_dir=None, block=65536):
             f.seek(end)
             data = f.read(step) + data
     return data.decode(errors="replace").splitlines()[-lines:]
+
+
+# ---------------------------------------------------------------- v11 AI analyst
+def _plan_fields(plan_json):
+    """The columns the panel shows from a stored plan."""
+    p = json.loads(plan_json or "{}")
+    e = p.get("entry") or {}
+    return {"entry_type": e.get("type"), "entry_price": e.get("price"), "expires_candles": e.get("expires_candles"),
+            "stop": p.get("stop"), "take_profit": p.get("take_profit"), "p_tp": p.get("p_tp"), "grade": p.get("grade"),
+            "review_if": ", ".join(f"{x.get('side')} {x.get('price')}" for x in p.get("review_if") or []),
+            "plan_reasons": " ".join(p.get("reasons") or []), "memo": p.get("memo") or "",
+            "news_ids": p.get("news_ids") or []}
+
+
+def llm_plans(inst, limit=500, paper_db=None):
+    """Every plan of a v11 instance, newest first, with the call's kind and the validator's reasons."""
+    df = _query(_db(inst, paper_db),
+                "SELECT p.id, p.time, p.symbol, p.action, p.accepted, p.reasons, p.plan, c.kind "
+                "FROM llm_plans p LEFT JOIN llm_calls c ON c.id = p.call_id WHERE p.instance=? ORDER BY p.id DESC LIMIT ?",
+                (inst.name, limit))
+    if df.empty:
+        return df
+    fields = pd.DataFrame([_plan_fields(x) for x in df["plan"]], index=df.index)
+    df["rejected_because"] = [" · ".join(json.loads(r or "[]")) for r in df["reasons"]]
+    return pd.concat([df.drop(columns=["plan", "reasons"]), fields], axis=1)
+
+
+def llm_current(inst, paper_db=None):
+    """The latest accepted plan of each symbol: what the analyst wants now."""
+    df = llm_plans(inst, limit=5000, paper_db=paper_db)
+    if df.empty:
+        return df
+    return df[df["accepted"] == 1].drop_duplicates("symbol").sort_values("symbol").reset_index(drop=True)
+
+
+def llm_calls(inst, limit=300, paper_db=None):
+    df = _query(_db(inst, paper_db),
+                "SELECT id, time, kind, mode, symbols, retry, outcome, model, effort, input_tokens, output_tokens, "
+                "reasoning_tokens, latency_sec, exit_code, substr(stderr, -300) AS stderr "
+                "FROM llm_calls WHERE instance=? ORDER BY id DESC LIMIT ?", (inst.name, limit))
+    if not df.empty:
+        df["symbols"] = [", ".join(json.loads(s or "[]")) for s in df["symbols"]]
+    return df
+
+
+def llm_events(inst, limit=500, paper_db=None):
+    """Fills, expiries, cancels, review triggers and skipped reviews, newest first."""
+    df = _query(_db(inst, paper_db), "SELECT id, time, symbol, kind, plan_id, data FROM llm_events "
+                                      "WHERE instance=? ORDER BY id DESC LIMIT ?", (inst.name, limit))
+    if not df.empty:
+        df["detail"] = [_event_detail(k, d) for k, d in zip(df["kind"], df["data"])]
+        df = df.drop(columns=["data"])
+    return df
+
+
+def _event_detail(kind, data_json):
+    d = json.loads(data_json or "{}")
+    if "reason" in d:
+        return d["reason"]
+    if kind == "review":
+        return f"{d.get('side')} {d.get('price')}"
+    if "price" in d and d["price"] is not None:
+        out = f"{d['price']:.8g}"
+        return out + (f" · {d['return_pct']:+.2f}%" if "return_pct" in d else "")
+    return ""
+
+
+def llm_orders(inst, paper_db=None):
+    """Pending entries and review levels from the analyst's books (open positions are in trades)."""
+    df = _query(_db(inst, paper_db), "SELECT symbol, book FROM llm_books WHERE instance=? ORDER BY symbol", (inst.name,))
+    rows = []
+    for symbol, book in zip(df.get("symbol", []), df.get("book", [])):
+        b = json.loads(book)
+        e = b.get("entry")
+        levels = ", ".join(f"{x['side']} {x['price']}" for x in b.get("review") or [])
+        if e or levels:
+            rows.append({"symbol": symbol, "entry_type": e and e["kind"], "entry_price": e and e["price"],
+                         "stop": e and e["stop"], "take_profit": e and e["take_profit"],
+                         "expires_at": e and e["expires_at"], "review_if": levels})
+    return pd.DataFrame(rows)
+
+
+def llm_today(inst, paper_db=None, now=None):
+    """Today's (UTC) calls, failures and tokens, and whether the calls are stopped for the day."""
+    day = (now or pd.Timestamp.now(tz="UTC")).floor("D").isoformat()
+    df = _query(_db(inst, paper_db), "SELECT kind, outcome, retry, input_tokens, output_tokens, reasoning_tokens, time "
+                                      "FROM llm_calls WHERE instance=? AND time >= ?", (inst.name, day))
+    last = _query(_db(inst, paper_db), "SELECT MAX(time) AS t FROM llm_calls WHERE instance=? AND kind='scheduled'",
+                  (inst.name,))
+    if df.empty:
+        return {"calls": 0, "failed": 0, "triggered": 0, "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0,
+                "stopped": None, "last_scheduled": last["t"].iloc[0] if not last.empty else None}
+    stopped = next((o for o in ("usage_limit", "version_mismatch") if (df["outcome"] == o).any()), None)
+    return {"calls": int(len(df)), "failed": int((df["outcome"] != "ok").sum()),
+            "triggered": int(((df["kind"] == "triggered") & (df["retry"] == 0)).sum()),
+            "input_tokens": int(df["input_tokens"].fillna(0).sum()), "output_tokens": int(df["output_tokens"].fillna(0).sum()),
+            "reasoning_tokens": int(df["reasoning_tokens"].fillna(0).sum()), "stopped": stopped,
+            "last_scheduled": last["t"].iloc[0] if not last.empty else None}

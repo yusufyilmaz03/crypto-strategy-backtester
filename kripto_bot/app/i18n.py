@@ -246,6 +246,56 @@ TR = {
         "çiftler (v11 testi bunlardan birini kullanır; bir v11 instance'ı sabit bir liste ister).",
     "Saved universe {date} ({n} symbols)": "Kaydedilmiş evren {date} ({n} sembol)",
     "Today's top 20": "Bugünün ilk 20'si",
+    # v11 AI analyst tab
+    "AI analyst": "AI analist",
+    "Current plans": "Güncel planlar",
+    "The latest accepted plan of each symbol. A rejected plan leaves the previous one in force. Times UTC.":
+        "Her sembolün en son kabul edilen planı. Reddedilen bir plan öncekini geçerli bırakır. Saatler UTC.",
+    "Pending orders and review levels": "Bekleyen emirler ve değerlendirme seviyeleri",
+    "All plans": "Bütün planlar",
+    "Calls": "Çağrılar",
+    "Usage limit reached: no more calls until the next UTC day.":
+        "Kullanım limitine ulaşıldı: bir sonraki UTC gününe kadar çağrı yok.",
+    "Codex is not the pinned version: calls stopped for today.":
+        "Codex sabitlenen sürüm değil: bugünün çağrıları durdu.",
+    "Today (UTC): {calls} calls, {failed} failed, {triggered} triggered reviews · tokens in {input}, out {output} "
+    "(reasoning {reasoning}) · last scheduled review {last}":
+        "Bugün (UTC): {calls} çağrı, {failed} başarısız, {triggered} tetiklenmiş değerlendirme · token girdi {input}, "
+        "çıktı {output} (düşünme {reasoning}) · son planlı değerlendirme {last}",
+    "Take-profit": "Kâr al",
+    "The model's probability that the take-profit comes before the stop within 30 days of the fill":
+        "Modelin, dolumdan sonraki 30 gün içinde kâr al'ın stop'tan önce gelme olasılığı",
+    "Grade": "Derece",
+    "Review levels": "Değerlendirme seviyeleri",
+    "Reasons": "Gerekçeler",
+    "Memo": "Not",
+    "No plans yet: the first one comes with the first scheduled review.":
+        "Henüz plan yok: ilki ilk planlı değerlendirmeyle gelir.",
+    "Expires": "Bitiş",
+    "No pending orders or review levels.": "Bekleyen emir ya da değerlendirme seviyesi yok.",
+    "Review": "Değerlendirme",
+    "Accepted": "Kabul",
+    "Why rejected": "Neden reddedildi",
+    "No plans yet.": "Henüz plan yok.",
+    "Result": "Sonuç",
+    "retry": "yeniden deneme",
+    "Model": "Model",
+    "Tokens in": "Token girdi",
+    "Tokens out": "Token çıktı",
+    "Seconds": "Saniye",
+    "No calls yet.": "Henüz çağrı yok.",
+    "Event": "Olay",
+    "Detail": "Ayrıntı",
+    "market": "market",
+    "limit {price}": "limit {price}",
+    # values the analyst stores (translated when shown)
+    "scheduled": "planlı", "triggered": "tetiklenmiş",
+    "weak": "zayıf", "normal": "normal", "strong": "güçlü", "very strong": "çok güçlü",
+    "entry": "giriş", "take_profit": "kâr al", "exit": "çıkış", "expired": "süresi doldu", "cancelled": "iptal",
+    "review": "değerlendirme seviyesi", "review_skipped": "değerlendirme atlandı", "enter_skipped": "giriş atlandı",
+    "within 60 minutes of the last call": "son çağrıdan sonraki 60 dakika içinde",
+    "3 triggered reviews today": "bugün 3 tetiklenmiş değerlendirme yapıldı",
+    "calls stopped for today": "bugünün çağrıları durdu",
     "Choose the 20 most traded USDT pairs on Binance now and save them as a universe (takes a few minutes).":
         "Binance'te şu an en çok işlem gören 20 USDT çiftini seç ve evren olarak kaydet (birkaç dakika sürer).",
     "Choosing today's most traded pairs: this takes a few minutes.":

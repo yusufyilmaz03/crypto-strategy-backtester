@@ -254,3 +254,48 @@ def test_todays_universe_is_chosen_in_the_background(client, monkeypatch):
         time.sleep(0.02)
     status = client.get("/api/universes").get_json()
     assert not status["running"] and status["error"] is None and done[0]["n"] == 20
+
+
+def test_the_ai_analyst_tab_shows_plans_calls_events_and_orders(client, tmp_path, monkeypatch):
+    import pandas as pd
+    from kripto_bot.app import reporting
+    from kripto_bot.llm import plan as pl
+    from kripto_bot.llm import provider as p
+    from kripto_bot.llm.store import LLMStore
+    from kripto_bot.trading import llm_analyst, order_sim, store
+    db = str(tmp_path / "paper.db")
+    monkeypatch.setattr(store, "DB_FILE", db)
+    inst = instances.create({"name": "v11-a", "strategy": "v11", "timeframe": "1d", "symbols": ["ETH/USDT"],
+                             "params": {"model": "gpt-6-astra", "effort": "high"}})
+    st = LLMStore(db)
+    st.conn.executescript(llm_analyst.SCHEMA)
+    now = pd.Timestamp.now(tz="UTC")
+    call = st.record_call("v11-a", now, "scheduled", "group", ["ETH/USDT"], "prompt",
+                          p.LLMResult(p.OK, usage={"input_tokens": 12000, "output_tokens": 300, "reasoning_output_tokens": 90},
+                                      model="gpt-6-astra", effort="high"))
+    plan = {"symbol": "ETH/USDT", "action": "enter", "entry": {"type": "limit", "price": 2950, "expires_candles": 1},
+            "stop": 2850, "take_profit": 3150, "p_tp": 0.4, "grade": "strong", "review_if": [{"side": "below", "price": 2880}],
+            "reasons": ["dip buy"], "news_ids": [], "memo": "watch ETF flows"}
+    ctx = {"last": 3000, "atr": 120, "tick": 0.01}
+    st.record_plan("v11-a", call, now, "group", "ETH/USDT", plan, pl.Verdict(True, [], plan), ctx)
+    st.record_plan("v11-a", call, now, "group", "ETH/USDT", dict(plan, memo="x" * 400),
+                   pl.Verdict(False, ["memo must be text of at most 300 characters"]), ctx)
+    book = order_sim.Book("ETH/USDT", 1000.0)
+    order_sim.apply(book, plan, now)
+    st.conn.execute("INSERT INTO llm_books VALUES ('v11-a', 'ETH/USDT', ?, ?)",
+                    (json.dumps(order_sim.to_dict(book)), now.isoformat()))
+    st.conn.execute("INSERT INTO llm_events (instance, symbol, time, kind, data) VALUES "
+                    "('v11-a', 'ETH/USDT', ?, 'review_skipped', '{\"reason\": \"3 triggered reviews today\"}')",
+                    (now.isoformat(),))
+    st.conn.commit()
+    get = lambda t: client.get(f"/api/instances/v11-a/{t}").get_json()
+    current = get("llm_current")
+    assert len(current) == 1 and current[0]["memo"] == "watch ETF flows" and current[0]["p_tp"] == 0.4
+    plans = get("llm_plans")
+    assert [p_["accepted"] for p_ in plans] == [0, 1] and "memo must be" in plans[0]["rejected_because"]
+    assert get("llm_orders")[0]["entry_price"] == 2950 and get("llm_orders")[0]["review_if"] == "below 2880"
+    assert get("llm_calls")[0]["input_tokens"] == 12000
+    assert get("llm_events")[0]["detail"] == "3 triggered reviews today"
+    today = get("llm_today")
+    assert today["calls"] == 1 and today["failed"] == 0 and today["stopped"] is None
+    assert client.get("/instances/v11-a").status_code == 200

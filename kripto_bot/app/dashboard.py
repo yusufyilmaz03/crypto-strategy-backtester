@@ -364,6 +364,12 @@ def api_instance_table(name, table):
         return jsonify(records(snaps.assign(time=snaps["time"].dt.strftime("%Y-%m-%dT%H:%M:%S")) if not snaps.empty else snaps))
     if table == "log":
         return jsonify(reporting.log_tail(inst.name, int(request.args.get("lines", 200))))
+    analyst = {"llm_plans": reporting.llm_plans, "llm_current": reporting.llm_current, "llm_calls": reporting.llm_calls,
+               "llm_events": reporting.llm_events, "llm_orders": reporting.llm_orders}
+    if table in analyst:
+        return jsonify(records(analyst[table](inst)))
+    if table == "llm_today":
+        return jsonify(reporting.llm_today(inst))
     raise ApiError(f"unknown table {table}")
 
 
