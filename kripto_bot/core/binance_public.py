@@ -128,7 +128,7 @@ class BinancePublic:
                 self._exchange_info()
                 self._all_markets = True
             return self.markets
-        missing = [market_id(s) for s in symbols if s not in self.markets]
+        missing = list(dict.fromkeys(market_id(s) for s in symbols if s not in self.markets))  # Binance refuses repeats
         if missing and not self._all_markets:
             try:
                 self._exchange_info({"symbols": _json_list(missing)})

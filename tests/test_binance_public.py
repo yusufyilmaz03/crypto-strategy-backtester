@@ -41,6 +41,9 @@ class FakeBinance:
         if path == "exchangeInfo":
             ids = json.loads(params["symbols"]) if "symbols" in params else \
                 [params["symbol"]] if "symbol" in params else list(INFO)
+            if len(set(ids)) < len(ids):
+                raise urllib.error.HTTPError(url, 400, "Bad Request", {}, io.BytesIO(
+                    b'{"code":-1102,"msg":"Symbol is present multiple times in the list."}'))
             if any(i not in INFO for i in ids):
                 raise urllib.error.HTTPError(url, 400, "Bad Request", {},
                                              io.BytesIO(b'{"code":-1121,"msg":"Invalid symbol."}'))
@@ -95,6 +98,12 @@ def test_all_markets_once(client, fake):
     client.load_markets()
     client.load_markets(["BTC/USDT"])
     assert len(fake.requests) == 1
+
+
+def test_repeated_symbols_are_asked_once(client, fake):
+    # v11 asks for its symbols + BTC/USDT, which may already be among them
+    assert sorted(client.load_markets(["BTC/USDT", "ETH/USDT", "BTC/USDT"])) == ["BTC/USDT", "ETH/USDT"]
+    assert fake.requests == [("exchangeInfo", {"symbols": '["BTCUSDT","ETHUSDT"]'})]
 
 
 def test_unknown_symbol_is_left_out(client):
