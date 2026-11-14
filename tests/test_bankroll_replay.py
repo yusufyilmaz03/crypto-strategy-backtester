@@ -33,7 +33,8 @@ def cache(tmp_path, monkeypatch):
     d.mkdir()
     for i, s in enumerate(SYMBOLS):
         df = _days(0.6 + 0.3 * i, i)
-        df = df.assign(timestamp=df["timestamp"].astype("int64") // 10**6)
+        # pandas 3 stores date_range in microseconds, so cast to ms before taking the integer
+        df = df.assign(timestamp=df["timestamp"].astype("datetime64[ms]").astype("int64"))
         df.to_csv(d / f"{s.replace('/', '_')}_1d.csv", index=False)
     monkeypatch.setattr(bankroll_replay, "cache_path", lambda s, tf: str(d / f"{s.replace('/', '_')}_{tf}.csv"))
     monkeypatch.setattr(instances, "INSTANCES_FILE", str(tmp_path / "instances.json"))
