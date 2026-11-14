@@ -171,6 +171,19 @@ were deleted on 2026-11-02, their single INITIAL rows stay in paper.db.)
   with the trade metrics, before trusting any stake grades or rotation. A pre-registered
   test needs a portfolio backtest built on `core/bankroll.py`.
 
+## Distribution (ideas, not started)
+
+- **Public repo for the agent skill (maybe later).** A separate public repo, e.g.
+  `crypto-strategy-backtester-skill`, holding the built skill (`skills/crypto-strategy-backtester/`
+  plus `.claude-plugin/marketplace.json` with the repo root as the plugin). Why: Agensi is the only
+  skill marketplace that sells; skills.sh, SkillsMP (crawls repos with 2+ stars), ClawHub and Claude
+  Code plugin marketplaces are free and read a public GitHub repo with a SKILL.md, and
+  `agent-skill/package/` alone is not installable because `build.py` copies the engine in. One repo
+  would feed all four. Cost: an export option in `build.py` and a rebuild/push whenever the engine
+  changes. Before ClawHub, check that it accepts a PolyForm Noncommercial skill. Paused on
+  2026-11-14 to focus on showcasing the main project; details in
+  `docs/showcase-and-distribution.md` ("Update 2026-11-14").
+
 ## Maintenance
 
 - `claude/proje-baglami.md`, known issues #11 (CSV logs) is out of date: paper uses SQLite.

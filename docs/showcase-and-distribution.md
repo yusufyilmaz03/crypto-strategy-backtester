@@ -103,6 +103,37 @@ portfolio piece for custom trading-bot work.
 5. Extra channels: Apify Store; a paid Agensi listing only after the
    accountant's answer on USDC payouts.
 
+## Update 2026-11-14
+
+- The free Agensi listing is live:
+  https://www.agensi.io/skills/crypto-strategy-backtester
+- Of the skill marketplaces, only Agensi sells skills. skills.sh, SkillsMP,
+  ClawHub, LobeHub, MCP Market and Claude Code plugin marketplaces are free
+  directories. Most of them read a public GitHub repo that contains a
+  SKILL.md (SkillsMP crawls repos with 2+ stars; skills.sh installs with
+  `npx skills add owner/repo`; ClawHub publishes a local folder with its CLI).
+- `agent-skill/package/` alone is not installable: `build.py` copies the
+  engine files in. Free directories need the built skill in a public repo
+  (or folder) of its own, rebuilt whenever the engine changes.
+- ClawHub's publishing docs do not say which licenses are allowed. Check its
+  terms before publishing a PolyForm Noncommercial skill.
+- Lemon Squeezy is moving its sellers to Stripe Managed Payments. A new seller
+  in Türkiye cannot use Stripe directly, so Lemon Squeezy drops out; Polar
+  (Türkiye listed for payouts, via Stripe Connect Express) stays the storefront
+  option.
+- Every paid option (Apify, Polar, Gumroad, paid Agensi) still waits for the
+  accountant, as decided on 2026-11-10.
+- Showcasing the whole project: visitors land on `main`. It was 17 commits
+  behind `dev` and was fast-forwarded to `dev` on 2026-11-14. Keep it current
+  before any post.
+- Show HN fits (an open-source repo people can run, no sign-up). The posts go
+  out from the author's own accounts; check r/algotrading's current rules on
+  self-promotion before posting there.
+- A Hugging Face Spaces demo needs a read-only demo mode first: the panel
+  controls bot instances, needs `DASHBOARD_PASSWORD`, and the image runs the
+  supervisor. The public demo must not start testnet orders, Telegram or the
+  LLM analyst.
+
 ## Sources
 
 - Apify, Actor monetization: https://docs.apify.com/platform/actors/publishing/monetize
@@ -113,3 +144,6 @@ portfolio piece for custom trading-bot work.
 - Cryptohopper, how to sell: https://www.cryptohopper.com/ru/blog/7232-how-to-sell-on-cryptohopper
 - Gumroad, getting paid: https://gumroad.com/help/article/13-getting-paid
 - Agensi, about: https://www.agensi.io/about
+- Lemon Squeezy 2026 update: https://www.lemonsqueezy.com/blog/2026-update
+- Agensi, marketplace comparison (written by Agensi): https://www.agensi.io/learn/best-ai-agent-skills-marketplaces-2026
+- ClawHub, publishing: https://docs.openclaw.ai/clawhub/publishing.md
