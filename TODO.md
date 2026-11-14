@@ -17,12 +17,8 @@ Open work that isn't code yet. Dated items first; check this file at the start o
   both passed `docs/v9-filters-test.md`). Report the number of closed trades, win rate,
   profit factor and expectancy too, not only returns.
 
-- **2026-11-12 — v11 dry run report.** The supervisor runs the dry run after every daily close
-  while `config.V11_DRY_RUN` is on (`runtime/logs/v11-dry-run.log`, symbols in
-  `results/universe_2026-11-09.json`; the panel's AI analyst page shows the runs, the comparison
-  and every plan). After 2–3 runs: `python -m kripto_bot v11-dry-run report`.
-  Write the grouping choice and the symbol count (20, or 15 on usage limits) into
-  `docs/v11-ai-analyst.md`, then set `V11_DRY_RUN = False` and restart the service.
+- **Done 2026-11-14 — v11 dry run report.** Four days (2026-11-10 to 11-14, 11-13 missed):
+  groups of five, 20 symbols, written into `docs/v11-ai-analyst.md`; `V11_DRY_RUN = False`.
 
 - **v11 start (after the dry-run report and the move to a server).** Fix `docs/v11-ai-analyst.md`
   as the pre-registration (commit) first. Right after a daily close, in the panel's New instance

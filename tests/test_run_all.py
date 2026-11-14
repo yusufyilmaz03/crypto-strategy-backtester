@@ -58,7 +58,8 @@ def sup(tmp_path, monkeypatch):
         svc.stop()
 
 
-def test_fixed_services_are_not_stopped_by_reconcile(tmp_path):
+def test_fixed_services_are_not_stopped_by_reconcile(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_all.config, "V11_DRY_RUN", True)
     path = str(tmp_path / "instances.json")
     instances.load_all(path)
     s = Supervisor(with_dashboard=False, with_context=True, instances_path=path, log_dir=str(tmp_path),
@@ -70,6 +71,19 @@ def test_fixed_services_are_not_stopped_by_reconcile(tmp_path):
             s.services[name].cmd = SLEEP          # never run the real services in a test
         s.reconcile()
         assert fixed <= set(s.services)
+    finally:
+        for svc in s.services.values():
+            svc.stop()
+
+
+def test_no_dry_run_service_when_switched_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_all.config, "V11_DRY_RUN", False)
+    path = str(tmp_path / "instances.json")
+    instances.load_all(path)
+    s = Supervisor(with_dashboard=False, with_context=True, instances_path=path, log_dir=str(tmp_path),
+                   status_file=str(tmp_path / "status.json"))
+    try:
+        assert {"market-context", "news"} <= set(s.services) and "v11-dry-run" not in s.services
     finally:
         for svc in s.services.values():
             svc.stop()

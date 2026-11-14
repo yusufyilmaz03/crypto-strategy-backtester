@@ -37,9 +37,9 @@ on 2026-04-30 (OpenAI's model page).
 
 ### When the model is called
 
-- **Scheduled review:** once per symbol after each daily close (00:00 UTC + a few seconds).
-  Whether the symbols go one per call or in fixed groups of five is chosen in the dry run (see
-  "Grouped scheduled reviews").
+- **Scheduled review:** once per symbol after each daily close (00:00 UTC + a few seconds),
+  in fixed groups of five symbols per call (chosen in the dry run, see "Grouped scheduled
+  reviews").
 - **Triggered review:** when the price crosses a level the model asked for in its last plan
   (`review_if`), checked on closed 1m candles.
 - Nothing else calls the model. Fills, stops and take-profits are executed by the bot
@@ -163,6 +163,24 @@ the single-call plans (the mean of single-a vs group and single-b vs group) at m
 percentage points less often than the two single-call runs agree with each other, and are
 rejected no more often than the more rejected single-call run; otherwise one symbol per call.
 The choice is written here before this document is fixed.
+
+**Result: groups (dry run 2026-11-10 to 2026-11-14).** Four days on the universe of
+2026-11-09 (`results/universe_2026-11-09.json`), 80 symbol-days. The 2026-11-13 close was
+missed: a bug in the new market-data client (a repeated symbol in one request) stopped the dry
+run that day; fixed before the 2026-11-14 run, which used the same prompts and model setups.
+
+| | single-a vs single-b | single-a vs group | single-b vs group | rejected (a / b / group) |
+|---|---|---|---|---|
+| agreement | 98% | 100% | 98% | 0% / 0% / 0% |
+
+Grouped plans agree with the single-call plans 99% of the time on average, one point more than
+the two single-call runs agree with each other (rule: at most 10 points less), and no plan was
+rejected in any of the three runs, so groups are used. Per day, the primary's 20 single calls
+took about 242,000 input tokens (daily mean latency 11–35 s per call); its 4 group calls about
+57,000 (25–32 s per call). No usage-limit error in four days (about 56 calls a day); 5 calls timed out (3 on
+2026-11-10, 2 on 2026-11-12) and succeeded on the retry. The two secondary setups and the
+no-news control ran in groups with all plans accepted except one plan of `astra-medium` on
+2026-11-14.
 
 The dry run sends the same inputs, in this order: the primary setup one by one twice and in
 groups once, then the two secondary setups and the no-news control in groups, so the day's
@@ -387,6 +405,7 @@ All of it is in `phase-5-v11-llm-analyst` (tests in `tests/test_llm_*.py`, `test
    after the survivorship test's exclusions (stablecoins, fiat and gold tokens, leveraged tokens,
    tokenized stocks), fixed for the test. About 120 calls a day over the four instances; if the
    dry run hits the plan's usage limit, the number drops to 15 before this document is fixed.
+   The dry run hit no usage limit (2026-11-10 to 11-14), so the number stays at **20**.
 4. **Budget.** Decided 2026-11-09: no USD budget (ChatGPT plan). Calls and tokens are counted per
    day, and a usage-limit error stops the day's calls (see "Call limits").
 5. **Sizing.** Decided 2026-11-09: the test instances use a fixed slot per symbol (equal paper
