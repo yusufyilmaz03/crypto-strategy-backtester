@@ -8,7 +8,7 @@ A Python research tool for testing technical trading strategies on historical cr
 
 ## What it does
 
-- **Market data:** pulls OHLCV candles from Binance through [ccxt](https://github.com/ccxt/ccxt) (public endpoints, no API key needed).
+- **Market data:** pulls OHLCV candles, prices and market rules from Binance's public REST API (no API key needed). Testnet orders go through [ccxt](https://github.com/ccxt/ccxt).
 - **Market data cache:** any lookback is downloaded in pages and cached under `data/`; later runs only fetch new candles. Candles that have not closed yet are always dropped.
 - **Indicators:** RSI (Wilder), EMA (9/21/50), ATR, Bollinger Bands and Donchian channels, computed with pandas.
 - **10 strategies:**
@@ -44,6 +44,7 @@ A Python research tool for testing technical trading strategies on historical cr
 │   ├── paths.py             # where files live (runtime/, results/, data/)
 │   ├── core/                # the trading model
 │   │   ├── data.py          #   paginated OHLCV download + local cache, closed candles only
+│   │   ├── binance_public.py #  Binance public REST client (klines, prices, market rules) without ccxt
 │   │   ├── indicators.py    #   RSI (Wilder), EMA, ATR (Wilder)
 │   │   ├── strategy.py      #   signal generators v1–v10 (vectorized)
 │   │   ├── engine.py        #   bar-by-bar engine shared by backtests, paper trading and the testnet

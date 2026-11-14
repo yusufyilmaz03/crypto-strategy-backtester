@@ -33,12 +33,18 @@ Open work that isn't code yet. Dated items first; check this file at the start o
 
 ## Server (next topic)
 
-- **Memory per instance.** Each paper instance process uses about 234 MB (physical footprint;
-  `ps` shows less because macOS compresses idle memory), about 3.5 GB for 17 processes. Most of
-  it is ccxt loading all 4,714 Binance markets on the first request (about 290 MB peak; spot
-  only is still 3,742 markets and barely smaller) plus pandas and ccxt imports (about 110 MB).
-  Fetching klines from Binance's REST endpoint directly, without ccxt's market list, would cut
-  most of it. Measure again after the change; it decides between a 4 GB and an 8 GB server.
+- **Memory per instance: done 2026-11-12.** Market data comes from `core/binance_public.py`
+  (public REST, only the instance's own symbols) instead of ccxt, which loaded all 4,714
+  markets. Physical footprint per paper instance 234 MB → about 50 MB (peak 381 → 51 MB); all
+  18 processes about 1 GB (dashboard 109 MB). Only testnet instances still import ccxt
+  (`trading/broker.py`, order code). 4 GB is enough.
+- **Home server instead of renting (2026-11-12):** the user's HP EliteBook 840 G2 (8 GB RAM,
+  SSD, Ubuntu installed). Its battery bridges short power cuts. Open: `service install` is
+  macOS only (`tools/service.py`) and the Docker image has no Node/Codex CLI, so v11 can't run
+  in it; plan is a systemd variant of `service install` with a native venv. Then: Node 22 via
+  nvm + `codex@0.166.0` + `codex login`, copy `runtime/`, `data/`, `results/`, `.env` with the
+  Mac service stopped (not near 00:00 UTC), lid switch ignored, BIOS power-on after AC loss,
+  battery charge limit if the BIOS has one, Tailscale for the panel. Never run both machines.
 - **Providers.** Hetzner's cost-optimized plans (CX23: 2 vCPU, 4 GB, €5.99) fit; regular
   performance is about three times the price. Compare other providers in the EU (Binance blocks
   US addresses).

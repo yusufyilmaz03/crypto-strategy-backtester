@@ -284,15 +284,14 @@ def market_rules(symbols):
     """{symbol: (amount step, minimum order cost)} from Binance's market info, for the
     bankroll's quantity rounding and minimum order. Missing markets are left out."""
     try:
-        ex = get_exchange()
-        ex.load_markets()
+        markets = get_exchange().load_markets(list(symbols))
     except Exception as e:
         print(f"⚠️ market info unavailable ({type(e).__name__}: {e}); no lot rounding, "
               f"minimum order {bankroll.MIN_ORDER} USDT")
         return {}
     out = {}
     for s in symbols:
-        m = ex.markets.get(s)
+        m = markets.get(s)
         if not m:
             continue
         step = (m.get("precision") or {}).get("amount")

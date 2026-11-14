@@ -7,27 +7,30 @@ candle that is still forming.
 import os
 import time
 
-import ccxt
 import pandas as pd
 
 from kripto_bot import paths
+from kripto_bot.core.binance_public import BinancePublic
 
 CACHE_DIR = paths.DATA_DIR
 COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
 BATCH_LIMIT = 1000  # max candles per Binance kline request
+UNIT_S = {"s": 1, "m": 60, "h": 3600, "d": 86_400, "w": 604_800, "M": 2_592_000, "y": 31_536_000}  # as ccxt
 
 _exchange = None
 
 
 def get_exchange():
+    """Binance market data (core/binance_public.py: public REST, no ccxt market list)."""
     global _exchange
     if _exchange is None:
-        _exchange = ccxt.binance({"enableRateLimit": True})
+        _exchange = BinancePublic()
     return _exchange
 
 
 def timeframe_ms(timeframe):
-    return ccxt.Exchange.parse_timeframe(timeframe) * 1000
+    """"15m" -> 900000. A month counts 30 days, a year 365, as in ccxt."""
+    return int(timeframe[:-1]) * UNIT_S[timeframe[-1]] * 1000
 
 
 def now_ms():
@@ -43,7 +46,7 @@ def _normalize(df):
 
 
 def _to_frame(rows):
-    """Raw ccxt rows -> normalized DataFrame."""
+    """Raw kline rows [time, open, high, low, close, volume] -> normalized DataFrame."""
     return _normalize(pd.DataFrame(rows, columns=COLUMNS))
 
 

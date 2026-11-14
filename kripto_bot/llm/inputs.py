@@ -27,7 +27,7 @@ def daily(symbol, call_time, exchange=None):
 
 def ticks(symbols, exchange=None):
     ex = exchange or data.get_exchange()
-    markets = ex.load_markets()
+    markets = ex.load_markets(symbols)
     return {s: float(markets[s]["precision"]["price"]) for s in symbols}
 
 
